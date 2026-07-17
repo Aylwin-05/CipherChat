@@ -1,0 +1,5 @@
+[project]
+name = "cipherchat"
+version = "1.0.0"
+description = "Privacy First End-to-End Encrypted Messaging Platform"
+requires-python = ">=3.12"

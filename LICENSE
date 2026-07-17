@@ -1,0 +1,8 @@
+# Changelog
+
+## v0.1.0
+
+- Initial project structure
+- FastAPI setup
+- PostgreSQL integration
+- SQLAlchemy configuration
