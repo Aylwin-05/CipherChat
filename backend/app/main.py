@@ -1,7 +1,8 @@
 from fastapi import Depends, FastAPI
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.api import api_router
 from app.core.config import settings
 from app.database.session import get_db
 
@@ -11,24 +12,46 @@ app = FastAPI(
     debug=settings.DEBUG,
 )
 
+# ==========================================================
+# Register API Routes
+# ==========================================================
 
-@app.get("/")
+app.include_router(
+    api_router,
+    prefix="/api/v1",
+)
+
+# ==========================================================
+# Root Endpoint
+# ==========================================================
+
+@app.get("/", tags=["System"])
 async def root():
     return {
         "application": settings.APP_NAME,
         "version": "1.0.0",
         "status": "running",
+        "docs": "/docs",
     }
 
+# ==========================================================
+# Health Check
+# ==========================================================
 
-@app.get("/health")
-async def health(db: Session = Depends(get_db)):
+@app.get("/health", tags=["System"])
+async def health(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Health check endpoint.
+    """
+
     try:
-        db.execute(text("SELECT 1"))
-
+        await db.execute(text("SELECT 1"))
         database_status = "connected"
 
-    except Exception:
+    except Exception as e:
+        print(f"Health Check Error: {e}")
         database_status = "disconnected"
 
     return {

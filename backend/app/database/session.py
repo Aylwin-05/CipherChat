@@ -1,17 +1,17 @@
-from sqlalchemy.orm import sessionmaker
+from collections.abc import AsyncGenerator
 
-from app.database.database import engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine,
-)
+from app.database.database import AsyncSessionLocal
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """
+    FastAPI dependency that provides an AsyncSession.
+
+    A new session is created for each request and is
+    automatically closed after the request completes.
+    """
+
+    async with AsyncSessionLocal() as session:
+        yield session

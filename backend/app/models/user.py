@@ -70,7 +70,7 @@ class User(Base, TimestampMixin):
     public_key: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
-        comment="Public encryption key used for E2EE.",
+        comment="Public encryption key used for end-to-end encryption.",
     )
 
     is_verified: Mapped[bool] = mapped_column(

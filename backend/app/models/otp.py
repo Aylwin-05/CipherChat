@@ -1,7 +1,14 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Uuid
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Index,
+    Integer,
+    String,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -14,6 +21,10 @@ class OTPCode(Base, TimestampMixin):
     """
 
     __tablename__ = "otp_codes"
+
+    __table_args__ = (
+        Index("ix_otp_email_expires", "email", "expires_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
@@ -53,3 +64,10 @@ class OTPCode(Base, TimestampMixin):
         nullable=False,
         comment="Whether this OTP has already been used.",
     )
+
+    def __repr__(self) -> str:
+        return (
+            f"<OTPCode(email='{self.email}', "
+            f"expires_at='{self.expires_at}', "
+            f"is_used={self.is_used})>"
+        )

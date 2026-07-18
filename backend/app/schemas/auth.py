@@ -1,14 +1,30 @@
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
-# ---------- Requests ----------
+# ==========================================================
+# Reusable Types
+# ==========================================================
+
+OTPCode = Annotated[
+    str,
+    Field(
+        pattern=r"^\d{6}$",
+        description="6-digit OTP",
+    ),
+]
+
+
+# ==========================================================
+# Requests
+# ==========================================================
 
 class SendOTPRequest(BaseModel):
     """
-    Request to send an OTP to the user's email.
+    Request to send an OTP.
     """
 
     email: EmailStr
@@ -16,26 +32,24 @@ class SendOTPRequest(BaseModel):
 
 class VerifyOTPRequest(BaseModel):
     """
-    Request to verify an OTP.
+    Request to verify OTP.
     """
 
     email: EmailStr
-    otp: str = Field(
-        min_length=6,
-        max_length=6,
-        description="6-digit OTP code"
-    )
+    otp: OTPCode
 
 
 class RefreshTokenRequest(BaseModel):
     """
-    Request to refresh JWT tokens.
+    Refresh JWT token request.
     """
 
     refresh_token: str
 
 
-# ---------- Responses ----------
+# ==========================================================
+# Responses
+# ==========================================================
 
 class MessageResponse(BaseModel):
     """
@@ -46,9 +60,17 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class SendOTPResponse(MessageResponse):
+    """
+    Response after sending OTP.
+    """
+
+    pass
+
+
 class TokenResponse(BaseModel):
     """
-    JWT tokens returned after successful authentication.
+    JWT response.
     """
 
     access_token: str
@@ -58,7 +80,7 @@ class TokenResponse(BaseModel):
 
 class UserResponse(BaseModel):
     """
-    Public user information returned by the API.
+    Public user response.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -67,9 +89,12 @@ class UserResponse(BaseModel):
     email: EmailStr
     username: str
     display_name: str
+
     avatar_url: str | None = None
     bio: str | None = None
+
     is_verified: bool
     online_status: str
     last_seen: datetime | None
+
     created_at: datetime
