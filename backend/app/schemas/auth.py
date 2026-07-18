@@ -76,25 +76,3 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "Bearer"
-
-
-class UserResponse(BaseModel):
-    """
-    Public user response.
-    """
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    email: EmailStr
-    username: str
-    display_name: str
-
-    avatar_url: str | None = None
-    bio: str | None = None
-
-    is_verified: bool
-    online_status: str
-    last_seen: datetime | None
-
-    created_at: datetime

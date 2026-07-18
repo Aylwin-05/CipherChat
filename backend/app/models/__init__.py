@@ -1,7 +1,9 @@
-from app.models.user import User
-from app.models.otp import OTPCode
+from .friendship import Friendship
+from .otp import OTPCode
+from .user import User
 
 __all__ = [
     "User",
     "OTPCode",
+    "Friendship",
 ]

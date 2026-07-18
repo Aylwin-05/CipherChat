@@ -8,8 +8,16 @@ from app.database.session import get_db
 
 app = FastAPI(
     title=settings.APP_NAME,
+    description="CipherChat Backend API",
     version="1.0.0",
     debug=settings.DEBUG,
+    contact={
+        "name": "CipherChat API",
+        "email": settings.SMTP_FROM_EMAIL,
+    },
+    license_info={
+        "name": "MIT",
+    },
 )
 
 # ==========================================================
@@ -33,6 +41,7 @@ async def root():
         "status": "running",
         "docs": "/docs",
     }
+
 
 # ==========================================================
 # Health Check
