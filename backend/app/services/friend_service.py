@@ -61,16 +61,30 @@ class FriendService:
         current_user: User,
     ) -> Friendship:
 
+        print("\n========== ACCEPT REQUEST DEBUG ==========")
+        print("Friendship ID :", friendship_id)
+        print("Current User  :", current_user.id)
+
         friendship = await self.repository.get_by_id(
             friendship_id
         )
 
+        print("Repository Result :", friendship)
+
         if friendship is None:
+            print("ERROR: Friendship not found.")
+            print("=========================================\n")
             raise ValueError(
                 "Friend request not found."
             )
 
+        print("Sender   :", friendship.sender_id)
+        print("Receiver :", friendship.receiver_id)
+        print("Status   :", friendship.status)
+
         if friendship.receiver_id != current_user.id:
+            print("ERROR: Current user is NOT the receiver.")
+            print("=========================================\n")
             raise ValueError(
                 "Not authorized."
             )
@@ -80,6 +94,9 @@ class FriendService:
         )
 
         await self.repository.save()
+
+        print("SUCCESS: Friend request accepted.")
+        print("=========================================\n")
 
         return friendship
 
