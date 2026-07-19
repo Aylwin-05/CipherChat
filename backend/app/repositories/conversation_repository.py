@@ -3,7 +3,9 @@ from uuid import UUID
 from sqlalchemy import and_, func, select
 
 from app.models.conversation import Conversation
-from app.models.conversation_participant import ConversationParticipant
+from app.models.conversation_participant import (
+    ConversationParticipant,
+)
 from app.repositories.base_repository import BaseRepository
 
 
@@ -35,7 +37,7 @@ class ConversationRepository(BaseRepository):
         return await self.create(participant)
 
     # ==========================================================
-    # Find Private Conversation
+    # Find Existing Private Conversation
     # ==========================================================
 
     async def get_private_conversation(
@@ -43,10 +45,6 @@ class ConversationRepository(BaseRepository):
         user1: UUID,
         user2: UUID,
     ) -> Conversation | None:
-        """
-        Returns an existing private conversation
-        between two users if one exists.
-        """
 
         result = await self.execute(
             select(Conversation)
@@ -72,7 +70,7 @@ class ConversationRepository(BaseRepository):
         return result.scalar_one_or_none()
 
     # ==========================================================
-    # Get User Conversations
+    # User Conversations
     # ==========================================================
 
     async def get_user_conversations(
@@ -99,7 +97,7 @@ class ConversationRepository(BaseRepository):
         return result.scalars().all()
 
     # ==========================================================
-    # Get Participants
+    # Conversation Participants
     # ==========================================================
 
     async def get_participants(
@@ -118,6 +116,34 @@ class ConversationRepository(BaseRepository):
         return result.scalars().all()
 
     # ==========================================================
+    # Verify Participant
+    # ==========================================================
+
+    async def is_participant(
+        self,
+        conversation_id: UUID,
+        user_id: UUID,
+    ) -> bool:
+        """
+        Returns True if the user belongs to the conversation.
+        """
+
+        result = await self.execute(
+            select(ConversationParticipant).where(
+                and_(
+                    ConversationParticipant.conversation_id
+                    == conversation_id,
+                    ConversationParticipant.user_id
+                    == user_id,
+                )
+            )
+        )
+
+        participant = result.scalar_one_or_none()
+
+        return participant is not None
+
+    # ==========================================================
     # Save
     # ==========================================================
 
@@ -125,13 +151,14 @@ class ConversationRepository(BaseRepository):
         await self.update()
 
     # ==========================================================
-    # Get Conversation By ID
+    # Get Conversation
     # ==========================================================
 
     async def get_by_id(
         self,
-        conversation_id,
+        conversation_id: UUID,
     ):
+
         result = await self.execute(
             select(Conversation).where(
                 Conversation.id == conversation_id

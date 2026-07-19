@@ -26,14 +26,16 @@ class SendMessageRequest(BaseModel):
 
 class MessageResponse(BaseModel):
     """
-    Message returned by the API.
+    Message returned to clients.
     """
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
 
     id: UUID
     conversation_id: UUID
     sender_id: UUID
     content: str
-    message_type: str
+    is_read: bool
     created_at: datetime

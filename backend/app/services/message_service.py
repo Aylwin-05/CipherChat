@@ -12,7 +12,7 @@ from app.repositories.message_repository import (
 
 class MessageService:
     """
-    Business logic for messages.
+    Business logic for sending and retrieving messages.
     """
 
     def __init__(
@@ -29,12 +29,12 @@ class MessageService:
 
     async def send_message(
         self,
+        current_user: User,
         conversation_id: UUID,
-        sender: User,
         content: str,
     ) -> Message:
         """
-        Send a message in a conversation.
+        Send a message to a conversation.
         """
 
         participants = (
@@ -48,16 +48,15 @@ class MessageService:
             for participant in participants
         }
 
-        if sender.id not in participant_ids:
+        if current_user.id not in participant_ids:
             raise ValueError(
-                "You are not a participant in this conversation."
+                "You are not a participant of this conversation."
             )
 
         message = Message(
             conversation_id=conversation_id,
-            sender_id=sender.id,
+            sender_id=current_user.id,
             content=content,
-            message_type="text",
         )
 
         return await self.message_repository.create_message(
@@ -65,13 +64,13 @@ class MessageService:
         )
 
     # ==========================================================
-    # Get Messages
+    # Get Conversation Messages
     # ==========================================================
 
     async def get_messages(
         self,
-        conversation_id: UUID,
         current_user: User,
+        conversation_id: UUID,
     ):
         """
         Return all messages from a conversation.
@@ -90,7 +89,7 @@ class MessageService:
 
         if current_user.id not in participant_ids:
             raise ValueError(
-                "You are not a participant in this conversation."
+                "You are not allowed to view this conversation."
             )
 
         return await self.message_repository.get_messages(

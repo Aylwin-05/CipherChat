@@ -4,16 +4,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 from app.models.user import User
-from app.repositories.conversation_repository import (
-    ConversationRepository,
-)
+from app.repositories.conversation_repository import ConversationRepository
 from app.schemas.conversation import (
-    CreateConversationRequest,
     ConversationResponse,
+    CreateConversationRequest,
 )
-from app.services.conversation_service import (
-    ConversationService,
-)
+from app.services.conversation_service import ConversationService
 
 router = APIRouter(
     prefix="/conversations",
@@ -22,14 +18,14 @@ router = APIRouter(
 
 
 # ==========================================================
-# Create or Open Conversation
+# Open/Create Conversation
 # ==========================================================
 
 @router.post(
-    "/",
+    "/private",
     response_model=ConversationResponse,
 )
-async def create_or_open_conversation(
+async def create_private_conversation(
     request: CreateConversationRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -37,14 +33,10 @@ async def create_or_open_conversation(
     repository = ConversationRepository(db)
     service = ConversationService(repository)
 
-    conversation = (
-        await service.get_or_create_private_conversation(
-            current_user,
-            request.user_id,
-        )
+    return await service.get_or_create_private_conversation(
+        current_user,
+        request.user_id,
     )
-
-    return conversation
 
 
 # ==========================================================

@@ -5,12 +5,12 @@ from pydantic import BaseModel, ConfigDict
 
 
 # ==========================================================
-# Create/Open Conversation
+# Create / Open Conversation
 # ==========================================================
 
 class CreateConversationRequest(BaseModel):
     """
-    Request to create or open a conversation.
+    Request to create or open a private conversation.
     """
 
     user_id: UUID

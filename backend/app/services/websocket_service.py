@@ -14,7 +14,12 @@ from app.websocket.manager import manager
 
 class WebSocketService:
     """
-    Handles websocket business logic.
+    Handles websocket business operations.
+
+    Responsibilities:
+    - Verify conversation access
+    - Store messages
+    - Broadcast messages
     """
 
     def __init__(
@@ -25,6 +30,11 @@ class WebSocketService:
         self.conversation_repository = conversation_repository
         self.message_repository = message_repository
 
+        self.message_service = MessageService(
+            message_repository,
+            conversation_repository,
+        )
+
     # ==========================================================
     # Verify Conversation Access
     # ==========================================================
@@ -34,6 +44,9 @@ class WebSocketService:
         conversation_id: UUID,
         current_user: User,
     ) -> bool:
+        """
+        Returns True if the user belongs to the conversation.
+        """
 
         participants = (
             await self.conversation_repository.get_participants(
@@ -49,24 +62,22 @@ class WebSocketService:
         return current_user.id in participant_ids
 
     # ==========================================================
-    # Handle Incoming Message
+    # Handle Message
     # ==========================================================
 
     async def handle_message(
         self,
         conversation_id: UUID,
-        sender: User,
+        current_user: User,
         content: str,
     ) -> Message:
+        """
+        Store and broadcast a chat message.
+        """
 
-        message_service = MessageService(
-            self.message_repository,
-            self.conversation_repository,
-        )
-
-        message = await message_service.send_message(
+        message = await self.message_service.send_message(
             conversation_id=conversation_id,
-            sender=sender,
+            sender=current_user,
             content=content,
         )
 
@@ -80,6 +91,8 @@ class WebSocketService:
                     "sender_id": str(message.sender_id),
                     "content": message.content,
                     "message_type": message.message_type,
+                    "is_delivered": message.is_delivered,
+                    "is_read": message.is_read,
                     "created_at": message.created_at.isoformat(),
                 },
             },

@@ -19,7 +19,6 @@ class MessageRepository(BaseRepository):
         self,
         message: Message,
     ) -> Message:
-
         return await self.create(message)
 
     # ==========================================================
@@ -30,19 +29,26 @@ class MessageRepository(BaseRepository):
         self,
         conversation_id: UUID,
     ):
-
         result = await self.execute(
             select(Message)
             .where(
-                Message.conversation_id
-                == conversation_id
+                Message.conversation_id == conversation_id
             )
-            .order_by(
-                Message.created_at.asc()
-            )
+            .order_by(Message.created_at.asc())
         )
 
         return result.scalars().all()
+
+    # ==========================================================
+    # Mark Read
+    # ==========================================================
+
+    async def mark_read(
+        self,
+        message: Message,
+    ):
+        message.is_read = True
+        await self.update()
 
     # ==========================================================
     # Get Message
@@ -60,10 +66,3 @@ class MessageRepository(BaseRepository):
         )
 
         return result.scalar_one_or_none()
-
-    # ==========================================================
-    # Save
-    # ==========================================================
-
-    async def save(self):
-        await self.update()
