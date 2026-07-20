@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -8,7 +9,7 @@ from app.repositories.base_repository import BaseRepository
 
 class MessageRepository(BaseRepository):
     """
-    Repository for message operations.
+    Repository for all message operations.
     """
 
     # ==========================================================
@@ -40,18 +41,7 @@ class MessageRepository(BaseRepository):
         return result.scalars().all()
 
     # ==========================================================
-    # Mark Read
-    # ==========================================================
-
-    async def mark_read(
-        self,
-        message: Message,
-    ):
-        message.is_read = True
-        await self.update()
-
-    # ==========================================================
-    # Get Message
+    # Get Message By ID
     # ==========================================================
 
     async def get_by_id(
@@ -66,3 +56,42 @@ class MessageRepository(BaseRepository):
         )
 
         return result.scalar_one_or_none()
+
+    # ==========================================================
+    # Mark Delivered
+    # ==========================================================
+
+    async def mark_delivered(
+        self,
+        message: Message,
+    ):
+
+        if message.delivered_at is None:
+            message.delivered_at = datetime.now(
+                timezone.utc
+            )
+
+            await self.update()
+
+    # ==========================================================
+    # Mark Read
+    # ==========================================================
+
+    async def mark_read(
+        self,
+        message: Message,
+    ):
+
+        message.is_read = True
+
+        if message.read_at is None:
+            message.read_at = datetime.now(
+                timezone.utc
+            )
+
+        if message.delivered_at is None:
+            message.delivered_at = datetime.now(
+                timezone.utc
+            )
+
+        await self.update()

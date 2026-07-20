@@ -9,14 +9,29 @@ from app.database.base import Base
 
 class Message(Base):
     """
-    Represents a single chat message.
+    Represents a chat message.
 
-    Messages currently store plain text.
-    Later, this field will store encrypted ciphertext
-    when we implement end-to-end encryption.
+    Lifecycle:
+
+    Created
+        ↓
+    Delivered
+        ↓
+    Read
+
+    Future:
+    - End-to-End Encryption
+    - Reply
+    - Forward
+    - Reactions
+    - Attachments
     """
 
     __tablename__ = "messages"
+
+    # ==========================================================
+    # Identity
+    # ==========================================================
 
     id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -42,6 +57,10 @@ class Message(Base):
         nullable=False,
     )
 
+    # ==========================================================
+    # Message
+    # ==========================================================
+
     content: Mapped[str] = mapped_column(
         Text,
         nullable=False,
@@ -53,11 +72,29 @@ class Message(Base):
         nullable=False,
     )
 
+    # ==========================================================
+    # Delivery Status
+    # ==========================================================
+
     is_read: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         nullable=False,
     )
+
+    delivered_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    read_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    # ==========================================================
+    # Audit
+    # ==========================================================
 
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),

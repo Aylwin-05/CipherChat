@@ -1,4 +1,5 @@
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -6,10 +7,6 @@ from app.api.v1.api import api_router
 from app.core.config import settings
 from app.database.session import get_db
 from app.websocket.ws import router as websocket_router
-# If your file is named websocket_endpoint.py instead of ws.py,
-# use:
-# from app.websocket.websocket_endpoint import router as websocket_router
-
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -25,6 +22,22 @@ app = FastAPI(
     },
 )
 
+# ==========================================================
+# CORS
+# ==========================================================
+
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ==========================================================
 # REST API Routes
@@ -35,7 +48,6 @@ app.include_router(
     prefix="/api/v1",
 )
 
-
 # ==========================================================
 # WebSocket Routes
 # ==========================================================
@@ -43,7 +55,6 @@ app.include_router(
 app.include_router(
     websocket_router,
 )
-
 
 # ==========================================================
 # Root Endpoint
@@ -59,7 +70,6 @@ async def root():
         "health": "/health",
         "websocket": "/ws/{conversation_id}",
     }
-
 
 # ==========================================================
 # Health Check

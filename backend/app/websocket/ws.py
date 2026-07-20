@@ -1,7 +1,6 @@
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import AsyncSessionLocal
 from app.dependencies.websocket_auth import websocket_auth
@@ -19,16 +18,14 @@ async def websocket_endpoint(
     conversation_id: UUID,
 ):
     """
-    Production WebSocket endpoint.
+    Production WebSocket Endpoint.
 
-    Flow:
-    JWT Authentication
-        ↓
-    Load User
-        ↓
-    Save Message
-        ↓
-    Broadcast Message
+    Responsibilities:
+    - Authenticate user
+    - Load user
+    - Connect socket
+    - Receive events
+    - Delegate all event handling to WebSocketService
     """
 
     # ==========================================================
@@ -50,10 +47,10 @@ async def websocket_endpoint(
 
     async with AsyncSessionLocal() as db:
 
-        repository = AuthRepository(db)
+        auth_repository = AuthRepository(db)
 
         current_user: User | None = (
-            await repository.get_user_by_id(
+            await auth_repository.get_user_by_id(
                 user_id
             )
         )
@@ -65,6 +62,19 @@ async def websocket_endpoint(
         websocket_service = WebSocketService(db)
 
         # ======================================================
+        # Verify Conversation Access
+        # ======================================================
+
+        allowed = await websocket_service.verify_access(
+            conversation_id,
+            current_user,
+        )
+
+        if not allowed:
+            await websocket.close(code=1008)
+            return
+
+        # ======================================================
         # Connect
         # ======================================================
 
@@ -74,118 +84,48 @@ async def websocket_endpoint(
             websocket,
         )
 
-        try:
+        await websocket.send_json(
+            {
+                "event": "connected",
+                "conversation_id": str(conversation_id),
+                "user_id": str(current_user.id),
+            }
+        )
 
-            await websocket.send_json(
-                {
-                    "event": "connected",
-                    "user_id": str(current_user.id),
-                    "conversation_id": str(
-                        conversation_id
-                    ),
-                }
-            )
+        print(
+            f"Connected: {current_user.email}"
+        )
+
+        # ======================================================
+        # Main Loop
+        # ======================================================
+
+        try:
 
             while True:
 
                 data = await websocket.receive_json()
 
-                event = data.get("event")
-
-                # ==========================================
-                # Message
-                # ==========================================
-
-                if event == "message":
-
-                    content = (
-                        data.get("content", "")
-                        .strip()
-                    )
-
-                    if not content:
-                        continue
-
-                    saved_message = (
-                        await websocket_service.save_message(
-                            conversation_id,
-                            current_user,
-                            content,
-                        )
-                    )
-
-                    await manager.broadcast(
-                        conversation_id,
-                        {
-                            "event": "message",
-                            "id": str(saved_message.id),
-                            "conversation_id": str(
-                                conversation_id
-                            ),
-                            "sender_id": str(
-                                current_user.id
-                            ),
-                            "content": saved_message.content,
-                            "created_at": (
-                                saved_message.created_at.isoformat()
-                            ),
-                        },
-                    )
-
-                # ==========================================
-                # Typing
-                # ==========================================
-
-                elif event == "typing":
-
-                    await manager.broadcast(
-                        conversation_id,
-                        {
-                            "event": "typing",
-                            "user_id": str(
-                                current_user.id
-                            ),
-                        },
-                    )
-
-                # ==========================================
-                # Stop Typing
-                # ==========================================
-
-                elif event == "stop_typing":
-
-                    await manager.broadcast(
-                        conversation_id,
-                        {
-                            "event": "stop_typing",
-                            "user_id": str(
-                                current_user.id
-                            ),
-                        },
-                    )
-
-                # ==========================================
-                # Ping
-                # ==========================================
-
-                elif event == "ping":
-
-                    await websocket.send_json(
-                        {
-                            "event": "pong",
-                        }
-                    )
+                await websocket_service.handle_event(
+                    websocket=websocket,
+                    conversation_id=conversation_id,
+                    current_user=current_user,
+                    data=data,
+                )
 
         except WebSocketDisconnect:
 
-            manager.disconnect(
-                conversation_id,
-                current_user.id,
-                websocket,
+            print(
+                f"Disconnected: {current_user.email}"
             )
 
-            print(
-                f"WebSocket disconnected: {current_user.email}"
+        except ValueError as e:
+
+            await websocket.send_json(
+                {
+                    "event": "error",
+                    "message": str(e),
+                }
             )
 
         except Exception as e:
@@ -193,6 +133,18 @@ async def websocket_endpoint(
             print(
                 f"WebSocket Error: {e}"
             )
+
+            try:
+                await websocket.send_json(
+                    {
+                        "event": "error",
+                        "message": "Internal server error.",
+                    }
+                )
+            except Exception:
+                pass
+
+        finally:
 
             manager.disconnect(
                 conversation_id,
