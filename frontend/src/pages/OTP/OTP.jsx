@@ -7,14 +7,18 @@ import authService from "../../services/authService";
 import "./OTP.css";
 
 export default function OTP() {
+
     const navigate = useNavigate();
+
     const location = useLocation();
 
     const { login } = useAuth();
 
-    const email = location.state?.email || "";
+    const email =
+        location.state?.email || "";
 
-    const [otp, setOtp] = useState("");
+    const [otp, setOtp] =
+        useState("");
 
     const [loading, setLoading] =
         useState(false);
@@ -23,18 +27,23 @@ export default function OTP() {
         useState("");
 
     const handleVerify = async (e) => {
+
         e.preventDefault();
 
         setError("");
 
         if (otp.length !== 6) {
+
             setError(
                 "OTP must be 6 digits."
             );
+
             return;
+
         }
 
         try {
+
             setLoading(true);
 
             const response =
@@ -43,7 +52,11 @@ export default function OTP() {
                     otp
                 );
 
-            login(
+            // ==========================================
+            // Login + Load User Profile
+            // ==========================================
+
+            await login(
                 response.access_token,
                 response.refresh_token
             );
@@ -54,33 +67,57 @@ export default function OTP() {
                     replace: true,
                 }
             );
-        } catch (err) {
-            setError(
-                err.response?.data?.detail ||
-                    "Invalid OTP."
-            );
-        } finally {
-            setLoading(false);
+
         }
+
+        catch (err) {
+
+            setError(
+
+                err.response?.data?.detail ||
+
+                "Invalid OTP."
+
+            );
+
+        }
+
+        finally {
+
+            setLoading(false);
+
+        }
+
     };
 
     return (
+
         <div className="otp-container">
+
             <div className="otp-card">
 
-                <h1>Verify OTP</h1>
+                <h1>
+
+                    Verify OTP
+
+                </h1>
 
                 <p>
+
                     OTP sent to
+
                 </p>
 
-                <strong>{email}</strong>
+                <strong>
+
+                    {email}
+
+                </strong>
 
                 <form
-                    onSubmit={
-                        handleVerify
-                    }
+                    onSubmit={handleVerify}
                 >
+
                     <input
                         type="text"
                         maxLength={6}
@@ -93,25 +130,43 @@ export default function OTP() {
                         }
                     />
 
-                    {error && (
-                        <div className="error">
-                            {error}
-                        </div>
-                    )}
+                    {
+
+                        error && (
+
+                            <div className="error">
+
+                                {error}
+
+                            </div>
+
+                        )
+
+                    }
 
                     <button
                         type="submit"
-                        disabled={
-                            loading
-                        }
+                        disabled={loading}
                     >
-                        {loading
-                            ? "Verifying..."
-                            : "Verify OTP"}
+
+                        {
+
+                            loading
+
+                                ? "Verifying..."
+
+                                : "Verify OTP"
+
+                        }
+
                     </button>
+
                 </form>
 
             </div>
+
         </div>
+
     );
+
 }

@@ -1,5 +1,7 @@
 .conversation-list{
 
+    flex:1;
+
     display:flex;
 
     flex-direction:column;
@@ -7,6 +9,12 @@
     gap:10px;
 
     padding:15px;
+
+    overflow-y:auto;
+
+    overflow-x:hidden;
+
+    min-height:0;
 
 }
 
@@ -29,6 +37,8 @@
     background:white;
 
     border:1px solid #e5e7eb;
+
+    flex-shrink:0;
 
 }
 
@@ -66,11 +76,15 @@
 
     font-size:22px;
 
+    flex-shrink:0;
+
 }
 
 .conversation-info{
 
     flex:1;
+
+    min-width:0;
 
 }
 
@@ -79,6 +93,12 @@
     margin:0;
 
     font-size:16px;
+
+    overflow:hidden;
+
+    white-space:nowrap;
+
+    text-overflow:ellipsis;
 
 }
 

@@ -6,6 +6,8 @@
 
     height:100vh;
 
+    overflow:hidden;
+
     background:#f3f4f6;
 
 }
@@ -18,11 +20,17 @@
 
     flex-direction:column;
 
+    min-width:0;
+
+    overflow:hidden;
+
 }
 
 .dashboard-header{
 
     height:70px;
+
+    flex-shrink:0;
 
     background:white;
 
@@ -48,17 +56,37 @@
 
     display:flex;
 
+    min-height:0;
+
+    overflow:hidden;
+
 }
 
 .conversation-panel{
 
     width:340px;
 
+    flex-shrink:0;
+
+    display:flex;
+
+    flex-direction:column;
+
     background:white;
 
     border-right:1px solid #e5e7eb;
 
+    min-height:0;
+
+}
+
+.conversation-panel h3{
+
     padding:20px;
+
+    margin:0;
+
+    border-bottom:1px solid #e5e7eb;
 
 }
 
@@ -66,17 +94,25 @@
 
     flex:1;
 
+    display:flex;
+
+    flex-direction:column;
+
+    min-width:0;
+
+    min-height:0;
+
     background:#fafafa;
 
-    padding:20px;
+    overflow:hidden;
 
 }
 
 .placeholder{
 
-    margin-top:25px;
+    flex:1;
 
-    height:85%;
+    margin:20px;
 
     border:2px dashed #cbd5e1;
 

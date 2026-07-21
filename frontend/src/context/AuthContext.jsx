@@ -1,51 +1,97 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+    createContext,
+    useContext,
+    useEffect,
+    useState,
+} from "react";
+
+import authService from "../services/authService";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-    const [user, setUser] = useState(null);
-    const [accessToken, setAccessToken] = useState(
-        localStorage.getItem("access_token")
+
+    const [user, setUser] = useState(
+        authService.getStoredUser()
     );
+
     const [loading, setLoading] = useState(true);
+
+    const [accessToken, setAccessToken] = useState(
+        authService.getAccessToken()
+    );
 
     // ==========================================================
     // Initialize Authentication
     // ==========================================================
 
     useEffect(() => {
-        if (accessToken) {
-            setUser({
-                authenticated: true,
-            });
+
+        async function initialize() {
+
+            if (!accessToken) {
+
+                setLoading(false);
+
+                return;
+
+            }
+
+            try {
+
+                const profile =
+                    await authService.loadCurrentUser();
+
+                setUser(profile);
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    "Authentication failed:",
+                    error
+                );
+
+                authService.logout();
+
+                setUser(null);
+
+                setAccessToken(null);
+
+            }
+
+            finally {
+
+                setLoading(false);
+
+            }
+
         }
 
-        setLoading(false);
+        initialize();
+
     }, [accessToken]);
 
     // ==========================================================
     // Login
     // ==========================================================
 
-    const login = (
+    const login = async (
         accessToken,
-        refreshToken
+        refreshToken,
     ) => {
-        localStorage.setItem(
-            "access_token",
-            accessToken
-        );
 
-        localStorage.setItem(
-            "refresh_token",
-            refreshToken
-        );
+        const profile =
+            await authService.login(
+                accessToken,
+                refreshToken,
+            );
 
         setAccessToken(accessToken);
 
-        setUser({
-            authenticated: true,
-        });
+        setUser(profile);
+
     };
 
     // ==========================================================
@@ -53,45 +99,57 @@ export function AuthProvider({ children }) {
     // ==========================================================
 
     const logout = () => {
-        localStorage.removeItem(
-            "access_token"
-        );
 
-        localStorage.removeItem(
-            "refresh_token"
-        );
+        authService.logout();
 
         setAccessToken(null);
+
         setUser(null);
+
     };
 
     return (
+
         <AuthContext.Provider
             value={{
+
                 user,
+
                 loading,
-                login,
-                logout,
+
                 accessToken,
+
+                login,
+
+                logout,
+
                 isAuthenticated:
-                    user !== null,
+                    !!user,
+
             }}
         >
+
             {children}
+
         </AuthContext.Provider>
+
     );
+
 }
 
 export function useAuth() {
-    const context = useContext(
-        AuthContext
-    );
+
+    const context =
+        useContext(AuthContext);
 
     if (!context) {
+
         throw new Error(
-            "useAuth must be used inside AuthProvider"
+            "useAuth must be used within AuthProvider"
         );
+
     }
 
     return context;
+
 }

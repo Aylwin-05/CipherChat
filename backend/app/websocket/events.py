@@ -60,6 +60,32 @@ class WebSocketEvents:
         )
 
     # ==========================================================
+    # Presence
+    # ==========================================================
+
+    async def presence(
+        self,
+        conversation_id: UUID,
+        user_id: UUID,
+        online: bool,
+    ):
+        print(
+    {
+        "event": "presence",
+        "user_id": str(user_id),
+        "online": online,
+    }
+)
+        await manager.broadcast(
+            conversation_id,
+            {
+                "event": "presence",
+                "user_id": str(user_id),
+                "online": online,
+            },
+        )
+
+    # ==========================================================
     # Typing
     # ==========================================================
 
@@ -109,3 +135,4 @@ class WebSocketEvents:
 
 
 events = WebSocketEvents()
+

@@ -1,11 +1,13 @@
 import api from "../api/api";
 
 const authService = {
+
     // ======================================================
     // Send OTP
     // ======================================================
 
     async sendOTP(email) {
+
         const response = await api.post(
             "/auth/send-otp",
             {
@@ -14,16 +16,15 @@ const authService = {
         );
 
         return response.data;
+
     },
 
     // ======================================================
     // Verify OTP
     // ======================================================
 
-    async verifyOTP(
-        email,
-        otp
-    ) {
+    async verifyOTP(email, otp) {
+
         const response = await api.post(
             "/auth/verify-otp",
             {
@@ -33,6 +34,118 @@ const authService = {
         );
 
         return response.data;
+
+    },
+
+    // ======================================================
+    // Get Logged-in User
+    // ======================================================
+
+    async getCurrentUser() {
+
+        const response = await api.get(
+            "/users/me"
+        );
+
+        return response.data;
+
+    },
+
+    // ======================================================
+    // Token Helpers
+    // ======================================================
+
+    saveTokens(
+        accessToken,
+        refreshToken,
+    ) {
+
+        localStorage.setItem(
+            "access_token",
+            accessToken,
+        );
+
+        localStorage.setItem(
+            "refresh_token",
+            refreshToken,
+        );
+
+    },
+
+    getAccessToken() {
+
+        return localStorage.getItem(
+            "access_token",
+        );
+
+    },
+
+    getRefreshToken() {
+
+        return localStorage.getItem(
+            "refresh_token",
+        );
+
+    },
+
+    // ======================================================
+    // User Helpers
+    // ======================================================
+
+    saveUser(user) {
+
+        localStorage.setItem(
+            "user",
+            JSON.stringify(user),
+        );
+
+    },
+
+    getStoredUser() {
+
+        const user =
+            localStorage.getItem("user");
+
+        return user
+            ? JSON.parse(user)
+            : null;
+
+    },
+
+    // ======================================================
+    // Load Current User From Backend
+    // ======================================================
+
+    async loadCurrentUser() {
+
+        const user =
+            await this.getCurrentUser();
+
+        this.saveUser(user);
+
+        return user;
+
+    },
+
+    // ======================================================
+    // Login Helper
+    // ======================================================
+
+    async login(
+        accessToken,
+        refreshToken,
+    ) {
+
+        this.saveTokens(
+            accessToken,
+            refreshToken,
+        );
+
+        const user =
+            await this.loadCurrentUser();
+
+        return user;
+
     },
 
     // ======================================================
@@ -40,14 +153,21 @@ const authService = {
     // ======================================================
 
     logout() {
+
         localStorage.removeItem(
-            "access_token"
+            "access_token",
         );
 
         localStorage.removeItem(
-            "refresh_token"
+            "refresh_token",
         );
+
+        localStorage.removeItem(
+            "user",
+        );
+
     },
+
 };
 
 export default authService;

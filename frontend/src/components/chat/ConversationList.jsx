@@ -1,28 +1,18 @@
-import { useState } from "react";
-
-import useConversations from "../../hooks/useConversations";
+import "./ConversationList.css";
 
 import ConversationItem from "./ConversationItem";
 
-import "./ConversationList.css";
+export default function ConversationList({
 
-export default function ConversationList() {
+    conversations,
 
-    const {
+    loading,
 
-        conversations,
+    selectedConversation,
 
-        loading,
+    onSelectConversation,
 
-    } = useConversations();
-
-    const [
-
-        selectedConversation,
-
-        setSelectedConversation,
-
-    ] = useState(null);
+}) {
 
     if (loading) {
 
@@ -74,7 +64,7 @@ export default function ConversationList() {
                             }
 
                             onSelect={
-                                setSelectedConversation
+                                onSelectConversation
                             }
 
                         />

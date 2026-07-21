@@ -8,6 +8,8 @@ export default function ConversationItem({
 
 }) {
 
+    const user = conversation.other_user;
+
     return (
 
         <div
@@ -16,14 +18,16 @@ export default function ConversationItem({
                     ? "conversation-item active"
                     : "conversation-item"
             }
-            onClick={() =>
-                onSelect(conversation)
-            }
+            onClick={() => onSelect(conversation)}
         >
 
             <div className="conversation-avatar">
 
-                💬
+                {
+                    user.display_name
+                        ?.charAt(0)
+                        .toUpperCase()
+                }
 
             </div>
 
@@ -31,13 +35,16 @@ export default function ConversationItem({
 
                 <h4>
 
-                    Conversation
+                    {user.display_name}
 
                 </h4>
 
                 <p>
 
-                    {conversation.id}
+                    {
+                        conversation.last_message?.content ||
+                        "No messages yet"
+                    }
 
                 </p>
 

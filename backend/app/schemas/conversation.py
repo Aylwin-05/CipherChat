@@ -5,28 +5,57 @@ from pydantic import BaseModel, ConfigDict
 
 
 # ==========================================================
-# Create / Open Conversation
+# Create Conversation
 # ==========================================================
 
 class CreateConversationRequest(BaseModel):
-    """
-    Request to create or open a private conversation.
-    """
-
     user_id: UUID
 
 
 # ==========================================================
-# Conversation Response
+# Create Conversation Response
 # ==========================================================
 
-class ConversationResponse(BaseModel):
-    """
-    Conversation response.
-    """
-
+class ConversationCreateResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     created_at: datetime
     updated_at: datetime
+
+
+# ==========================================================
+# Other User
+# ==========================================================
+
+class ConversationUser(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    display_name: str
+    username: str
+    email: str
+    avatar_url: str | None
+    online_status: str
+
+
+# ==========================================================
+# Last Message
+# ==========================================================
+
+class LastMessage(BaseModel):
+    content: str | None = None
+    created_at: datetime | None = None
+
+
+# ==========================================================
+# Conversation List Response
+# ==========================================================
+
+class ConversationResponse(BaseModel):
+    id: UUID
+    updated_at: datetime
+
+    other_user: ConversationUser
+
+    last_message: LastMessage | None = None

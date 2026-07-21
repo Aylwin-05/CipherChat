@@ -1,9 +1,66 @@
+import { useEffect, useState } from "react";
+
 import Sidebar from "../../components/layout/Sidebar";
+
 import ConversationList from "../../components/chat/ConversationList";
+import ChatWindow from "../../components/chat/ChatWindow";
+
+import conversationService from "../../services/conversationService";
 
 import "./Dashboard.css";
 
 export default function Dashboard() {
+
+    const [
+        conversations,
+        setConversations,
+    ] = useState([]);
+
+    const [
+        loading,
+        setLoading,
+    ] = useState(true);
+
+    const [
+        selectedConversation,
+        setSelectedConversation,
+    ] = useState(null);
+
+    useEffect(() => {
+
+        loadConversations();
+
+    }, []);
+
+    async function loadConversations() {
+
+        try {
+
+            setLoading(true);
+
+            const data =
+                await conversationService.getConversations();
+
+            setConversations(data);
+
+            if (
+                data.length > 0 &&
+                !selectedConversation
+            ) {
+
+                setSelectedConversation(
+                    data[0]
+                );
+
+            }
+
+        } finally {
+
+            setLoading(false);
+
+        }
+
+    }
 
     return (
 
@@ -15,7 +72,11 @@ export default function Dashboard() {
 
                 <header className="dashboard-header">
 
-                    <h2>CipherChat</h2>
+                    <h2>
+
+                        CipherChat
+
+                    </h2>
 
                 </header>
 
@@ -29,23 +90,41 @@ export default function Dashboard() {
 
                         </h3>
 
-                        <ConversationList />
+                        <ConversationList
+
+                            conversations={conversations}
+
+                            loading={loading}
+
+                            selectedConversation={
+                                selectedConversation
+                            }
+
+                            onSelectConversation={
+                                setSelectedConversation
+                            }
+
+                        />
 
                     </div>
 
                     <div className="chat-panel">
 
-                        <h3>
+                        <ChatWindow
 
-                            Chat
+                            conversation={
+                                selectedConversation
+                            }
 
-                        </h3>
+                            conversations={
+                                conversations
+                            }
 
-                        <div className="placeholder">
+                            setConversations={
+                                setConversations
+                            }
 
-                            Select a conversation
-
-                        </div>
+                        />
 
                     </div>
 

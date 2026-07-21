@@ -9,7 +9,7 @@ from app.repositories.message_repository import (
     MessageRepository,
 )
 from app.services.message_service import MessageService
-from app.websocket.manager import manager
+from app.websocket.events import events
 
 
 class WebSocketService:
@@ -44,9 +44,6 @@ class WebSocketService:
         conversation_id: UUID,
         current_user: User,
     ) -> bool:
-        """
-        Returns True if the user belongs to the conversation.
-        """
 
         participants = (
             await self.conversation_repository.get_participants(
@@ -71,9 +68,6 @@ class WebSocketService:
         current_user: User,
         content: str,
     ) -> Message:
-        """
-        Store and broadcast a chat message.
-        """
 
         message = await self.message_service.send_message(
             conversation_id=conversation_id,
@@ -81,21 +75,10 @@ class WebSocketService:
             content=content,
         )
 
-        await manager.broadcast(
+        # Broadcast using the unified event system
+        await events.message(
             conversation_id,
-            {
-                "event": "message",
-                "data": {
-                    "id": str(message.id),
-                    "conversation_id": str(message.conversation_id),
-                    "sender_id": str(message.sender_id),
-                    "content": message.content,
-                    "message_type": message.message_type,
-                    "is_delivered": message.is_delivered,
-                    "is_read": message.is_read,
-                    "created_at": message.created_at.isoformat(),
-                },
-            },
+            message,
         )
 
         return message

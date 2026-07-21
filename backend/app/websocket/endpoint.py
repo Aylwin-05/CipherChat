@@ -7,6 +7,7 @@ from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.message_repository import MessageRepository
 from app.services.websocket_service import WebSocketService
 from app.websocket.auth import WebSocketAuth
+from app.websocket.events import events
 from app.websocket.manager import manager
 
 router = APIRouter()
@@ -75,6 +76,21 @@ async def websocket_endpoint(
             current_user.id,
             websocket,
         )
+        print("🔥 CONNECTED TO WEBSOCKET")
+        # Send connected event to this client
+        await events.connected(
+            websocket,
+            current_user.id,
+            conversation_id,
+        )
+
+        # Broadcast online status
+        print("🔥 SENDING PRESENCE EVENT")
+        await events.presence(
+            conversation_id,
+            current_user.id,
+            True,
+        )
 
         print(
             f"✅ {current_user.email} connected"
@@ -86,10 +102,13 @@ async def websocket_endpoint(
 
                 data = await websocket.receive_json()
 
-                content = data.get(
-                    "content",
-                    "",
-                ).strip()
+                content = (
+                    data.get(
+                        "content",
+                        "",
+                    )
+                    .strip()
+                )
 
                 if not content:
                     continue
@@ -105,6 +124,14 @@ async def websocket_endpoint(
             manager.disconnect(
                 conversation_id,
                 current_user.id,
+                websocket,
+            )
+
+            # Broadcast offline status
+            await events.presence(
+                conversation_id,
+                current_user.id,
+                False,
             )
 
             print(

@@ -30,15 +30,40 @@ class MessageRepository(BaseRepository):
         self,
         conversation_id: UUID,
     ):
+
         result = await self.execute(
             select(Message)
             .where(
                 Message.conversation_id == conversation_id
             )
-            .order_by(Message.created_at.asc())
+            .order_by(
+                Message.created_at.asc()
+            )
         )
 
         return result.scalars().all()
+
+    # ==========================================================
+    # Get Last Message
+    # ==========================================================
+
+    async def get_last_message(
+        self,
+        conversation_id: UUID,
+    ) -> Message | None:
+
+        result = await self.execute(
+            select(Message)
+            .where(
+                Message.conversation_id == conversation_id
+            )
+            .order_by(
+                Message.created_at.desc()
+            )
+            .limit(1)
+        )
+
+        return result.scalar_one_or_none()
 
     # ==========================================================
     # Get Message By ID
@@ -67,6 +92,7 @@ class MessageRepository(BaseRepository):
     ):
 
         if message.delivered_at is None:
+
             message.delivered_at = datetime.now(
                 timezone.utc
             )
@@ -85,11 +111,13 @@ class MessageRepository(BaseRepository):
         message.is_read = True
 
         if message.read_at is None:
+
             message.read_at = datetime.now(
                 timezone.utc
             )
 
         if message.delivered_at is None:
+
             message.delivered_at = datetime.now(
                 timezone.utc
             )
