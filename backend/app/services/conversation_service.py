@@ -1,16 +1,19 @@
 from uuid import UUID
 
+from app.models.conversation import Conversation
+from app.models.conversation_participant import (
+    ConversationParticipant,
+)
+from app.models.user import User
+
 from app.repositories.conversation_repository import (
     ConversationRepository,
 )
 from app.repositories.message_repository import (
     MessageRepository,
 )
-from app.models.conversation import Conversation
-from app.models.conversation_participant import (
-    ConversationParticipant,
-)
-from app.models.user import User
+
+from app.websocket.connection_manager import manager
 
 
 class ConversationService:
@@ -100,6 +103,19 @@ class ConversationService:
                 )
             )
 
+            if other_user is None:
+                continue
+
+            # --------------------------------------------------
+            # LIVE ONLINE STATUS
+            # --------------------------------------------------
+
+            other_user.online_status = (
+                "online"
+                if manager.is_online(other_user.id)
+                else "offline"
+            )
+
             last_message = (
                 await self.message_repository.get_last_message(
                     conversation.id
@@ -110,9 +126,7 @@ class ConversationService:
                 {
                     "id": conversation.id,
                     "updated_at": conversation.updated_at,
-
                     "other_user": other_user,
-
                     "last_message": (
                         {
                             "content": last_message.content,

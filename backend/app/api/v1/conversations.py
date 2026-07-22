@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
+
 from app.models.user import User
 
 from app.repositories.conversation_repository import (
@@ -13,7 +14,6 @@ from app.repositories.message_repository import (
 )
 
 from app.schemas.conversation import (
-    ConversationCreateResponse,
     ConversationResponse,
     CreateConversationRequest,
 )
@@ -29,12 +29,12 @@ router = APIRouter(
 
 
 # ==========================================================
-# Open/Create Private Conversation
+# Open/Create Conversation
 # ==========================================================
 
 @router.post(
     "/private",
-    response_model=ConversationCreateResponse,
+    response_model=ConversationResponse,
 )
 async def create_private_conversation(
     request: CreateConversationRequest,
@@ -42,7 +42,6 @@ async def create_private_conversation(
     db: AsyncSession = Depends(get_db),
 ):
     conversation_repository = ConversationRepository(db)
-
     message_repository = MessageRepository(db)
 
     service = ConversationService(
@@ -51,8 +50,8 @@ async def create_private_conversation(
     )
 
     return await service.get_or_create_private_conversation(
-        current_user=current_user,
-        other_user_id=request.user_id,
+        current_user,
+        request.user_id,
     )
 
 
@@ -60,16 +59,12 @@ async def create_private_conversation(
 # My Conversations
 # ==========================================================
 
-@router.get(
-    "/",
-    response_model=list[ConversationResponse],
-)
+@router.get("/")
 async def my_conversations(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     conversation_repository = ConversationRepository(db)
-
     message_repository = MessageRepository(db)
 
     service = ConversationService(
@@ -78,5 +73,5 @@ async def my_conversations(
     )
 
     return await service.my_conversations(
-        current_user=current_user,
+        current_user
     )

@@ -45,9 +45,12 @@ class ConnectionManager:
             websocket
         )
 
-        print(
-            f"[CONNECTED] User {user_id} joined {conversation_id}"
-        )
+        print("\n========== CONNECT ==========")
+        print(f"User: {user_id}")
+        print(f"Conversation: {conversation_id}")
+        print("Current Online Users:")
+        print(list(self.user_connections.keys()))
+        print("=============================\n")
 
     # ==========================================================
     # Disconnect
@@ -94,9 +97,11 @@ class ConnectionManager:
             if not self.user_connections[user_id]:
                 del self.user_connections[user_id]
 
-        print(
-            f"[DISCONNECTED] User {user_id}"
-        )
+        print("\n======== DISCONNECT =========")
+        print(f"User: {user_id}")
+        print("Remaining Online Users:")
+        print(list(self.user_connections.keys()))
+        print("=============================\n")
 
     # ==========================================================
     # Broadcast to Conversation
@@ -171,12 +176,27 @@ class ConnectionManager:
         self,
         user_id: UUID,
     ) -> bool:
-        return (
+
+        print("\n========== ONLINE CHECK ==========")
+        print(f"Checking User: {user_id}")
+        print("Current Online Users:")
+        print(list(self.user_connections.keys()))
+
+        online = (
             user_id in self.user_connections
             and len(self.user_connections[user_id]) > 0
         )
 
+        print(f"Result: {online}")
+        print("==================================\n")
+
+        return online
+
     def online_users(self):
+        print("\nONLINE USERS:")
+        print(list(self.user_connections.keys()))
+        print()
+
         return list(
             self.user_connections.keys()
         )

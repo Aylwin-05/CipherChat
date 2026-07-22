@@ -23,9 +23,10 @@ async def websocket_endpoint(
     Responsibilities:
     - Authenticate user
     - Load user
+    - Verify conversation access
     - Connect socket
-    - Receive events
-    - Delegate all event handling to WebSocketService
+    - Broadcast presence
+    - Delegate events
     """
 
     # ==========================================================
@@ -84,12 +85,23 @@ async def websocket_endpoint(
             websocket,
         )
 
+        # Notify current client
         await websocket.send_json(
             {
                 "event": "connected",
                 "conversation_id": str(conversation_id),
                 "user_id": str(current_user.id),
             }
+        )
+
+        # Notify everyone in this conversation
+        await manager.broadcast(
+            conversation_id,
+            {
+                "event": "presence",
+                "user_id": str(current_user.id),
+                "online": True,
+            },
         )
 
         print(
@@ -135,12 +147,14 @@ async def websocket_endpoint(
             )
 
             try:
+
                 await websocket.send_json(
                     {
                         "event": "error",
                         "message": "Internal server error.",
                     }
                 )
+
             except Exception:
                 pass
 
@@ -150,4 +164,14 @@ async def websocket_endpoint(
                 conversation_id,
                 current_user.id,
                 websocket,
+            )
+
+            # Notify everyone user went offline
+            await manager.broadcast(
+                conversation_id,
+                {
+                    "event": "presence",
+                    "user_id": str(current_user.id),
+                    "online": False,
+                },
             )
