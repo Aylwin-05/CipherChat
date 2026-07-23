@@ -1,17 +1,27 @@
+from base64 import b64encode
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 from app.models.user import User
+from app.repositories.attachment_repository import AttachmentRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.message_repository import MessageRepository
 from app.schemas.message import (
     MessageResponse,
     SendMessageRequest,
 )
+from app.services.attachment_service import AttachmentService
 from app.services.message_service import MessageService
 
 router = APIRouter(
@@ -21,7 +31,49 @@ router = APIRouter(
 
 
 # ==========================================================
-# Send Message
+# Convert DB model -> API response
+# ==========================================================
+
+def serialize_message(message):
+
+    return MessageResponse(
+        id=message.id,
+        conversation_id=message.conversation_id,
+        sender_id=message.sender_id,
+
+        ciphertext=b64encode(
+            message.ciphertext
+        ).decode(),
+
+        encrypted_key=b64encode(
+            message.encrypted_key
+        ).decode(),
+
+        nonce=b64encode(
+            message.nonce
+        ).decode(),
+
+        crypto_version=message.crypto_version,
+
+        message_type=message.message_type,
+        reply_to_id=message.reply_to_id,
+
+        edited=message.edited,
+        deleted_for_everyone=message.deleted_for_everyone,
+
+        is_read=message.is_read,
+        delivered_at=message.delivered_at,
+        read_at=message.read_at,
+
+        created_at=message.created_at,
+        updated_at=message.updated_at,
+
+        attachments=[],
+    )
+
+
+# ==========================================================
+# SEND ENCRYPTED MESSAGE
 # ==========================================================
 
 @router.post(
@@ -33,22 +85,43 @@ async def send_message(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+
     message_repository = MessageRepository(db)
     conversation_repository = ConversationRepository(db)
+    attachment_repository = AttachmentRepository(db)
+
+    attachment_service = AttachmentService(
+        attachment_repository
+    )
 
     service = MessageService(
         message_repository,
         conversation_repository,
+        attachment_service,
     )
 
     try:
-        return await service.send_message(
+
+        message = await service.send_message(
             current_user=current_user,
             conversation_id=request.conversation_id,
-            content=request.content,
+            ciphertext=request.ciphertext,
+            encrypted_key=request.encrypted_key,
+            nonce=request.nonce,
+            message_type=request.message_type,
+            reply_to_id=request.reply_to_id,
         )
 
+        await db.commit()
+
+        await db.refresh(message)
+
+        return serialize_message(message)
+
     except ValueError as e:
+
+        await db.rollback()
+
         raise HTTPException(
             status_code=400,
             detail=str(e),
@@ -56,7 +129,7 @@ async def send_message(
 
 
 # ==========================================================
-# Get Conversation Messages
+# GET CONVERSATION MESSAGES
 # ==========================================================
 
 @router.get(
@@ -68,21 +141,35 @@ async def get_messages(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+
     message_repository = MessageRepository(db)
     conversation_repository = ConversationRepository(db)
+    attachment_repository = AttachmentRepository(db)
+
+    attachment_service = AttachmentService(
+        attachment_repository
+    )
 
     service = MessageService(
         message_repository,
         conversation_repository,
+        attachment_service,
     )
 
     try:
-        return await service.get_messages(
+
+        messages = await service.get_messages(
             current_user=current_user,
             conversation_id=conversation_id,
         )
 
+        return [
+            serialize_message(message)
+            for message in messages
+        ]
+
     except ValueError as e:
+
         raise HTTPException(
             status_code=400,
             detail=str(e),

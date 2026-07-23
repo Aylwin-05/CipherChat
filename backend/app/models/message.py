@@ -1,6 +1,13 @@
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    LargeBinary,
+    String,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -9,22 +16,16 @@ from app.database.base import Base
 
 class Message(Base):
     """
-    Represents a chat message.
+    End-to-End Encrypted Message
 
-    Lifecycle:
+    Server NEVER stores plaintext.
 
-    Created
-        ↓
-    Delivered
-        ↓
-    Read
+    Stored:
+        ciphertext
+        encrypted AES key
+        nonce
 
-    Future:
-    - End-to-End Encryption
-    - Reply
-    - Forward
-    - Reactions
-    - Attachments
+    Plaintext exists only on client devices.
     """
 
     __tablename__ = "messages"
@@ -58,23 +59,59 @@ class Message(Base):
     )
 
     # ==========================================================
-    # Message
+    # Encrypted Payload
     # ==========================================================
 
-    content: Mapped[str] = mapped_column(
-        Text,
+    ciphertext: Mapped[bytes] = mapped_column(
+        LargeBinary,
         nullable=False,
     )
 
+    encrypted_key: Mapped[bytes] = mapped_column(
+        LargeBinary,
+        nullable=False,
+    )
+
+    nonce: Mapped[bytes] = mapped_column(
+        LargeBinary,
+        nullable=False,
+    )
+
+    # ==========================================================
+    # Metadata
+    # ==========================================================
+
     message_type: Mapped[str] = mapped_column(
-        String(20),
+        String(30),
         default="text",
         nullable=False,
     )
 
-    # ==========================================================
-    # Delivery Status
-    # ==========================================================
+    crypto_version: Mapped[int] = mapped_column(
+        default=1,
+        nullable=False,
+    )
+
+    reply_to_id: Mapped[UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "messages.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+
+    edited: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    deleted_for_everyone: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
 
     is_read: Mapped[bool] = mapped_column(
         Boolean,
@@ -91,10 +128,6 @@ class Message(Base):
         DateTime(timezone=True),
         nullable=True,
     )
-
-    # ==========================================================
-    # Audit
-    # ==========================================================
 
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),

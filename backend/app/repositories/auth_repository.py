@@ -5,28 +5,29 @@ from sqlalchemy import delete, select
 
 from app.models.otp import OTPCode
 from app.models.user import User
+from app.models.user_key import UserKey
 from app.repositories.base_repository import BaseRepository
 
 
 class AuthRepository(BaseRepository):
     """
-    Repository responsible for all authentication-related
-    database operations.
+    Repository responsible for authentication,
+    OTPs and cryptographic identity keys.
     """
 
-    def __init__(self, db):
-        super().__init__(db)
-
     # ==========================================================
-    # User Operations
+    # Users
     # ==========================================================
 
     async def get_user_by_email(
         self,
         email: str,
     ) -> User | None:
+
         result = await self.execute(
-            select(User).where(User.email == email)
+            select(User).where(
+                User.email == email
+            )
         )
 
         return result.scalar_one_or_none()
@@ -35,8 +36,11 @@ class AuthRepository(BaseRepository):
         self,
         user_id: UUID,
     ) -> User | None:
+
         result = await self.execute(
-            select(User).where(User.id == user_id)
+            select(User).where(
+                User.id == user_id
+            )
         )
 
         return result.scalar_one_or_none()
@@ -45,27 +49,68 @@ class AuthRepository(BaseRepository):
         self,
         user: User,
     ) -> User:
-        return await self.create(user)
+
+        self.db.add(user)
+
+        await self.db.flush()
+
+        return user
 
     # ==========================================================
-    # OTP Operations
+    # User Keys
+    # ==========================================================
+
+    async def create_user_key(
+        self,
+        key: UserKey,
+    ) -> UserKey:
+
+        self.db.add(key)
+
+        await self.db.flush()
+
+        return key
+
+    async def get_user_key(
+        self,
+        user_id: UUID,
+    ) -> UserKey | None:
+
+        result = await self.execute(
+            select(UserKey).where(
+                UserKey.user_id == user_id
+            )
+        )
+
+        return result.scalar_one_or_none()
+
+    # ==========================================================
+    # OTP
     # ==========================================================
 
     async def create_otp(
         self,
         otp: OTPCode,
     ) -> OTPCode:
+
         return await self.create(otp)
 
     async def get_latest_otp(
         self,
         email: str,
     ) -> OTPCode | None:
+
         result = await self.execute(
             select(OTPCode)
-            .where(OTPCode.email == email)
-            .where(OTPCode.is_used.is_(False))
-            .order_by(OTPCode.created_at.desc())
+            .where(
+                OTPCode.email == email
+            )
+            .where(
+                OTPCode.is_used.is_(False)
+            )
+            .order_by(
+                OTPCode.created_at.desc()
+            )
         )
 
         return result.scalar_one_or_none()
@@ -73,27 +118,27 @@ class AuthRepository(BaseRepository):
     async def mark_otp_used(
         self,
         otp: OTPCode,
-    ) -> None:
+    ):
+
         otp.is_used = True
+
         await self.update()
 
     async def increment_attempts(
         self,
         otp: OTPCode,
-    ) -> None:
+    ):
+
         otp.attempts += 1
+
         await self.update()
 
     async def delete_existing_otps(
         self,
         email: str,
-    ) -> int:
-        """
-        Delete all previous OTPs for an email.
-        Only the newest OTP should remain valid.
-        """
+    ):
 
-        result = await self.execute(
+        await self.execute(
             delete(OTPCode).where(
                 OTPCode.email == email
             )
@@ -101,19 +146,37 @@ class AuthRepository(BaseRepository):
 
         await self.update()
 
-        return result.rowcount or 0
+    async def delete_expired_otps(
+        self,
+    ):
 
-    async def delete_expired_otps(self) -> int:
-        """
-        Delete all expired OTP records.
-        """
-
-        result = await self.execute(
+        await self.execute(
             delete(OTPCode).where(
-                OTPCode.expires_at < datetime.now(timezone.utc)
+                OTPCode.expires_at
+                < datetime.now(timezone.utc)
             )
         )
 
         await self.update()
 
-        return result.rowcount or 0
+    # ==========================================================
+    # Commit
+    # ==========================================================
+
+    async def commit(self):
+
+        await self.db.commit()
+
+    async def rollback(self):
+
+        await self.db.rollback()
+
+    async def refresh_all(
+        self,
+        user: User,
+        key: UserKey,
+    ):
+
+        await self.db.refresh(user)
+
+        await self.db.refresh(key)

@@ -11,7 +11,10 @@ class FriendService:
     Business logic for friendships.
     """
 
-    def __init__(self, repository: FriendRepository):
+    def __init__(
+        self,
+        repository: FriendRepository,
+    ):
         self.repository = repository
 
     # ==========================================================
@@ -24,32 +27,42 @@ class FriendService:
         receiver_id: UUID,
     ) -> Friendship:
 
-        # Cannot send request to yourself
-        if sender.id == receiver_id:
-            raise ValueError(
-                "You cannot send a friend request to yourself."
+        try:
+
+            if sender.id == receiver_id:
+                raise ValueError(
+                    "You cannot send a friend request to yourself."
+                )
+
+            existing = await self.repository.get_existing_friendship(
+                sender.id,
+                receiver_id,
             )
 
-        # Check for existing friendship/request
-        existing = await self.repository.get_existing_friendship(
-            sender.id,
-            receiver_id,
-        )
+            if existing:
+                raise ValueError(
+                    "Friend request already exists."
+                )
 
-        if existing:
-            raise ValueError(
-                "Friend request already exists."
+            friendship = Friendship(
+                sender_id=sender.id,
+                receiver_id=receiver_id,
+                status=FriendRequestStatus.PENDING.value,
             )
 
-        friendship = Friendship(
-            sender_id=sender.id,
-            receiver_id=receiver_id,
-            status=FriendRequestStatus.PENDING.value,
-        )
+            friendship = await self.repository.create_request(
+                friendship
+            )
 
-        return await self.repository.create_request(
-            friendship
-        )
+            await self.repository.commit()
+
+            return friendship
+
+        except Exception:
+
+            await self.repository.rollback()
+
+            raise
 
     # ==========================================================
     # Accept Request
@@ -61,44 +74,37 @@ class FriendService:
         current_user: User,
     ) -> Friendship:
 
-        print("\n========== ACCEPT REQUEST DEBUG ==========")
-        print("Friendship ID :", friendship_id)
-        print("Current User  :", current_user.id)
+        try:
 
-        friendship = await self.repository.get_by_id(
-            friendship_id
-        )
-
-        print("Repository Result :", friendship)
-
-        if friendship is None:
-            print("ERROR: Friendship not found.")
-            print("=========================================\n")
-            raise ValueError(
-                "Friend request not found."
+            friendship = await self.repository.get_by_id(
+                friendship_id
             )
 
-        print("Sender   :", friendship.sender_id)
-        print("Receiver :", friendship.receiver_id)
-        print("Status   :", friendship.status)
+            if friendship is None:
+                raise ValueError(
+                    "Friend request not found."
+                )
 
-        if friendship.receiver_id != current_user.id:
-            print("ERROR: Current user is NOT the receiver.")
-            print("=========================================\n")
-            raise ValueError(
-                "Not authorized."
+            if friendship.receiver_id != current_user.id:
+                raise ValueError(
+                    "Not authorized."
+                )
+
+            friendship.status = (
+                FriendRequestStatus.ACCEPTED.value
             )
 
-        friendship.status = (
-            FriendRequestStatus.ACCEPTED.value
-        )
+            await self.repository.save()
 
-        await self.repository.save()
+            await self.repository.commit()
 
-        print("SUCCESS: Friend request accepted.")
-        print("=========================================\n")
+            return friendship
 
-        return friendship
+        except Exception:
+
+            await self.repository.rollback()
+
+            raise
 
     # ==========================================================
     # Reject Request
@@ -110,25 +116,35 @@ class FriendService:
         current_user: User,
     ):
 
-        friendship = await self.repository.get_by_id(
-            friendship_id
-        )
+        try:
 
-        if friendship is None:
-            raise ValueError(
-                "Friend request not found."
+            friendship = await self.repository.get_by_id(
+                friendship_id
             )
 
-        if friendship.receiver_id != current_user.id:
-            raise ValueError(
-                "Not authorized."
+            if friendship is None:
+                raise ValueError(
+                    "Friend request not found."
+                )
+
+            if friendship.receiver_id != current_user.id:
+                raise ValueError(
+                    "Not authorized."
+                )
+
+            friendship.status = (
+                FriendRequestStatus.REJECTED.value
             )
 
-        friendship.status = (
-            FriendRequestStatus.REJECTED.value
-        )
+            await self.repository.save()
 
-        await self.repository.save()
+            await self.repository.commit()
+
+        except Exception:
+
+            await self.repository.rollback()
+
+            raise
 
     # ==========================================================
     # Remove Friend
@@ -140,24 +156,36 @@ class FriendService:
         current_user: User,
     ):
 
-        friendship = await self.repository.get_by_id(
-            friendship_id
-        )
+        try:
 
-        if friendship is None:
-            raise ValueError(
-                "Friendship not found."
+            friendship = await self.repository.get_by_id(
+                friendship_id
             )
 
-        if (
-            friendship.sender_id != current_user.id
-            and friendship.receiver_id != current_user.id
-        ):
-            raise ValueError(
-                "Not authorized."
+            if friendship is None:
+                raise ValueError(
+                    "Friendship not found."
+                )
+
+            if (
+                friendship.sender_id != current_user.id
+                and friendship.receiver_id != current_user.id
+            ):
+                raise ValueError(
+                    "Not authorized."
+                )
+
+            await self.repository.remove(
+                friendship
             )
 
-        await self.repository.remove(friendship)
+            await self.repository.commit()
+
+        except Exception:
+
+            await self.repository.rollback()
+
+            raise
 
     # ==========================================================
     # Pending Requests
@@ -167,6 +195,7 @@ class FriendService:
         self,
         current_user: User,
     ):
+
         return await self.repository.get_pending_requests(
             current_user.id
         )
@@ -179,6 +208,7 @@ class FriendService:
         self,
         current_user: User,
     ):
+
         return await self.repository.get_friends(
             current_user.id
         )

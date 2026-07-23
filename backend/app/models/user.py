@@ -9,7 +9,11 @@ from sqlalchemy import (
     Text,
     Uuid,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import (
+    Mapped,
+    mapped_column,
+    relationship,
+)
 
 from app.core.enums import OnlineStatus
 from app.database.base import Base
@@ -28,12 +32,20 @@ class User(Base, TimestampMixin):
         Index("ix_users_username", "username"),
     )
 
+    # ==========================================================
+    # Identity
+    # ==========================================================
+
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         primary_key=True,
         default=uuid.uuid4,
         comment="Primary UUID identifier.",
     )
+
+    # ==========================================================
+    # Authentication
+    # ==========================================================
 
     email: Mapped[str] = mapped_column(
         String(255),
@@ -55,6 +67,10 @@ class User(Base, TimestampMixin):
         comment="User display name.",
     )
 
+    # ==========================================================
+    # Profile
+    # ==========================================================
+
     bio: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
@@ -67,11 +83,9 @@ class User(Base, TimestampMixin):
         comment="Profile picture URL.",
     )
 
-    public_key: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-        comment="Public encryption key used for end-to-end encryption.",
-    )
+    # ==========================================================
+    # Account Status
+    # ==========================================================
 
     is_verified: Mapped[bool] = mapped_column(
         Boolean,
@@ -99,6 +113,21 @@ class User(Base, TimestampMixin):
         nullable=True,
         comment="Last active timestamp.",
     )
+
+    # ==========================================================
+    # Relationships
+    # ==========================================================
+
+    key = relationship(
+        "UserKey",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+    # ==========================================================
+    # Representation
+    # ==========================================================
 
     def __repr__(self) -> str:
         return (

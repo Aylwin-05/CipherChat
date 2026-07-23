@@ -5,7 +5,11 @@ from app.api.v1.conversations import (
     router as conversations_router,
 )
 from app.api.v1.friends import router as friends_router
+from app.api.v1.keys import router as keys_router
 from app.api.v1.messages import router as messages_router
+from app.api.v1.attachments import (
+    router as attachments_router,
+)
 from app.api.v1.users import router as users_router
 
 api_router = APIRouter()
@@ -39,3 +43,15 @@ api_router.include_router(conversations_router)
 # ==========================================================
 
 api_router.include_router(messages_router)
+
+# ==========================================================
+# Attachments
+# ==========================================================
+
+api_router.include_router(attachments_router)
+
+# ==========================================================
+# Encryption Keys
+# ==========================================================
+
+api_router.include_router(keys_router)

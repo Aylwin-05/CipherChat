@@ -2,8 +2,10 @@ from datetime import datetime, timedelta, timezone
 
 from app.models.otp import OTPCode
 from app.models.user import User
+from app.models.user_key import UserKey
 from app.repositories.auth_repository import AuthRepository
 from app.services.email_service import EmailService
+from app.services.encryption_service import EncryptionService
 from app.utils.security import SecurityUtils
 
 
@@ -30,20 +32,12 @@ class AuthService:
         self,
         email: str,
     ) -> bool:
-        """
-        Generate, store and send OTP.
-        """
 
-        # Remove expired OTPs
         await self.repository.delete_expired_otps()
-
-        # Remove previous OTPs for this email
         await self.repository.delete_existing_otps(email)
 
-        # Generate OTP
         otp = SecurityUtils.generate_otp()
 
-        # Hash OTP
         otp_hash = SecurityUtils.hash_otp(otp)
 
         otp_record = OTPCode(
@@ -55,7 +49,9 @@ class AuthService:
 
         await self.repository.create_otp(otp_record)
 
-        # Send Email
+        # Commit OTP so it exists before sending email
+        await self.repository.commit()
+
         self.email_service.send_otp_email(
             recipient_email=email,
             otp=otp,
@@ -71,54 +67,133 @@ class AuthService:
         self,
         email: str,
         otp: str,
-    ) -> User | None:
-        """
-        Verify OTP and return authenticated user.
-        """
+    ):
 
-        otp_record = await self.repository.get_latest_otp(email)
+        print("\n========== VERIFY OTP ==========")
+        print("Email:", email)
+        print("OTP Entered:", otp)
+
+        otp_record = await self.repository.get_latest_otp(
+            email
+        )
+
+        print("OTP Record:", otp_record)
 
         if otp_record is None:
+            print("FAILED -> No OTP record found")
             return None
 
         if otp_record.is_used:
+            print("FAILED -> OTP already used")
             return None
 
         if otp_record.attempts >= self.MAX_ATTEMPTS:
+            print("FAILED -> Maximum attempts exceeded")
             return None
 
-        if datetime.now(timezone.utc) > otp_record.expires_at:
+        if (
+            datetime.now(timezone.utc)
+            > otp_record.expires_at
+        ):
+            print("FAILED -> OTP expired")
             return None
 
         if not SecurityUtils.verify_otp(
             otp,
             otp_record.otp_hash,
         ):
+            print("FAILED -> Incorrect OTP")
+
             await self.repository.increment_attempts(
                 otp_record
             )
+
+            await self.repository.commit()
+
             return None
+
+        print("SUCCESS -> OTP Verified")
 
         await self.repository.mark_otp_used(
             otp_record
         )
 
-        user = await self.repository.get_user_by_email(
-            email
+        # =====================================================
+        # Existing User
+        # =====================================================
+
+        existing_user = (
+            await self.repository.get_user_by_email(
+                email
+            )
         )
 
-        if user:
-            return user
+        if existing_user:
+
+            await self.repository.commit()
+
+            print("Existing user login")
+
+            return {
+                "user": existing_user,
+                "private_key": None,
+            }
+
+        # =====================================================
+        # New User Registration
+        # =====================================================
+
+        print("Creating new user...")
 
         username = email.split("@")[0]
 
-        new_user = User(
+        keys = (
+            EncryptionService.generate_key_pair()
+        )
+
+        user = User(
             email=email,
             username=username,
             display_name=username,
             is_verified=True,
         )
 
-        return await self.repository.create_user(
-            new_user
-        )
+        try:
+
+            await self.repository.create_user(user)
+
+            user_key = UserKey(
+                user_id=user.id,
+                public_key=keys["public_key"],
+                private_key_encrypted=keys[
+                    "encrypted_private_key"
+                ],
+            )
+
+            await self.repository.create_user_key(
+                user_key
+            )
+
+            await self.repository.commit()
+
+            await self.repository.refresh_all(
+                user,
+                user_key,
+            )
+
+            print("New user created successfully")
+
+        except Exception as e:
+
+            await self.repository.rollback()
+
+            print("Registration failed:", e)
+
+            raise
+
+        return {
+            "user": user,
+            "private_key": EncryptionService.export_private_key_base64(
+                keys["private_key"]
+            ),
+        }

@@ -17,7 +17,6 @@ router = APIRouter(
     tags=["Authentication"],
 )
 
-
 # ==========================================================
 # Send OTP
 # ==========================================================
@@ -30,10 +29,14 @@ async def send_otp(
     request: SendOTPRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    repository = AuthRepository(db)
-    auth_service = AuthService(repository)
 
-    await auth_service.send_otp(request.email)
+    repository = AuthRepository(db)
+
+    service = AuthService(repository)
+
+    await service.send_otp(
+        request.email,
+    )
 
     return MessageResponse(
         success=True,
@@ -53,27 +56,35 @@ async def verify_otp(
     request: VerifyOTPRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    repository = AuthRepository(db)
-    auth_service = AuthService(repository)
-    jwt_service = JWTService()
 
-    user = await auth_service.verify_otp(
+    repository = AuthRepository(db)
+
+    service = AuthService(repository)
+
+    jwt = JWTService()
+
+    result = await service.verify_otp(
         request.email,
         request.otp,
     )
 
-    if user is None:
+    if result is None:
+
         raise HTTPException(
             status_code=400,
             detail="Invalid or expired OTP.",
         )
 
-    access_token = jwt_service.create_access_token(
+    user = result["user"]
+
+    private_key = result["private_key"]
+
+    access_token = jwt.create_access_token(
         user_id=str(user.id),
         email=user.email,
     )
 
-    refresh_token = jwt_service.create_refresh_token(
+    refresh_token = jwt.create_refresh_token(
         user_id=str(user.id),
         email=user.email,
     )
@@ -81,4 +92,6 @@ async def verify_otp(
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
+        user=user,
+        private_key=private_key,
     )

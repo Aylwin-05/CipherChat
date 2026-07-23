@@ -4,7 +4,7 @@ from app.models.friendship import Friendship
 from app.models.message import Message
 from app.models.otp import OTPCode
 from app.models.user import User
-
+from app.models.attachment import Attachment
 __all__ = [
     "User",
     "OTPCode",
@@ -12,4 +12,5 @@ __all__ = [
     "Conversation",
     "ConversationParticipant",
     "Message",
+    "Attachment",
 ]
