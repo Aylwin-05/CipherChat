@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from sqlalchemy import and_, or_, select
-
+from sqlalchemy.orm import selectinload
 from app.core.enums import FriendRequestStatus
 from app.models.friendship import Friendship
 from app.repositories.base_repository import BaseRepository
@@ -59,9 +59,21 @@ class FriendRepository(BaseRepository):
     ) -> Friendship | None:
 
         result = await self.execute(
-            select(Friendship).where(
+
+            select(Friendship)
+
+            .options(
+
+                selectinload(Friendship.sender),
+
+                selectinload(Friendship.receiver),
+
+            )
+
+            .where(
                 Friendship.id == friendship_id
             )
+
         )
 
         return result.scalar_one_or_none()
@@ -76,13 +88,30 @@ class FriendRepository(BaseRepository):
     ):
 
         result = await self.execute(
+
             select(Friendship)
-            .where(
-                Friendship.receiver_id == receiver_id,
-                Friendship.status
-                == FriendRequestStatus.PENDING.value,
+
+            .options(
+
+                selectinload(Friendship.sender),
+
+                selectinload(Friendship.receiver),
+
             )
-            .order_by(Friendship.created_at.desc())
+
+            .where(
+
+                Friendship.receiver_id == receiver_id,
+
+                Friendship.status ==
+                FriendRequestStatus.PENDING.value,
+
+            )
+
+            .order_by(
+                Friendship.created_at.desc()
+            )
+
         )
 
         return result.scalars().all()
@@ -97,14 +126,32 @@ class FriendRepository(BaseRepository):
     ):
 
         result = await self.execute(
-            select(Friendship).where(
-                Friendship.status
-                == FriendRequestStatus.ACCEPTED.value,
-                or_(
-                    Friendship.sender_id == user_id,
-                    Friendship.receiver_id == user_id,
-                ),
+
+            select(Friendship)
+
+            .options(
+
+                selectinload(Friendship.sender),
+
+                selectinload(Friendship.receiver),
+
             )
+
+            .where(
+
+                Friendship.status ==
+                FriendRequestStatus.ACCEPTED.value,
+
+                or_(
+
+                    Friendship.sender_id == user_id,
+
+                    Friendship.receiver_id == user_id,
+
+                ),
+
+            )
+
         )
 
         return result.scalars().all()

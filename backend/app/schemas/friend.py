@@ -5,25 +5,40 @@ from pydantic import BaseModel, ConfigDict
 
 
 # ==========================================================
+# User Summary
+# ==========================================================
+
+class FriendUser(BaseModel):
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+
+    username: str
+
+    display_name: str
+
+    email: str
+
+    online_status: str
+
+    avatar_url: str | None = None
+
+
+# ==========================================================
 # Send Friend Request
 # ==========================================================
 
 class SendFriendRequest(BaseModel):
-    """
-    Request body for sending a friend request.
-    """
 
     receiver_id: UUID
 
 
 # ==========================================================
-# Respond to Friend Request
+# Friend Request Action
 # ==========================================================
 
 class FriendRequestAction(BaseModel):
-    """
-    Accept or reject a friend request.
-    """
 
     friendship_id: UUID
 
@@ -33,27 +48,30 @@ class FriendRequestAction(BaseModel):
 # ==========================================================
 
 class FriendResponse(BaseModel):
-    """
-    Friend request response model.
-    """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+
     sender_id: UUID
+
     receiver_id: UUID
+
     status: str
+
     created_at: datetime
+
+    sender: FriendUser
+
+    receiver: FriendUser
 
 
 # ==========================================================
-# Simple Message
+# Generic Message
 # ==========================================================
 
 class FriendMessage(BaseModel):
-    """
-    Standard response message.
-    """
 
     success: bool
+
     message: str

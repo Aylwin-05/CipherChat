@@ -4,12 +4,18 @@ import Sidebar from "../../components/layout/Sidebar";
 
 import ConversationList from "../../components/chat/ConversationList";
 import ChatWindow from "../../components/chat/ChatWindow";
+import FriendsPage from "../../components/friends/FriendsPage";
 
 import conversationService from "../../services/conversationService";
 
 import "./Dashboard.css";
 
 export default function Dashboard() {
+
+    const [
+        currentPage,
+        setCurrentPage,
+    ] = useState("chats");
 
     const [
         conversations,
@@ -44,8 +50,11 @@ export default function Dashboard() {
             setConversations(data);
 
             if (
+
                 data.length > 0 &&
+
                 !selectedConversation
+
             ) {
 
                 setSelectedConversation(
@@ -54,9 +63,42 @@ export default function Dashboard() {
 
             }
 
-        } finally {
+        }
+
+        finally {
 
             setLoading(false);
+
+        }
+
+    }
+
+    //----------------------------------------------------------
+    // Start chat from Friends page
+    //----------------------------------------------------------
+
+    async function handleStartChat(friend) {
+
+        try {
+
+            /*
+                For now we'll simply switch back
+                to Chats.
+
+                In the next step we'll make this:
+
+                - Find existing conversation
+                - OR create one automatically
+                - Then open it
+            */
+
+            setCurrentPage("chats");
+
+        }
+
+        catch (error) {
+
+            console.error(error);
 
         }
 
@@ -66,7 +108,13 @@ export default function Dashboard() {
 
         <div className="dashboard">
 
-            <Sidebar />
+            <Sidebar
+
+                currentPage={currentPage}
+
+                setCurrentPage={setCurrentPage}
+
+            />
 
             <div className="dashboard-main">
 
@@ -80,55 +128,81 @@ export default function Dashboard() {
 
                 </header>
 
-                <div className="dashboard-content">
+                {
 
-                    <div className="conversation-panel">
+                    currentPage === "friends"
 
-                        <h3>
+                    ?
 
-                            Conversations
+                    (
 
-                        </h3>
+                        <FriendsPage
 
-                        <ConversationList
-
-                            conversations={conversations}
-
-                            loading={loading}
-
-                            selectedConversation={
-                                selectedConversation
-                            }
-
-                            onSelectConversation={
-                                setSelectedConversation
+                            onStartChat={
+                                handleStartChat
                             }
 
                         />
 
-                    </div>
+                    )
 
-                    <div className="chat-panel">
+                    :
 
-                        <ChatWindow
+                    (
 
-                            conversation={
-                                selectedConversation
-                            }
+                        <div className="dashboard-content">
 
-                            conversations={
-                                conversations
-                            }
+                            <div className="conversation-panel">
 
-                            setConversations={
-                                setConversations
-                            }
+                                <h3>
 
-                        />
+                                    Conversations
 
-                    </div>
+                                </h3>
 
-                </div>
+                                <ConversationList
+
+                                    conversations={conversations}
+
+                                    loading={loading}
+
+                                    selectedConversation={
+                                        selectedConversation
+                                    }
+
+                                    onSelectConversation={
+                                        setSelectedConversation
+                                    }
+
+                                />
+
+                            </div>
+
+                            <div className="chat-panel">
+
+                                <ChatWindow
+
+                                    conversation={
+                                        selectedConversation
+                                    }
+
+                                    conversations={
+                                        conversations
+                                    }
+
+                                    setConversations={
+                                        setConversations
+                                    }
+
+                                />
+
+                            </div>
+
+                        </div>
+
+                    )
+
+                }
 
             </div>
 
