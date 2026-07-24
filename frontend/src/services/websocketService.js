@@ -3,93 +3,297 @@ class WebSocketService {
     constructor() {
 
         this.socket = null;
+
         this.listeners = [];
 
     }
+
+    // ======================================================
+    // CONNECT
+    // ======================================================
 
     connect(
         conversationId,
         token,
     ) {
 
-        if (
-            this.socket &&
-            this.socket.readyState === WebSocket.OPEN
-        ) {
-            this.socket.close();
-        }
+        this.disconnect();
 
         const url =
             `ws://127.0.0.1:8000/ws/${conversationId}?token=${token}`;
 
-        this.socket = new WebSocket(url);
+        this.socket =
+            new WebSocket(url);
+
+        this.socket.onopen = () => {
+
+            console.log(
+                "WebSocket connected"
+            );
+
+        };
 
         this.socket.onmessage = (event) => {
 
-            const data = JSON.parse(event.data);
+            const data =
+                JSON.parse(event.data);
 
-            this.listeners.forEach((listener) =>
-                listener(data)
+            this.listeners.forEach(
+                listener => listener(data)
             );
 
         };
 
         this.socket.onclose = () => {
 
-            console.log("WebSocket disconnected");
+            console.log(
+                "WebSocket disconnected"
+            );
 
         };
 
         this.socket.onerror = (error) => {
 
-            console.error(error);
+            console.error(
+                "WebSocket error",
+                error
+            );
 
         };
 
     }
 
-    sendMessage(content) {
+    // ======================================================
+    // SEND MESSAGE
+    // ======================================================
 
-        if (!this.socket) return;
+    sendMessage(message) {
+
+        if (
+            !this.socket ||
+            this.socket.readyState !== WebSocket.OPEN
+        ) {
+            return;
+        }
 
         this.socket.send(
+
             JSON.stringify({
+
                 event: "message",
-                content,
+
+                ...message,
+
             })
+
         );
 
     }
+
+    // ======================================================
+    // TYPING
+    // ======================================================
 
     sendTyping() {
 
-        if (!this.socket) return;
+        if (
+            !this.socket ||
+            this.socket.readyState !== WebSocket.OPEN
+        ) {
+            return;
+        }
 
         this.socket.send(
+
             JSON.stringify({
+
                 event: "typing",
+
             })
+
         );
 
     }
+
+    // ======================================================
+    // STOP TYPING
+    // ======================================================
 
     stopTyping() {
 
-        if (!this.socket) return;
+        if (
+            !this.socket ||
+            this.socket.readyState !== WebSocket.OPEN
+        ) {
+            return;
+        }
 
         this.socket.send(
+
             JSON.stringify({
+
                 event: "stop_typing",
+
             })
+
         );
 
     }
 
-    onMessage(listener) {
+    // ======================================================
+    // READ RECEIPT
+    // ======================================================
 
-        this.listeners = [listener];
+    sendRead(messageId) {
+
+        if (
+            !this.socket ||
+            this.socket.readyState !== WebSocket.OPEN
+        ) {
+            return;
+        }
+
+        this.socket.send(
+
+            JSON.stringify({
+
+                event: "read",
+
+                message_id: messageId,
+
+            })
+
+        );
 
     }
+
+    // ======================================================
+    // DELIVERED RECEIPT
+    // ======================================================
+
+    sendDelivered(messageId) {
+
+        if (
+            !this.socket ||
+            this.socket.readyState !== WebSocket.OPEN
+        ) {
+            return;
+        }
+
+        this.socket.send(
+
+            JSON.stringify({
+
+                event: "delivered",
+
+                message_id: messageId,
+
+            })
+
+        );
+
+    }
+
+    // ======================================================
+    // EDIT
+    // ======================================================
+
+    sendEdit(
+        messageId,
+    ) {
+
+        if (
+            !this.socket ||
+            this.socket.readyState !== WebSocket.OPEN
+        ) {
+            return;
+        }
+
+        this.socket.send(
+
+            JSON.stringify({
+
+                event: "edit",
+
+                message_id: messageId,
+
+            })
+
+        );
+
+    }
+
+    // ======================================================
+    // DELETE
+    // ======================================================
+
+    sendDelete(
+        messageId,
+    ) {
+
+        if (
+            !this.socket ||
+            this.socket.readyState !== WebSocket.OPEN
+        ) {
+            return;
+        }
+
+        this.socket.send(
+
+            JSON.stringify({
+
+                event: "delete",
+
+                message_id: messageId,
+
+            })
+
+        );
+
+    }
+
+    // ======================================================
+    // PING
+    // ======================================================
+
+    ping() {
+
+        if (
+            !this.socket ||
+            this.socket.readyState !== WebSocket.OPEN
+        ) {
+            return;
+        }
+
+        this.socket.send(
+
+            JSON.stringify({
+
+                event: "ping",
+
+            })
+
+        );
+
+    }
+
+    // ======================================================
+    // LISTENER
+    // ======================================================
+
+    onMessage(listener) {
+
+        this.listeners = [
+
+            listener,
+
+        ];
+
+    }
+
+    // ======================================================
+    // DISCONNECT
+    // ======================================================
 
     disconnect() {
 

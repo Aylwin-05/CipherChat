@@ -6,24 +6,18 @@ export default function MessageBubble({
 
     const { user } = useAuth();
 
-    // Prevent rendering if message is missing
     if (!message) {
         return null;
     }
 
-    // Safe comparison
     const isMine =
         String(user?.id) ===
         String(message?.sender_id);
 
-    // Debug logs
-    console.log("========== MESSAGE ==========");
-    console.log("Current User:", user);
-    console.log("Current User ID:", user?.id);
-    console.log("Message:", message);
-    console.log("Sender ID:", message?.sender_id);
-    console.log("isMine:", isMine);
-    console.log("=============================");
+    const content =
+        message.deleted_for_everyone
+            ? "🚫 Message deleted"
+            : message.content;
 
     return (
 
@@ -40,17 +34,66 @@ export default function MessageBubble({
             >
 
                 <div className="message-content">
-                    {message.content}
+
+                    {content}
+
                 </div>
 
-                <div className="message-time">
+                <div className="message-footer">
 
-                    {new Date(
-                        message.created_at
-                    ).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                    })}
+                    <span className="message-time">
+
+                        {new Date(
+                            message.created_at
+                        ).toLocaleTimeString([], {
+
+                            hour: "2-digit",
+
+                            minute: "2-digit",
+
+                        })}
+
+                    </span>
+
+                    {
+
+                        message.edited && (
+
+                            <span className="message-edited">
+
+                                Edited
+
+                            </span>
+
+                        )
+
+                    }
+
+                    {
+
+                        isMine && (
+
+                            <span className="message-status">
+
+                                {
+
+                                    message.is_read
+
+                                        ? "✓✓"
+
+                                        : message.delivered_at
+
+                                            ? "✓✓"
+
+                                            : "✓"
+
+                                }
+
+                            </span>
+
+                        )
+
+                    }
 
                 </div>
 

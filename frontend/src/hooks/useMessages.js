@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import {
+    useEffect,
+    useState,
+} from "react";
 
 import { useAuth } from "../context/AuthContext";
 
@@ -9,8 +12,8 @@ import keyService from "../services/keyService";
 import {
     encryptMessage,
     decryptMessage,
-    importPublicKey,
     importPrivateKey,
+    importPublicKey,
 } from "../crypto/cryptoService";
 
 import {
@@ -89,49 +92,51 @@ export default function useMessages(
             const decrypted =
                 await Promise.all(
 
-                    history.map(async (msg) => {
+                    history.map(
+                        async (message) => {
 
-                        try {
+                            try {
 
-                            const plaintext =
-                                await decryptMessage(
+                                const plaintext =
+                                    await decryptMessage(
 
-                                    msg.ciphertext,
+                                        message.ciphertext,
 
-                                    msg.encrypted_key,
+                                        message.encrypted_key,
 
-                                    msg.nonce,
+                                        message.nonce,
 
-                                    privateKey,
+                                        privateKey,
 
-                                );
+                                    );
 
-                            return {
+                                return {
 
-                                ...msg,
+                                    ...message,
 
-                                content: plaintext,
+                                    content:
+                                        plaintext,
 
-                            };
+                                };
+
+                            }
+
+                            catch {
+
+                                return {
+
+                                    ...message,
+
+                                    content:
+                                        "[Unable to decrypt]",
+
+                                };
+
+                            }
 
                         }
 
-                        catch (e) {
-
-                            console.error(e);
-
-                            return {
-
-                                ...msg,
-
-                                content:
-                                    "[Unable to decrypt]",
-
-                            };
-
-                        }
-
-                    })
+                    )
 
                 );
 
@@ -150,15 +155,15 @@ export default function useMessages(
                 conversation.id,
                 token,
             );
-                        //--------------------------------------------------
-            // WebSocket listener
+
+            //--------------------------------------------------
+            // Listen websocket
             //--------------------------------------------------
 
             websocketService.onMessage(
 
                 async (event) => {
-
-                    switch (event.event) {
+                                        switch (event.event) {
 
                         //--------------------------------------------------
                         // Connected
@@ -212,24 +217,26 @@ export default function useMessages(
                                                     message.id
                                             );
 
-                                        if (exists)
+                                        if (exists) {
+
                                             return previous;
 
+                                        }
+
                                         return [
+
                                             ...previous,
+
                                             message,
+
                                         ];
 
                                     }
                                 );
 
-                                if (onNewMessage) {
-
-                                    onNewMessage(
-                                        message
-                                    );
-
-                                }
+                                onNewMessage?.(
+                                    message
+                                );
 
                             }
 
@@ -269,8 +276,11 @@ export default function useMessages(
                                         }
 
                                         return [
+
                                             ...previous,
+
                                             event.user_id,
+
                                         ];
 
                                     }
@@ -281,23 +291,187 @@ export default function useMessages(
                             break;
 
                         //--------------------------------------------------
-                        // Stop typing
+                        // Stop Typing
                         //--------------------------------------------------
 
                         case "stop_typing":
 
                             setTypingUsers(
                                 previous =>
+
                                     previous.filter(
                                         id =>
                                             id !==
                                             event.user_id
                                     )
+
                             );
 
                             break;
-                                //--------------------------------------------------
-    // Encrypt -> Save -> Broadcast
+
+                        //--------------------------------------------------
+                        // Edit
+                        //--------------------------------------------------
+
+                        case "edit":
+
+                            setMessages(
+                                previous =>
+
+                                    previous.map(
+                                        message =>
+
+                                            message.id ===
+                                            event.message_id
+
+                                                ? {
+
+                                                    ...message,
+
+                                                    edited: true,
+
+                                                    updated_at:
+                                                        event.updated_at,
+
+                                                }
+
+                                                : message
+
+                                    )
+
+                            );
+
+                            break;
+
+                        //--------------------------------------------------
+                        // Delete
+                        //--------------------------------------------------
+
+                        case "delete":
+
+                            setMessages(
+                                previous =>
+
+                                    previous.map(
+                                        message =>
+
+                                            message.id ===
+                                            event.message_id
+
+                                                ? {
+
+                                                    ...message,
+
+                                                    deleted_for_everyone: true,
+
+                                                    content:
+                                                        "🚫 Message deleted",
+
+                                                }
+
+                                                : message
+
+                                    )
+
+                            );
+
+                            break;
+
+                        //--------------------------------------------------
+                        // Delivered
+                        //--------------------------------------------------
+
+                        case "delivered":
+
+                            setMessages(
+                                previous =>
+
+                                    previous.map(
+                                        message =>
+
+                                            message.id ===
+                                            event.message_id
+
+                                                ? {
+
+                                                    ...message,
+
+                                                    delivered_at:
+                                                        event.delivered_at,
+
+                                                }
+
+                                                : message
+
+                                    )
+
+                            );
+
+                            break;
+
+                        //--------------------------------------------------
+                        // Read
+                        //--------------------------------------------------
+
+                        case "read":
+
+                            setMessages(
+                                previous =>
+
+                                    previous.map(
+                                        message =>
+
+                                            message.id ===
+                                            event.message_id
+
+                                                ? {
+
+                                                    ...message,
+
+                                                    is_read: true,
+
+                                                    read_at:
+                                                        event.read_at,
+
+                                                }
+
+                                                : message
+
+                                    )
+
+                            );
+
+                            break;
+
+                        default:
+
+                            break;
+
+                    }
+
+                }
+
+            );
+
+        }
+
+        catch (err) {
+
+            console.error(err);
+
+            setError(err);
+
+        }
+
+        finally {
+
+            setLoading(false);
+
+        }
+
+    }
+        //--------------------------------------------------
+    // Send Encrypted Message
     //--------------------------------------------------
 
     async function sendMessage(
@@ -306,9 +480,9 @@ export default function useMessages(
 
         try {
 
-            //--------------------------------------------------
-            // Get recipient public key
-            //--------------------------------------------------
+            //------------------------------------------
+            // Fetch recipient public key
+            //------------------------------------------
 
             const response =
                 await keyService.getPublicKey(
@@ -320,9 +494,9 @@ export default function useMessages(
                     response.public_key
                 );
 
-            //--------------------------------------------------
+            //------------------------------------------
             // Encrypt locally
-            //--------------------------------------------------
+            //------------------------------------------
 
             const encrypted =
                 await encryptMessage(
@@ -330,9 +504,9 @@ export default function useMessages(
                     recipientPublicKey,
                 );
 
-            //--------------------------------------------------
-            // Save to database (REST)
-            //--------------------------------------------------
+            //------------------------------------------
+            // Save encrypted payload via REST
+            //------------------------------------------
 
             const saved =
                 await messageService.sendMessage(
@@ -343,27 +517,37 @@ export default function useMessages(
 
                 );
 
-            //--------------------------------------------------
-            // Show instantly in sender UI
-            //--------------------------------------------------
+            //------------------------------------------
+            // Show instantly for sender
+            //------------------------------------------
 
-            setMessages(previous => [
+            const localMessage = {
 
-                ...previous,
+                ...saved,
 
-                {
+                content: plaintext,
 
-                    ...saved,
+            };
 
-                    content: plaintext,
+            setMessages(
 
-                },
+                previous => [
 
-            ]);
+                    ...previous,
 
-            //--------------------------------------------------
+                    localMessage,
+
+                ]
+
+            );
+
+            onNewMessage?.(
+                localMessage
+            );
+
+            //------------------------------------------
             // Broadcast encrypted payload
-            //--------------------------------------------------
+            //------------------------------------------
 
             websocketService.sendMessage({
 
@@ -400,18 +584,40 @@ export default function useMessages(
 
         }
 
-        catch (err) {
+        catch (error) {
 
             console.error(
-                "Send failed",
-                err
+                "Failed to send message",
+                error
             );
+
+            setError(error);
 
         }
 
     }
+
+    //--------------------------------------------------
+    // Typing
+    //--------------------------------------------------
+
+    function typing() {
+
+        websocketService.sendTyping();
+
+    }
+
+    //--------------------------------------------------
+    // Stop Typing
+    //--------------------------------------------------
+
+    function stopTyping() {
+
+        websocketService.stopTyping();
+
+    }
         //--------------------------------------------------
-    // Return
+    // Return Hook API
     //--------------------------------------------------
 
     return {

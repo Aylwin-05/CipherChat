@@ -24,9 +24,7 @@ export default function ChatWindow({
                 <h2>Select a conversation</h2>
 
                 <p>
-
                     Choose a conversation from the left.
-
                 </p>
 
             </div>
@@ -51,43 +49,44 @@ export default function ChatWindow({
 
     } = useMessages(
 
-        conversation.id,
+        conversation,
 
         (newMessage) => {
 
             setConversations((previous) => {
 
-                const updated = previous.map((conv) => {
+                const updated =
+                    previous.map((conv) => {
 
-                    if (
-                        conv.id !==
-                        conversation.id
-                    ) {
+                        if (
+                            conv.id !==
+                            conversation.id
+                        ) {
 
-                        return conv;
+                            return conv;
 
-                    }
+                        }
 
-                    return {
+                        return {
 
-                        ...conv,
+                            ...conv,
 
-                        updated_at:
-                            newMessage.created_at,
-
-                        last_message: {
-
-                            content:
-                                newMessage.content,
-
-                            created_at:
+                            updated_at:
                                 newMessage.created_at,
 
-                        },
+                            last_message: {
 
-                    };
+                                content:
+                                    newMessage.content,
 
-                });
+                                created_at:
+                                    newMessage.created_at,
+
+                            },
+
+                        };
+
+                    });
 
                 updated.sort(
 
