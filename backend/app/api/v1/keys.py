@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -6,14 +8,19 @@ from app.dependencies.auth import get_current_user
 
 from app.models.user import User
 
-from app.repositories.auth_repository import AuthRepository
+from app.repositories.user_key_repository import (
+    UserKeyRepository,
+)
 
 from app.schemas.keys import (
     UploadPublicKeyRequest,
     PublicKeyResponse,
+    KeyUploadResponse,
 )
 
-from app.services.key_service import KeyService
+from app.services.key_service import (
+    KeyService,
+)
 
 router = APIRouter(
     prefix="/keys",
@@ -25,20 +32,23 @@ router = APIRouter(
 # Upload Public Key
 # ==========================================================
 
-@router.post("/public")
+@router.post(
+    "/public",
+    response_model=KeyUploadResponse,
+)
 async def upload_public_key(
     request: UploadPublicKeyRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
 
-    repository = AuthRepository(db)
+    repository = UserKeyRepository(db)
 
     service = KeyService(repository)
 
     return await service.upload_public_key(
-        current_user,
-        request.public_key,
+        current_user=current_user,
+        public_key=request.public_key,
     )
 
 
@@ -51,14 +61,14 @@ async def upload_public_key(
     response_model=PublicKeyResponse,
 )
 async def get_public_key(
-    user_id,
+    user_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
 
-    repository = AuthRepository(db)
+    repository = UserKeyRepository(db)
 
     service = KeyService(repository)
 
     return await service.get_public_key(
-        user_id,
+        user_id=user_id,
     )

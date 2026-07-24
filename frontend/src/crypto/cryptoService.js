@@ -1,13 +1,13 @@
 // ==========================================================
 // CipherChat Crypto Service
 //
-// Uses:
+// Hybrid Encryption
 //
-// RSA-OAEP (2048)
-// AES-GCM (256)
-// Web Crypto API
+// RSA-OAEP 2048
+// AES-256-GCM
 //
-// Backend NEVER decrypts messages.
+// Browser generates and stores identity keys.
+// Backend stores ONLY the public key.
 // ==========================================================
 
 import {
@@ -16,69 +16,92 @@ import {
 } from "./base64";
 
 // ==========================================================
-// Generate RSA Key Pair
+// RSA KEY GENERATION
 // ==========================================================
 
-export async function generateKeyPair() {
+export async function generateIdentityKeys() {
 
-    return await window.crypto.subtle.generateKey(
-        {
-            name: "RSA-OAEP",
-            modulusLength: 2048,
-            publicExponent: new Uint8Array([
-                1,
-                0,
-                1,
-            ]),
-            hash: "SHA-256",
-        },
-        true,
-        [
-            "encrypt",
-            "decrypt",
-        ]
+    const keyPair =
+        await crypto.subtle.generateKey(
+            {
+                name: "RSA-OAEP",
+                modulusLength: 2048,
+                publicExponent: new Uint8Array([
+                    1,
+                    0,
+                    1,
+                ]),
+                hash: "SHA-256",
+            },
+            true,
+            [
+                "encrypt",
+                "decrypt",
+            ]
+        );
+
+    const publicKey =
+        await exportPublicKey(
+            keyPair.publicKey
+        );
+
+    const privateKey =
+        await exportPrivateKey(
+            keyPair.privateKey
+        );
+
+    return {
+
+        publicKey,
+
+        privateKey,
+
+    };
+
+}
+
+// ==========================================================
+// EXPORT PUBLIC KEY
+// ==========================================================
+
+export async function exportPublicKey(
+    key
+) {
+
+    const exported =
+        await crypto.subtle.exportKey(
+            "spki",
+            key
+        );
+
+    return arrayBufferToBase64(
+        exported
     );
 
 }
 
 // ==========================================================
-// Export Public Key
-// ==========================================================
-
-export async function exportPublicKey(
-    publicKey
-) {
-
-    const key =
-        await crypto.subtle.exportKey(
-            "spki",
-            publicKey
-        );
-
-    return arrayBufferToBase64(key);
-
-}
-
-// ==========================================================
-// Export Private Key
+// EXPORT PRIVATE KEY
 // ==========================================================
 
 export async function exportPrivateKey(
-    privateKey
+    key
 ) {
 
-    const key =
+    const exported =
         await crypto.subtle.exportKey(
             "pkcs8",
-            privateKey
+            key
         );
 
-    return arrayBufferToBase64(key);
+    return arrayBufferToBase64(
+        exported
+    );
 
 }
 
 // ==========================================================
-// Import Public Key
+// IMPORT PUBLIC KEY
 // ==========================================================
 
 export async function importPublicKey(
@@ -101,7 +124,7 @@ export async function importPublicKey(
 }
 
 // ==========================================================
-// Import Private Key
+// IMPORT PRIVATE KEY
 // ==========================================================
 
 export async function importPrivateKey(
@@ -124,7 +147,7 @@ export async function importPrivateKey(
 }
 
 // ==========================================================
-// Generate AES Key
+// AES-256 KEY
 // ==========================================================
 
 export async function generateAESKey() {
@@ -144,26 +167,83 @@ export async function generateAESKey() {
 }
 
 // ==========================================================
-// Encrypt Plaintext
+// EXPORT RAW AES KEY
+// ==========================================================
+
+async function exportAESKey(
+    aesKey
+) {
+
+    return await crypto.subtle.exportKey(
+        "raw",
+        aesKey
+    );
+
+}
+
+// ==========================================================
+// IMPORT RAW AES KEY
+// ==========================================================
+
+async function importAESKey(
+    rawKey
+) {
+
+    return await crypto.subtle.importKey(
+        "raw",
+        rawKey,
+        {
+            name: "AES-GCM",
+        },
+        false,
+        [
+            "decrypt",
+        ]
+    );
+
+}
+// ==========================================================
+// ENCRYPT MESSAGE
 // ==========================================================
 
 export async function encryptMessage(
     plaintext,
-    recipientPublicKey
+    recipientPublicKeyBase64,
 ) {
+
+    // ----------------------------------------------
+    // Import recipient public key
+    // ----------------------------------------------
+
+    const recipientPublicKey =
+        await importPublicKey(
+            recipientPublicKeyBase64
+        );
+
+    // ----------------------------------------------
+    // Generate one-time AES key
+    // ----------------------------------------------
 
     const aesKey =
         await generateAESKey();
+
+    // ----------------------------------------------
+    // Random IV (Nonce)
+    // ----------------------------------------------
 
     const iv =
         crypto.getRandomValues(
             new Uint8Array(12)
         );
 
+    // ----------------------------------------------
+    // Encrypt plaintext with AES-GCM
+    // ----------------------------------------------
+
     const encoder =
         new TextEncoder();
 
-    const ciphertext =
+    const encryptedMessage =
         await crypto.subtle.encrypt(
             {
                 name: "AES-GCM",
@@ -175,31 +255,112 @@ export async function encryptMessage(
             )
         );
 
-    const exportedAES =
-        await crypto.subtle.exportKey(
-            "raw",
+    // ----------------------------------------------
+    // Export AES key
+    // ----------------------------------------------
+
+    const rawAESKey =
+        await exportAESKey(
             aesKey
         );
 
-    const encryptedAES =
+    // ----------------------------------------------
+    // Encrypt AES key using RSA
+    // ----------------------------------------------
+
+    const encryptedAESKey =
         await crypto.subtle.encrypt(
             {
                 name: "RSA-OAEP",
             },
             recipientPublicKey,
-            exportedAES
+            rawAESKey
+        );
+
+    // ----------------------------------------------
+    // Return backend payload
+    // ----------------------------------------------
+
+    return {
+
+        ciphertext:
+            arrayBufferToBase64(
+                encryptedMessage
+            ),
+
+        encrypted_key:
+            arrayBufferToBase64(
+                encryptedAESKey
+            ),
+
+        nonce:
+            arrayBufferToBase64(
+                iv.buffer
+            ),
+
+        message_type:
+            "text",
+
+    };
+
+}
+
+// ==========================================================
+// ENCRYPT BINARY DATA
+// ==========================================================
+
+export async function encryptBytes(
+    bytes,
+    recipientPublicKeyBase64,
+) {
+
+    const recipientPublicKey =
+        await importPublicKey(
+            recipientPublicKeyBase64
+        );
+
+    const aesKey =
+        await generateAESKey();
+
+    const iv =
+        crypto.getRandomValues(
+            new Uint8Array(12)
+        );
+
+    const encryptedBytes =
+        await crypto.subtle.encrypt(
+            {
+                name: "AES-GCM",
+                iv,
+            },
+            aesKey,
+            bytes
+        );
+
+    const rawAESKey =
+        await exportAESKey(
+            aesKey
+        );
+
+    const encryptedAESKey =
+        await crypto.subtle.encrypt(
+            {
+                name: "RSA-OAEP",
+            },
+            recipientPublicKey,
+            rawAESKey
         );
 
     return {
 
         ciphertext:
             arrayBufferToBase64(
-                ciphertext
+                encryptedBytes
             ),
 
         encrypted_key:
             arrayBufferToBase64(
-                encryptedAES
+                encryptedAESKey
             ),
 
         nonce:
@@ -210,41 +371,53 @@ export async function encryptMessage(
     };
 
 }
-
 // ==========================================================
-// Decrypt Message
+// DECRYPT MESSAGE
 // ==========================================================
 
 export async function decryptMessage(
-    ciphertext,
-    encryptedKey,
-    nonce,
-    privateKey
+    ciphertextBase64,
+    encryptedKeyBase64,
+    nonceBase64,
+    privateKeyBase64,
 ) {
 
-    const aesKeyRaw =
+    // ----------------------------------------------
+    // Import private RSA key
+    // ----------------------------------------------
+
+    const privateKey =
+        await importPrivateKey(
+            privateKeyBase64
+        );
+
+    // ----------------------------------------------
+    // Decrypt AES key
+    // ----------------------------------------------
+
+    const rawAESKey =
         await crypto.subtle.decrypt(
             {
                 name: "RSA-OAEP",
             },
             privateKey,
             base64ToArrayBuffer(
-                encryptedKey
+                encryptedKeyBase64
             )
         );
 
+    // ----------------------------------------------
+    // Import AES key
+    // ----------------------------------------------
+
     const aesKey =
-        await crypto.subtle.importKey(
-            "raw",
-            aesKeyRaw,
-            {
-                name: "AES-GCM",
-            },
-            false,
-            [
-                "decrypt",
-            ]
+        await importAESKey(
+            rawAESKey
         );
+
+    // ----------------------------------------------
+    // Decrypt ciphertext
+    // ----------------------------------------------
 
     const plaintext =
         await crypto.subtle.decrypt(
@@ -252,18 +425,149 @@ export async function decryptMessage(
                 name: "AES-GCM",
                 iv: new Uint8Array(
                     base64ToArrayBuffer(
-                        nonce
+                        nonceBase64
                     )
                 ),
             },
             aesKey,
             base64ToArrayBuffer(
-                ciphertext
+                ciphertextBase64
             )
         );
 
     return new TextDecoder().decode(
         plaintext
     );
+
+}
+
+// ==========================================================
+// DECRYPT BINARY DATA
+// ==========================================================
+
+export async function decryptBytes(
+    ciphertextBase64,
+    encryptedKeyBase64,
+    nonceBase64,
+    privateKeyBase64,
+) {
+
+    const privateKey =
+        await importPrivateKey(
+            privateKeyBase64
+        );
+
+    const rawAESKey =
+        await crypto.subtle.decrypt(
+            {
+                name: "RSA-OAEP",
+            },
+            privateKey,
+            base64ToArrayBuffer(
+                encryptedKeyBase64
+            )
+        );
+
+    const aesKey =
+        await importAESKey(
+            rawAESKey
+        );
+
+    return await crypto.subtle.decrypt(
+        {
+            name: "AES-GCM",
+            iv: new Uint8Array(
+                base64ToArrayBuffer(
+                    nonceBase64
+                )
+            ),
+        },
+        aesKey,
+        base64ToArrayBuffer(
+            ciphertextBase64
+        )
+    );
+
+}
+
+// ==========================================================
+// VALIDATION
+// ==========================================================
+
+export function isEncryptedMessage(
+    message
+) {
+
+    return !!(
+
+        message &&
+
+        message.ciphertext &&
+
+        message.encrypted_key &&
+
+        message.nonce
+
+    );
+
+}
+
+// ==========================================================
+// SAFE DECRYPT
+// ==========================================================
+
+export async function safeDecrypt(
+    message,
+    privateKey,
+) {
+
+    try {
+
+        if (!isEncryptedMessage(message)) {
+
+            return message;
+
+        }
+
+        const plaintext =
+            await decryptMessage(
+
+                message.ciphertext,
+
+                message.encrypted_key,
+
+                message.nonce,
+
+                privateKey
+
+            );
+
+        return {
+
+            ...message,
+
+            content: plaintext,
+
+        };
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Failed to decrypt message:",
+            error
+        );
+
+        return {
+
+            ...message,
+
+            content:
+                "[Unable to decrypt]",
+
+        };
+
+    }
 
 }

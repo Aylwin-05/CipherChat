@@ -2,16 +2,20 @@ from datetime import datetime, timedelta, timezone
 
 from app.models.otp import OTPCode
 from app.models.user import User
-from app.models.user_key import UserKey
 from app.repositories.auth_repository import AuthRepository
 from app.services.email_service import EmailService
-from app.services.encryption_service import EncryptionService
 from app.utils.security import SecurityUtils
 
 
 class AuthService:
     """
     Handles authentication business logic.
+
+    In the E2EE architecture:
+
+    • Backend NEVER generates encryption keys.
+    • Backend NEVER stores private keys.
+    • Backend only authenticates users.
     """
 
     OTP_EXPIRY_MINUTES = 5
@@ -49,7 +53,6 @@ class AuthService:
 
         await self.repository.create_otp(otp_record)
 
-        # Commit OTP so it exists before sending email
         await self.repository.commit()
 
         self.email_service.send_otp_email(
@@ -69,40 +72,29 @@ class AuthService:
         otp: str,
     ):
 
-        print("\n========== VERIFY OTP ==========")
-        print("Email:", email)
-        print("OTP Entered:", otp)
-
         otp_record = await self.repository.get_latest_otp(
             email
         )
 
-        print("OTP Record:", otp_record)
-
         if otp_record is None:
-            print("FAILED -> No OTP record found")
             return None
 
         if otp_record.is_used:
-            print("FAILED -> OTP already used")
             return None
 
         if otp_record.attempts >= self.MAX_ATTEMPTS:
-            print("FAILED -> Maximum attempts exceeded")
             return None
 
         if (
             datetime.now(timezone.utc)
             > otp_record.expires_at
         ):
-            print("FAILED -> OTP expired")
             return None
 
         if not SecurityUtils.verify_otp(
             otp,
             otp_record.otp_hash,
         ):
-            print("FAILED -> Incorrect OTP")
 
             await self.repository.increment_attempts(
                 otp_record
@@ -111,8 +103,6 @@ class AuthService:
             await self.repository.commit()
 
             return None
-
-        print("SUCCESS -> OTP Verified")
 
         await self.repository.mark_otp_used(
             otp_record
@@ -132,24 +122,15 @@ class AuthService:
 
             await self.repository.commit()
 
-            print("Existing user login")
-
             return {
                 "user": existing_user,
-                "private_key": None,
             }
 
         # =====================================================
         # New User Registration
         # =====================================================
 
-        print("Creating new user...")
-
         username = email.split("@")[0]
-
-        keys = (
-            EncryptionService.generate_key_pair()
-        )
 
         user = User(
             email=email,
@@ -160,40 +141,22 @@ class AuthService:
 
         try:
 
-            await self.repository.create_user(user)
-
-            user_key = UserKey(
-                user_id=user.id,
-                public_key=keys["public_key"],
-                private_key_encrypted=keys[
-                    "encrypted_private_key"
-                ],
-            )
-
-            await self.repository.create_user_key(
-                user_key
+            await self.repository.create_user(
+                user
             )
 
             await self.repository.commit()
 
-            await self.repository.refresh_all(
-                user,
-                user_key,
+            await self.repository.refresh(
+                user
             )
 
-            print("New user created successfully")
-
-        except Exception as e:
+        except Exception:
 
             await self.repository.rollback()
-
-            print("Registration failed:", e)
 
             raise
 
         return {
             "user": user,
-            "private_key": EncryptionService.export_private_key_base64(
-                keys["private_key"]
-            ),
         }

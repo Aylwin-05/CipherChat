@@ -17,7 +17,10 @@ class CreateConversationRequest(BaseModel):
 # ==========================================================
 
 class ConversationCreateResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
 
     id: UUID
     created_at: datetime
@@ -29,7 +32,10 @@ class ConversationCreateResponse(BaseModel):
 # ==========================================================
 
 class ConversationUser(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
 
     id: UUID
     display_name: str
@@ -44,7 +50,11 @@ class ConversationUser(BaseModel):
 # ==========================================================
 
 class LastMessage(BaseModel):
-    content: str | None = None
+
+    ciphertext: str | None = None
+
+    message_type: str | None = None
+
     created_at: datetime | None = None
 
 
@@ -53,7 +63,9 @@ class LastMessage(BaseModel):
 # ==========================================================
 
 class ConversationResponse(BaseModel):
+
     id: UUID
+
     updated_at: datetime
 
     other_user: ConversationUser

@@ -1,12 +1,26 @@
-from uuid import UUID
-
 from pydantic import BaseModel
 
+
+# ==========================================================
+# Upload Public Key
+# ==========================================================
 
 class UploadPublicKeyRequest(BaseModel):
     public_key: str
 
 
+# ==========================================================
+# Public Key Response
+# ==========================================================
+
 class PublicKeyResponse(BaseModel):
-    user_id: UUID
-    public_key: str | None
+    public_key: str
+
+
+# ==========================================================
+# Generic Response
+# ==========================================================
+
+class KeyUploadResponse(BaseModel):
+    success: bool
+    message: str

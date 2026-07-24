@@ -4,9 +4,21 @@ import { useAuth } from "../context/AuthContext";
 
 import messageService from "../services/messageService";
 import websocketService from "../services/websocketService";
+import keyService from "../services/keyService";
+
+import {
+    encryptMessage,
+    decryptMessage,
+    importPublicKey,
+    importPrivateKey,
+} from "../crypto/cryptoService";
+
+import {
+    getPrivateKey,
+} from "../crypto/keyStorage";
 
 export default function useMessages(
-    conversationId,
+    conversation,
     onNewMessage,
 ) {
 
@@ -26,7 +38,7 @@ export default function useMessages(
 
     useEffect(() => {
 
-        if (!conversationId) {
+        if (!conversation) {
 
             setMessages([]);
 
@@ -44,7 +56,7 @@ export default function useMessages(
 
         };
 
-    }, [conversationId]);
+    }, [conversation?.id]);
 
     async function initialize() {
 
@@ -52,12 +64,82 @@ export default function useMessages(
 
             setLoading(true);
 
+            //--------------------------------------------------
+            // Load encrypted history
+            //--------------------------------------------------
+
             const history =
                 await messageService.getMessages(
-                    conversationId
+                    conversation.id
                 );
 
-            setMessages(history);
+            //--------------------------------------------------
+            // Import my private key
+            //--------------------------------------------------
+
+            const privateKey =
+                await importPrivateKey(
+                    getPrivateKey()
+                );
+
+            //--------------------------------------------------
+            // Decrypt every message
+            //--------------------------------------------------
+
+            const decrypted =
+                await Promise.all(
+
+                    history.map(async (msg) => {
+
+                        try {
+
+                            const plaintext =
+                                await decryptMessage(
+
+                                    msg.ciphertext,
+
+                                    msg.encrypted_key,
+
+                                    msg.nonce,
+
+                                    privateKey,
+
+                                );
+
+                            return {
+
+                                ...msg,
+
+                                content: plaintext,
+
+                            };
+
+                        }
+
+                        catch (e) {
+
+                            console.error(e);
+
+                            return {
+
+                                ...msg,
+
+                                content:
+                                    "[Unable to decrypt]",
+
+                            };
+
+                        }
+
+                    })
+
+                );
+
+            setMessages(decrypted);
+
+            //--------------------------------------------------
+            // Connect websocket
+            //--------------------------------------------------
 
             const token =
                 localStorage.getItem(
@@ -65,48 +147,106 @@ export default function useMessages(
                 );
 
             websocketService.connect(
-                conversationId,
-                token
+                conversation.id,
+                token,
             );
+                        //--------------------------------------------------
+            // WebSocket listener
+            //--------------------------------------------------
 
             websocketService.onMessage(
-                (event) => {
+
+                async (event) => {
 
                     switch (event.event) {
+
+                        //--------------------------------------------------
+                        // Connected
+                        //--------------------------------------------------
 
                         case "connected":
 
                             break;
 
+                        //--------------------------------------------------
+                        // Incoming encrypted message
+                        //--------------------------------------------------
+
                         case "message":
 
-                            setMessages((previous) => {
+                            try {
 
-                                const exists =
-                                    previous.some(
-                                        (msg) =>
-                                            msg.id ===
-                                            event.id
+                                const privateKey =
+                                    await importPrivateKey(
+                                        getPrivateKey()
                                     );
 
-                                if (exists) {
-                                    return previous;
+                                const plaintext =
+                                    await decryptMessage(
+
+                                        event.ciphertext,
+
+                                        event.encrypted_key,
+
+                                        event.nonce,
+
+                                        privateKey,
+
+                                    );
+
+                                const message = {
+
+                                    ...event,
+
+                                    content: plaintext,
+
+                                };
+
+                                setMessages(
+                                    previous => {
+
+                                        const exists =
+                                            previous.some(
+                                                msg =>
+                                                    msg.id ===
+                                                    message.id
+                                            );
+
+                                        if (exists)
+                                            return previous;
+
+                                        return [
+                                            ...previous,
+                                            message,
+                                        ];
+
+                                    }
+                                );
+
+                                if (onNewMessage) {
+
+                                    onNewMessage(
+                                        message
+                                    );
+
                                 }
 
-                                return [
-                                    ...previous,
-                                    event,
-                                ];
+                            }
 
-                            });
+                            catch (error) {
 
-                            if (onNewMessage) {
-
-                                onNewMessage(event);
+                                console.error(
+                                    "Decrypt failed",
+                                    error
+                                );
 
                             }
 
                             break;
+
+                        //--------------------------------------------------
+                        // Typing
+                        //--------------------------------------------------
 
                         case "typing":
 
@@ -116,7 +256,7 @@ export default function useMessages(
                             ) {
 
                                 setTypingUsers(
-                                    (previous) => {
+                                    previous => {
 
                                         if (
                                             previous.includes(
@@ -140,67 +280,139 @@ export default function useMessages(
 
                             break;
 
+                        //--------------------------------------------------
+                        // Stop typing
+                        //--------------------------------------------------
+
                         case "stop_typing":
 
                             setTypingUsers(
-                                (previous) =>
+                                previous =>
                                     previous.filter(
-                                        (id) =>
+                                        id =>
                                             id !==
                                             event.user_id
                                     )
                             );
 
                             break;
+                                //--------------------------------------------------
+    // Encrypt -> Save -> Broadcast
+    //--------------------------------------------------
 
-                        case "error":
+    async function sendMessage(
+        plaintext,
+    ) {
 
-                            console.error(
-                                event.message
-                            );
+        try {
 
-                            break;
+            //--------------------------------------------------
+            // Get recipient public key
+            //--------------------------------------------------
 
-                        default:
+            const response =
+                await keyService.getPublicKey(
+                    conversation.other_user.id
+                );
 
-                            break;
+            const recipientPublicKey =
+                await importPublicKey(
+                    response.public_key
+                );
 
-                    }
+            //--------------------------------------------------
+            // Encrypt locally
+            //--------------------------------------------------
 
-                }
+            const encrypted =
+                await encryptMessage(
+                    plaintext,
+                    recipientPublicKey,
+                );
+
+            //--------------------------------------------------
+            // Save to database (REST)
+            //--------------------------------------------------
+
+            const saved =
+                await messageService.sendMessage(
+
+                    conversation.id,
+
+                    encrypted,
+
+                );
+
+            //--------------------------------------------------
+            // Show instantly in sender UI
+            //--------------------------------------------------
+
+            setMessages(previous => [
+
+                ...previous,
+
+                {
+
+                    ...saved,
+
+                    content: plaintext,
+
+                },
+
+            ]);
+
+            //--------------------------------------------------
+            // Broadcast encrypted payload
+            //--------------------------------------------------
+
+            websocketService.sendMessage({
+
+                id: saved.id,
+
+                conversation_id:
+                    saved.conversation_id,
+
+                sender_id:
+                    saved.sender_id,
+
+                ciphertext:
+                    saved.ciphertext,
+
+                encrypted_key:
+                    saved.encrypted_key,
+
+                nonce:
+                    saved.nonce,
+
+                crypto_version:
+                    saved.crypto_version,
+
+                message_type:
+                    saved.message_type,
+
+                reply_to_id:
+                    saved.reply_to_id,
+
+                created_at:
+                    saved.created_at,
+
+            });
+
+        }
+
+        catch (err) {
+
+            console.error(
+                "Send failed",
+                err
             );
-
-        } catch (err) {
-
-            setError(err);
-
-        } finally {
-
-            setLoading(false);
 
         }
 
     }
-
-    function sendMessage(content) {
-
-        websocketService.sendMessage(
-            content
-        );
-
-    }
-
-    function typing() {
-
-        websocketService.sendTyping();
-
-    }
-
-    function stopTyping() {
-
-        websocketService.stopTyping();
-
-    }
+        //--------------------------------------------------
+    // Return
+    //--------------------------------------------------
 
     return {
 

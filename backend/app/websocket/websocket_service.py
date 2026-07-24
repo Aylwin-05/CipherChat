@@ -2,7 +2,6 @@ from uuid import UUID
 
 from fastapi import WebSocket
 
-from app.models.message import Message
 from app.models.user import User
 
 from app.repositories.conversation_repository import (
@@ -18,36 +17,41 @@ from app.websocket.connection_manager import manager
 
 class WebSocketService:
     """
-    CipherChat Production WebSocket Service
+    CipherChat WebSocket Service
+
+    IMPORTANT
+    ---------
+    WebSocket NEVER stores messages.
+
+    Messages are stored by:
+
+        POST /messages/send
+
+    WebSocket only broadcasts realtime events.
 
     Responsibilities
-
-    ✔ Verify access
-    ✔ Persist messages
-    ✔ Broadcast realtime events
-    ✔ Delivery receipts
-    ✔ Read receipts
-    ✔ Typing indicators
-    ✔ Edit/Delete
-    ✔ Reply support
-
-    Future
-
-    ✔ End-to-End Encryption
-    ✔ Voice Notes
-    ✔ File Sharing
-    ✔ Reactions
-    ✔ Calls
+    ----------------
+    ✓ Verify conversation access
+    ✓ Broadcast new encrypted messages
+    ✓ Typing indicators
+    ✓ Stop typing
+    ✓ Read receipts
+    ✓ Delivery receipts
+    ✓ Edit notifications
+    ✓ Delete notifications
+    ✓ Ping / Pong
     """
 
     def __init__(self, db):
 
         self.db = db
 
-        self.message_repository = MessageRepository(db)
-
         self.conversation_repository = (
             ConversationRepository(db)
+        )
+
+        self.message_repository = (
+            MessageRepository(db)
         )
 
     # ======================================================
@@ -86,19 +90,29 @@ class WebSocketService:
         event = data.get("event")
 
         handlers = {
+
             "message": self.handle_message,
+
             "typing": self.handle_typing,
+
             "stop_typing": self.handle_stop_typing,
+
             "delivered": self.handle_delivered,
+
             "read": self.handle_read,
+
             "edit": self.handle_edit,
+
             "delete": self.handle_delete,
+
             "ping": self.handle_ping,
+
         }
 
         handler = handlers.get(event)
 
         if handler is None:
+
             raise ValueError(
                 f"Unknown websocket event '{event}'"
             )
@@ -114,9 +128,16 @@ class WebSocketService:
             current_user,
             data,
         )
-
-    # ======================================================
-    # SEND MESSAGE
+            # ======================================================
+    # MESSAGE
+    #
+    # IMPORTANT
+    #
+    # Message has ALREADY been saved by:
+    #
+    # POST /messages/send
+    #
+    # WebSocket only broadcasts it.
     # ======================================================
 
     async def handle_message(
@@ -126,113 +147,101 @@ class WebSocketService:
         data: dict,
     ):
 
-        content = (
-            data.get("content", "")
-            .strip()
-        )
+        required = [
 
-        if not content:
+            "id",
 
-            raise ValueError(
-                "Message cannot be empty."
-            )
+            "conversation_id",
 
-        message_type = data.get(
-            "message_type",
-            "text",
-        )
+            "sender_id",
 
-        reply_to_id = data.get(
-            "reply_to_id"
-        )
+            "ciphertext",
 
-        if reply_to_id:
+            "encrypted_key",
 
-            reply_to_id = UUID(reply_to_id)
+            "nonce",
 
-        message = await self.save_message(
-            conversation_id=conversation_id,
-            sender=current_user,
-            content=content,
-            message_type=message_type,
-            reply_to_id=reply_to_id,
-        )
+            "created_at",
+
+        ]
+
+        for field in required:
+
+            if field not in data:
+
+                raise ValueError(
+                    f"Missing field '{field}'."
+                )
 
         await manager.broadcast(
             conversation_id,
             {
+
                 "event": "message",
 
-                "id": str(message.id),
+                "id": data["id"],
 
-                "conversation_id": str(
-                    message.conversation_id
-                ),
+                "conversation_id":
+                    data["conversation_id"],
 
-                "sender_id": str(
-                    message.sender_id
-                ),
+                "sender_id":
+                    data["sender_id"],
 
-                "content": message.content,
+                "ciphertext":
+                    data["ciphertext"],
 
-                "message_type": message.message_type,
+                "encrypted_key":
+                    data["encrypted_key"],
+
+                "nonce":
+                    data["nonce"],
+
+                "crypto_version":
+                    data.get(
+                        "crypto_version",
+                        1,
+                    ),
+
+                "message_type":
+                    data.get(
+                        "message_type",
+                        "text",
+                    ),
 
                 "reply_to_id":
-                    str(message.reply_to_id)
-                    if message.reply_to_id
-                    else None,
-
-                "encrypted":
-                    message.encrypted,
-
-                "encryption_algorithm":
-                    message.encryption_algorithm,
+                    data.get(
+                        "reply_to_id"
+                    ),
 
                 "edited":
-                    message.edited,
+                    data.get(
+                        "edited",
+                        False,
+                    ),
 
-                "deleted":
-                    message.deleted_for_everyone,
+                "deleted_for_everyone":
+                    data.get(
+                        "deleted_for_everyone",
+                        False,
+                    ),
+
+                "is_read":
+                    data.get(
+                        "is_read",
+                        False,
+                    ),
 
                 "created_at":
-                    message.created_at.isoformat(),
+                    data["created_at"],
+
+                "updated_at":
+                    data.get(
+                        "updated_at",
+                        data["created_at"],
+                    ),
             },
         )
-
-    # ======================================================
-    # SAVE MESSAGE
-    # ======================================================
-
-    async def save_message(
-        self,
-        conversation_id: UUID,
-        sender: User,
-        content: str,
-        message_type: str = "text",
-        reply_to_id: UUID | None = None,
-    ) -> Message:
-
-        message = Message(
-
-            conversation_id=conversation_id,
-
-            sender_id=sender.id,
-
-            content=content,
-
-            message_type=message_type,
-
-            encrypted=True,
-
-            encryption_algorithm="RSA-OAEP",
-
-            reply_to_id=reply_to_id,
-        )
-
-        return await self.message_repository.create_message(
-            message
-        )
-    # ======================================================
+            # ======================================================
     # EDIT MESSAGE
     # ======================================================
 
@@ -243,30 +252,14 @@ class WebSocketService:
         data: dict,
     ):
 
-        message_id = UUID(
-            data["message_id"]
-        )
+        message_id = UUID(data["message_id"])
 
-        new_content = (
-            data.get("content", "")
-            .strip()
-        )
-
-        if not new_content:
-            raise ValueError(
-                "Edited message cannot be empty."
-            )
-
-        message = (
-            await self.message_repository.get_by_id(
-                message_id
-            )
+        message = await self.message_repository.get_by_id(
+            message_id
         )
 
         if message is None:
-            raise ValueError(
-                "Message not found."
-            )
+            raise ValueError("Message not found.")
 
         if message.sender_id != current_user.id:
             raise ValueError(
@@ -280,9 +273,8 @@ class WebSocketService:
 
         from datetime import datetime, timezone
 
-        message.content = new_content
         message.edited = True
-        message.edited_at = datetime.now(
+        message.updated_at = datetime.now(
             timezone.utc
         )
 
@@ -295,17 +287,15 @@ class WebSocketService:
 
                 "message_id": str(message.id),
 
-                "content": message.content,
-
                 "edited": True,
 
-                "edited_at":
-                    message.edited_at.isoformat(),
+                "updated_at":
+                    message.updated_at.isoformat(),
             },
         )
 
     # ======================================================
-    # DELETE FOR EVERYONE
+    # DELETE MESSAGE
     # ======================================================
 
     async def handle_delete(
@@ -315,20 +305,14 @@ class WebSocketService:
         data: dict,
     ):
 
-        message_id = UUID(
-            data["message_id"]
-        )
+        message_id = UUID(data["message_id"])
 
-        message = (
-            await self.message_repository.get_by_id(
-                message_id
-            )
+        message = await self.message_repository.get_by_id(
+            message_id
         )
 
         if message is None:
-            raise ValueError(
-                "Message not found."
-            )
+            raise ValueError("Message not found.")
 
         if message.sender_id != current_user.id:
             raise ValueError(
@@ -341,12 +325,8 @@ class WebSocketService:
         from datetime import datetime, timezone
 
         message.deleted_for_everyone = True
-        message.deleted_at = datetime.now(
+        message.updated_at = datetime.now(
             timezone.utc
-        )
-
-        message.content = (
-            "🚫 This message was deleted"
         )
 
         await self.message_repository.update()
@@ -358,10 +338,10 @@ class WebSocketService:
 
                 "message_id": str(message.id),
 
-                "deleted": True,
+                "deleted_for_everyone": True,
 
-                "deleted_at":
-                    message.deleted_at.isoformat(),
+                "updated_at":
+                    message.updated_at.isoformat(),
             },
         )
 
@@ -376,16 +356,12 @@ class WebSocketService:
         data: dict,
     ):
 
-        message = (
-            await self.message_repository.get_by_id(
-                UUID(data["message_id"])
-            )
+        message = await self.message_repository.get_by_id(
+            UUID(data["message_id"])
         )
 
         if message is None:
-            raise ValueError(
-                "Message not found."
-            )
+            raise ValueError("Message not found.")
 
         await self.message_repository.mark_delivered(
             message
@@ -418,16 +394,12 @@ class WebSocketService:
         data: dict,
     ):
 
-        message = (
-            await self.message_repository.get_by_id(
-                UUID(data["message_id"])
-            )
+        message = await self.message_repository.get_by_id(
+            UUID(data["message_id"])
         )
 
         if message is None:
-            raise ValueError(
-                "Message not found."
-            )
+            raise ValueError("Message not found.")
 
         await self.message_repository.mark_read(
             message
@@ -448,8 +420,7 @@ class WebSocketService:
                     else None,
             },
         )
-
-        # ======================================================
+    # ======================================================
     # TYPING
     # ======================================================
 
@@ -503,125 +474,8 @@ class WebSocketService:
         )
 
     # ======================================================
-    # FUTURE - FILE MESSAGE
-    # ======================================================
-
-    async def handle_file(
-        self,
-        conversation_id: UUID,
-        current_user: User,
-        data: dict,
-    ):
-        """
-        Reserved for Phase 2.
-
-        Will support
-
-        - Images
-        - Videos
-        - Documents
-        - ZIP
-        - PDFs
-
-        Storage:
-            MinIO / AWS S3
-        """
-
-        raise NotImplementedError(
-            "File sharing not implemented yet."
-        )
-
-    # ======================================================
-    # FUTURE - VOICE MESSAGE
-    # ======================================================
-
-    async def handle_voice(
-        self,
-        conversation_id: UUID,
-        current_user: User,
-        data: dict,
-    ):
-        """
-        Reserved for Voice Notes.
-
-        Opus
-        AAC
-        Waveform
-        Duration
-        """
-
-        raise NotImplementedError(
-            "Voice messages not implemented yet."
-        )
-
-    # ======================================================
-    # FUTURE - REACTION
-    # ======================================================
-
-    async def handle_reaction(
-        self,
-        conversation_id: UUID,
-        current_user: User,
-        data: dict,
-    ):
-        """
-        Reserved for reactions.
-
-        👍 ❤️ 😂 😮 😢 🔥
-        """
-
-        raise NotImplementedError(
-            "Reactions not implemented yet."
-        )
-
-    # ======================================================
-    # FUTURE - E2EE MESSAGE
-    # ======================================================
-
-    async def handle_encrypted_message(
-        self,
-        conversation_id: UUID,
-        current_user: User,
-        data: dict,
-    ):
-        """
-        Reserved for End-to-End Encryption.
-
-        Future implementation:
-
-        Sender
-            ↓
-        X25519 Key Exchange
-            ↓
-        AES-256-GCM Encrypt
-            ↓
-        Store Ciphertext
-            ↓
-        Broadcast Ciphertext
-            ↓
-        Receiver decrypts locally
-
-        Server NEVER sees plaintext.
-        """
-
-        raise NotImplementedError(
-            "Encrypted messaging not implemented yet."
-        )
-
-    # ======================================================
     # VALIDATION HELPERS
     # ======================================================
-
-    def validate_message_length(
-        self,
-        content: str,
-    ):
-
-        if len(content) > 5000:
-
-            raise ValueError(
-                "Message exceeds maximum length."
-            )
 
     def validate_message_type(
         self,
@@ -629,19 +483,12 @@ class WebSocketService:
     ):
 
         allowed = {
-
             "text",
-
             "image",
-
             "video",
-
             "audio",
-
             "document",
-
             "system",
-
         }
 
         if message_type not in allowed:
@@ -649,10 +496,6 @@ class WebSocketService:
             raise ValueError(
                 f"Unsupported message type '{message_type}'."
             )
-
-    # ======================================================
-    # FUTURE UTILITIES
-    # ======================================================
 
     async def ensure_participant(
         self,
@@ -671,18 +514,6 @@ class WebSocketService:
                 "Access denied."
             )
 
-    async def ensure_message_owner(
-        self,
-        message: Message,
-        current_user: User,
-    ):
-
-        if message.sender_id != current_user.id:
-
-            raise ValueError(
-                "Operation not permitted."
-            )
-
     # ======================================================
-    # END OF SERVICE
+    # END
     # ======================================================

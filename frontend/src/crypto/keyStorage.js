@@ -1,18 +1,74 @@
 // ==========================================================
 // CipherChat Key Storage
 //
-// Stores user's RSA key pair in browser.
+// Stores RSA keys in browser.
 //
-// NOTE:
-// For production, use IndexedDB.
-// LocalStorage is used during development.
+// Development:
+// LocalStorage
+//
+// Production:
+// IndexedDB
 // ==========================================================
 
 const PUBLIC_KEY = "cipherchat_public_key";
 const PRIVATE_KEY = "cipherchat_private_key";
 
 // ==========================================================
-// Save Keys
+// Save Public Key
+// ==========================================================
+
+export function savePublicKey(
+    key
+) {
+
+    localStorage.setItem(
+        PUBLIC_KEY,
+        key
+    );
+
+}
+
+// ==========================================================
+// Save Private Key
+// ==========================================================
+
+export function savePrivateKey(
+    key
+) {
+
+    localStorage.setItem(
+        PRIVATE_KEY,
+        key
+    );
+
+}
+
+// ==========================================================
+// Get Public Key
+// ==========================================================
+
+export function getPublicKey() {
+
+    return localStorage.getItem(
+        PUBLIC_KEY
+    );
+
+}
+
+// ==========================================================
+// Get Private Key
+// ==========================================================
+
+export function getPrivateKey() {
+
+    return localStorage.getItem(
+        PRIVATE_KEY
+    );
+
+}
+
+// ==========================================================
+// Save Both Keys
 // ==========================================================
 
 export function saveKeyPair(
@@ -20,20 +76,18 @@ export function saveKeyPair(
     privateKey
 ) {
 
-    localStorage.setItem(
-        PUBLIC_KEY,
+    savePublicKey(
         publicKey
     );
 
-    localStorage.setItem(
-        PRIVATE_KEY,
+    savePrivateKey(
         privateKey
     );
 
 }
 
 // ==========================================================
-// Load Keys
+// Load Both Keys
 // ==========================================================
 
 export function loadKeyPair() {
@@ -41,29 +95,29 @@ export function loadKeyPair() {
     return {
 
         publicKey:
-            localStorage.getItem(
-                PUBLIC_KEY
-            ),
+            getPublicKey(),
 
         privateKey:
-            localStorage.getItem(
-                PRIVATE_KEY
-            ),
+            getPrivateKey(),
 
     };
 
 }
 
 // ==========================================================
-// Check if Keys Exist
+// Keys Exist
 // ==========================================================
 
 export function hasKeyPair() {
 
     return !!(
-        localStorage.getItem(PUBLIC_KEY)
+
+        getPublicKey()
+
         &&
-        localStorage.getItem(PRIVATE_KEY)
+
+        getPrivateKey()
+
     );
 
 }

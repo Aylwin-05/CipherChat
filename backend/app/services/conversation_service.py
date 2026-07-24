@@ -129,8 +129,9 @@ class ConversationService:
                     "other_user": other_user,
                     "last_message": (
                         {
-                            "content": last_message.content,
+                            "ciphertext": last_message.ciphertext,
                             "created_at": last_message.created_at,
+                            "message_type": last_message.message_type,
                         }
                         if last_message
                         else None

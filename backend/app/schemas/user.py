@@ -20,12 +20,20 @@ class UserResponse(BaseModel):
     email: EmailStr
     username: str
     display_name: str
+
     avatar_url: str | None = None
     bio: str | None = None
+
     is_verified: bool
+
     online_status: str
+
     last_seen: datetime | None = None
+
     created_at: datetime
+
+    # NEW
+    public_key: str | None = None
 
 
 # ==========================================================
@@ -33,9 +41,6 @@ class UserResponse(BaseModel):
 # ==========================================================
 
 class UpdateProfileRequest(BaseModel):
-    """
-    Update user profile.
-    """
 
     display_name: Optional[str] = Field(
         default=None,
@@ -56,17 +61,21 @@ class UpdateProfileRequest(BaseModel):
 # ==========================================================
 
 class SearchUserResponse(BaseModel):
-    """
-    Lightweight user object used for search results.
-    """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+
     username: str
+
     display_name: str
+
     avatar_url: str | None = None
+
     online_status: str
+
+    # NEW
+    public_key: str | None = None
 
 
 # ==========================================================
@@ -74,5 +83,7 @@ class SearchUserResponse(BaseModel):
 # ==========================================================
 
 class UsernameAvailabilityResponse(BaseModel):
+
     available: bool
+
     message: str

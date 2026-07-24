@@ -6,6 +6,17 @@ import {
 } from "react";
 
 import authService from "../services/authService";
+import keyService from "../services/keyService";
+
+import {
+    generateIdentityKeys,
+} from "../crypto/cryptoService";
+
+import {
+    hasKeyPair,
+    saveKeyPair,
+    getPublicKey,
+} from "../crypto/keyStorage";
 
 const AuthContext = createContext(null);
 
@@ -32,7 +43,6 @@ export function AuthProvider({ children }) {
             if (!accessToken) {
 
                 setLoading(false);
-
                 return;
 
             }
@@ -48,10 +58,7 @@ export function AuthProvider({ children }) {
 
             catch (error) {
 
-                console.error(
-                    "Authentication failed:",
-                    error
-                );
+                console.error(error);
 
                 authService.logout();
 
@@ -78,19 +85,99 @@ export function AuthProvider({ children }) {
     // ==========================================================
 
     const login = async (
+
         accessToken,
+
         refreshToken,
+
     ) => {
 
-        const profile =
-            await authService.login(
-                accessToken,
-                refreshToken,
+        try {
+
+            console.log("========== LOGIN ==========");
+
+            const profile =
+                await authService.login(
+                    accessToken,
+                    refreshToken,
+                );
+
+            // --------------------------------------------------
+            // Generate identity only once
+            // --------------------------------------------------
+
+            if (!hasKeyPair()) {
+
+                console.log(
+                    "Generating RSA identity..."
+                );
+
+                const keys =
+                    await generateIdentityKeys();
+
+                saveKeyPair(
+                    keys.publicKey,
+                    keys.privateKey,
+                );
+
+                console.log(
+                    "Uploading public key..."
+                );
+
+                await keyService.uploadPublicKey(
+                    keys.publicKey
+                );
+
+                console.log(
+                    "Public key uploaded."
+                );
+
+            }
+
+            else {
+
+                console.log(
+                    "Key pair already exists."
+                );
+
+                // Optional safety check
+                // Upload again if backend lost it
+
+                try {
+
+                    await keyService.uploadPublicKey(
+                        getPublicKey()
+                    );
+
+                }
+
+                catch (e) {
+
+                    console.log(
+                        "Public key already exists on server."
+                    );
+
+                }
+
+            }
+
+            setAccessToken(
+                accessToken
             );
 
-        setAccessToken(accessToken);
+            setUser(
+                profile
+            );
 
-        setUser(profile);
+        }
+
+        catch (error) {
+
+            console.error(error);
+
+            throw error;
+
+        };
 
     };
 
@@ -102,9 +189,9 @@ export function AuthProvider({ children }) {
 
         authService.logout();
 
-        setAccessToken(null);
-
         setUser(null);
+
+        setAccessToken(null);
 
     };
 
@@ -112,20 +199,12 @@ export function AuthProvider({ children }) {
 
         <AuthContext.Provider
             value={{
-
                 user,
-
                 loading,
-
                 accessToken,
-
                 login,
-
                 logout,
-
-                isAuthenticated:
-                    !!user,
-
+                isAuthenticated: !!user,
             }}
         >
 

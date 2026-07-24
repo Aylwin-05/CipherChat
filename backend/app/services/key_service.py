@@ -1,19 +1,25 @@
+from base64 import b64decode, b64encode
 from uuid import UUID
 
 from fastapi import HTTPException
 
 from app.models.user import User
-from app.repositories.auth_repository import AuthRepository
+from app.models.user_key import UserKey
+from app.repositories.user_key_repository import UserKeyRepository
 
 
 class KeyService:
     """
-    Handles public encryption keys.
+    Handles public key management.
+
+    Backend stores ONLY the public key.
+
+    Private keys never leave the client.
     """
 
     def __init__(
         self,
-        repository: AuthRepository,
+        repository: UserKeyRepository,
     ):
         self.repository = repository
 
@@ -27,12 +33,36 @@ class KeyService:
         public_key: str,
     ):
 
-        current_user.public_key = public_key
+        existing = await self.repository.get_by_user_id(
+            current_user.id
+        )
 
-        await self.repository.save()
+        public_key_bytes = b64decode(public_key)
+
+        if existing:
+
+            existing.public_key = public_key_bytes
+
+            await self.repository.save(existing)
+
+            return {
+                "success": True,
+                "message": "Public key updated.",
+            }
+
+        key = UserKey(
+            user_id=current_user.id,
+            public_key=public_key_bytes,
+
+            # kept only because your DB schema currently requires it
+            private_key_encrypted=b"",
+        )
+
+        await self.repository.create_key(key)
 
         return {
-            "message": "Public key uploaded successfully."
+            "success": True,
+            "message": "Public key uploaded.",
         }
 
     # ==========================================================
@@ -44,17 +74,19 @@ class KeyService:
         user_id: UUID,
     ):
 
-        user = await self.repository.get_user_by_id(
+        key = await self.repository.get_by_user_id(
             user_id
         )
 
-        if not user:
+        if key is None:
+
             raise HTTPException(
                 status_code=404,
-                detail="User not found.",
+                detail="Public key not found.",
             )
 
         return {
-            "user_id": user.id,
-            "public_key": user.public_key,
+            "public_key": b64encode(
+                key.public_key
+            ).decode()
         }

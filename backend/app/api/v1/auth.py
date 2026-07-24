@@ -17,6 +17,7 @@ router = APIRouter(
     tags=["Authentication"],
 )
 
+
 # ==========================================================
 # Send OTP
 # ==========================================================
@@ -77,8 +78,6 @@ async def verify_otp(
 
     user = result["user"]
 
-    private_key = result["private_key"]
-
     access_token = jwt.create_access_token(
         user_id=str(user.id),
         email=user.email,
@@ -93,5 +92,4 @@ async def verify_otp(
         access_token=access_token,
         refresh_token=refresh_token,
         user=user,
-        private_key=private_key,
     )

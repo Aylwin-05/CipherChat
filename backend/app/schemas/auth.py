@@ -59,7 +59,7 @@ class UserResponse(BaseModel):
 
     bio: str | None = None
 
-    avatar_url: str |None = None
+    avatar_url: str | None = None
 
     is_verified: bool
 
@@ -102,7 +102,3 @@ class TokenResponse(BaseModel):
     token_type: str = "Bearer"
 
     user: UserResponse
-
-    # Returned ONLY when a new account is created.
-    # Existing users receive None.
-    private_key: str | None = None
