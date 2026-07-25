@@ -49,33 +49,47 @@ class ConversationService:
         if conversation:
             return conversation
 
-        conversation = Conversation()
+        try:
 
-        conversation = (
-            await self.conversation_repository.create_conversation(
-                conversation
+            conversation = Conversation()
+
+            conversation = (
+                await self.conversation_repository.create_conversation(
+                    conversation
+                )
             )
-        )
 
-        participant1 = ConversationParticipant(
-            conversation_id=conversation.id,
-            user_id=current_user.id,
-        )
+            participant1 = ConversationParticipant(
+                conversation_id=conversation.id,
+                user_id=current_user.id,
+            )
 
-        participant2 = ConversationParticipant(
-            conversation_id=conversation.id,
-            user_id=other_user_id,
-        )
+            participant2 = ConversationParticipant(
+                conversation_id=conversation.id,
+                user_id=other_user_id,
+            )
 
-        await self.conversation_repository.add_participant(
-            participant1
-        )
+            await self.conversation_repository.add_participant(
+                participant1
+            )
 
-        await self.conversation_repository.add_participant(
-            participant2
-        )
+            await self.conversation_repository.add_participant(
+                participant2
+            )
 
-        return conversation
+            # --------------------------------------
+            # SAVE EVERYTHING
+            # --------------------------------------
+
+            await self.conversation_repository.commit()
+
+            return conversation
+
+        except Exception:
+
+            await self.conversation_repository.rollback()
+
+            raise
 
     # ==========================================================
     # My Conversations
@@ -105,10 +119,6 @@ class ConversationService:
 
             if other_user is None:
                 continue
-
-            # --------------------------------------------------
-            # LIVE ONLINE STATUS
-            # --------------------------------------------------
 
             other_user.online_status = (
                 "online"

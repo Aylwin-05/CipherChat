@@ -49,11 +49,50 @@ async def create_private_conversation(
         message_repository,
     )
 
-    return await service.get_or_create_private_conversation(
+    # Create or fetch conversation
+    conversation = await service.get_or_create_private_conversation(
         current_user,
         request.user_id,
     )
 
+    # Get the other participant
+    other_user = await conversation_repository.get_other_user(
+        conversation.id,
+        current_user.id,
+    )
+
+    # Get last message (if any)
+    last_message = await message_repository.get_last_message(
+        conversation.id,
+    )
+
+    return {
+
+        "id": conversation.id,
+
+        "updated_at": conversation.updated_at,
+
+        "other_user": other_user,
+
+        "last_message": (
+
+            {
+
+                "ciphertext": last_message.ciphertext,
+
+                "message_type": last_message.message_type,
+
+                "created_at": last_message.created_at,
+
+            }
+
+            if last_message
+
+            else None
+
+        ),
+
+    }
 
 # ==========================================================
 # My Conversations
