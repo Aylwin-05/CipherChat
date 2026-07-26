@@ -41,17 +41,9 @@ def serialize_message(message):
         conversation_id=message.conversation_id,
         sender_id=message.sender_id,
 
-        ciphertext=b64encode(
-            message.ciphertext
-        ).decode(),
-
-        encrypted_key=b64encode(
-            message.encrypted_key
-        ).decode(),
-
-        nonce=b64encode(
-            message.nonce
-        ).decode(),
+        ciphertext=message.ciphertext,
+        encrypted_key=message.encrypted_key,
+        nonce=message.nonce,
 
         crypto_version=message.crypto_version,
 

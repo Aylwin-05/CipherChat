@@ -103,11 +103,9 @@ class MessageService:
             conversation_id=conversation_id,
             sender_id=current_user.id,
 
-            ciphertext=base64.b64decode(ciphertext),
-            encrypted_key=base64.b64decode(
-                encrypted_key
-            ),
-            nonce=base64.b64decode(nonce),
+            ciphertext=ciphertext,
+            encrypted_key=encrypted_key,
+            nonce=nonce,
 
             crypto_version=1,
             message_type=message_type,
