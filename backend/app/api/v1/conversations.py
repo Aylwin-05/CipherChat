@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-
+import traceback
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 
@@ -41,58 +41,67 @@ async def create_private_conversation(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    conversation_repository = ConversationRepository(db)
-    message_repository = MessageRepository(db)
+    try:
+        conversation_repository = ConversationRepository(db)
+        message_repository = MessageRepository(db)
 
-    service = ConversationService(
-        conversation_repository,
-        message_repository,
-    )
+        service = ConversationService(
+            conversation_repository,
+            message_repository,
+        )
 
-    # Create or fetch conversation
-    conversation = await service.get_or_create_private_conversation(
-        current_user,
-        request.user_id,
-    )
+        print("STEP 1")
 
-    # Get the other participant
-    other_user = await conversation_repository.get_other_user(
-        conversation.id,
-        current_user.id,
-    )
+        conversation = await service.get_or_create_private_conversation(
+            current_user,
+            request.user_id,
+        )
 
-    # Get last message (if any)
-    last_message = await message_repository.get_last_message(
-        conversation.id,
-    )
+        print("STEP 2")
 
-    return {
+        await db.commit()
 
-        "id": conversation.id,
+        print("STEP 3")
 
-        "updated_at": conversation.updated_at,
+        await db.refresh(conversation)
 
-        "other_user": other_user,
+        print("STEP 4")
 
-        "last_message": (
+        other_user = await conversation_repository.get_other_user(
+            conversation.id,
+            current_user.id,
+        )
 
-            {
+        print("OTHER USER:", other_user)
 
-                "ciphertext": last_message.ciphertext,
+        print("STEP 5")
 
-                "message_type": last_message.message_type,
+        last_message = await message_repository.get_last_message(
+            conversation.id,
+        )
 
-                "created_at": last_message.created_at,
+        print("LAST MESSAGE:", last_message)
 
-            }
+        print("STEP 6")
 
-            if last_message
+        return {
+            "id": conversation.id,
+            "updated_at": conversation.updated_at,
+            "other_user": other_user,
+            "last_message": (
+                {
+                    "ciphertext": last_message.ciphertext,
+                    "message_type": last_message.message_type,
+                    "created_at": last_message.created_at,
+                }
+                if last_message
+                else None
+            ),
+        }
 
-            else None
-
-        ),
-
-    }
+    except Exception:
+        traceback.print_exc()
+        raise
 
 # ==========================================================
 # My Conversations

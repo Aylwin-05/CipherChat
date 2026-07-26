@@ -42,9 +42,12 @@ def serialize_message(message):
         sender_id=message.sender_id,
 
         ciphertext=message.ciphertext,
-        encrypted_key=message.encrypted_key,
-        nonce=message.nonce,
 
+        encrypted_key_sender=message.encrypted_key_sender,
+
+        encrypted_key_receiver=message.encrypted_key_receiver,
+
+        nonce=message.nonce,
         crypto_version=message.crypto_version,
 
         message_type=message.message_type,
@@ -98,7 +101,8 @@ async def send_message(
             current_user=current_user,
             conversation_id=request.conversation_id,
             ciphertext=request.ciphertext,
-            encrypted_key=request.encrypted_key,
+            encrypted_key_sender=request.encrypted_key_sender,
+            encrypted_key_receiver=request.encrypted_key_receiver,
             nonce=request.nonce,
             message_type=request.message_type,
             reply_to_id=request.reply_to_id,

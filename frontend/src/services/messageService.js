@@ -42,8 +42,11 @@ const messageService = {
                         ciphertext:
                             encrypted.ciphertext,
 
-                        encrypted_key:
-                            encrypted.encrypted_key,
+                        encrypted_key_sender:
+                        encrypted.encrypted_key_sender,
+
+                        encrypted_key_receiver:
+                        encrypted.encrypted_key_receiver,
 
                         nonce:
                             encrypted.nonce,

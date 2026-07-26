@@ -23,7 +23,11 @@ class SendMessageRequest(BaseModel):
         min_length=1,
     )
 
-    encrypted_key: str = Field(
+    encrypted_key_sender: str = Field(
+        min_length=1,
+    )
+
+    encrypted_key_receiver: str = Field(
         min_length=1,
     )
 
@@ -88,7 +92,8 @@ class MessageResponse(BaseModel):
 
     ciphertext: str
 
-    encrypted_key: str
+    encrypted_key_sender: str
+    encrypted_key_receiver: str
 
     nonce: str
 

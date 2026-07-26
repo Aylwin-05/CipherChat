@@ -47,8 +47,11 @@ class AuthRepository(BaseRepository):
 
     async def get_user_by_id(
         self,
-        user_id: UUID,
-    ) -> User | None:
+        user_id,
+    ):
+
+        from sqlalchemy import select
+        from app.models.user import User
 
         result = await self.execute(
             select(User).where(

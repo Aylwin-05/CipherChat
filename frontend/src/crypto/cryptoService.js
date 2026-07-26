@@ -206,19 +206,13 @@ async function importAESKey(
 // ENCRYPT MESSAGE
 // ==========================================================
 
-export async function encryptMessage(
+export async function 
+encryptMessage(
     plaintext,
-    recipientPublicKeyBase64,
-) {
-
-    // ----------------------------------------------
-    // Import recipient public key
-    // ----------------------------------------------
-
-    const recipientPublicKey =
-        await importPublicKey(
-            recipientPublicKeyBase64
-        );
+    senderPublicKey,
+    receiverPublicKey
+) 
+{
 
     // ----------------------------------------------
     // Generate one-time AES key
@@ -268,12 +262,27 @@ export async function encryptMessage(
     // Encrypt AES key using RSA
     // ----------------------------------------------
 
-    const encryptedAESKey =
+    const senderKey =
+        await importPublicKey(senderPublicKey);
+
+    const receiverKey =
+        await importPublicKey(receiverPublicKey);
+
+    const encryptedSenderKey =
         await crypto.subtle.encrypt(
             {
-                name: "RSA-OAEP",
+                name:"RSA-OAEP"
             },
-            recipientPublicKey,
+            senderKey,
+            rawAESKey
+        );
+
+    const encryptedReceiverKey =
+        await crypto.subtle.encrypt(
+            {
+                name:"RSA-OAEP"
+            },
+            receiverKey,
             rawAESKey
         );
 
@@ -288,9 +297,14 @@ export async function encryptMessage(
                 encryptedMessage
             ),
 
-        encrypted_key:
+        encrypted_key_sender:
             arrayBufferToBase64(
-                encryptedAESKey
+                encryptedSenderKey
+            ),
+
+        encrypted_key_receiver:
+            arrayBufferToBase64(
+                encryptedReceiverKey
             ),
 
         nonce:
@@ -298,8 +312,7 @@ export async function encryptMessage(
                 iv.buffer
             ),
 
-        message_type:
-            "text",
+        message_type:"text"
 
     };
 
@@ -494,31 +507,34 @@ export async function decryptBytes(
 // VALIDATION
 // ==========================================================
 
-export function isEncryptedMessage(
-    message
-) {
+    export function isEncryptedMessage(
+        message
+    ) {
 
-    return !!(
+        return !!(
 
-        message &&
+            message &&
 
-        message.ciphertext &&
+            message.ciphertext &&
 
-        message.encrypted_key &&
+            (
+                message.encrypted_key_sender ||
+                message.encrypted_key_receiver
+            ) &&
 
-        message.nonce
+            message.nonce
 
-    );
+        );
 
-}
+    }
 
 // ==========================================================
 // SAFE DECRYPT
 // ==========================================================
-
 export async function safeDecrypt(
     message,
     privateKey,
+    currentUserId,
 ) {
 
     try {
@@ -529,17 +545,17 @@ export async function safeDecrypt(
 
         }
 
+        const encryptedKey =
+            message.sender_id === currentUserId
+                ? message.encrypted_key_sender
+                : message.encrypted_key_receiver;
+
         const plaintext =
             await decryptMessage(
-
                 message.ciphertext,
-
-                message.encrypted_key,
-
+                encryptedKey,
                 message.nonce,
-
-                privateKey
-
+                privateKey,
             );
 
         return {

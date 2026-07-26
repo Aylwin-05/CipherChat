@@ -66,7 +66,12 @@ class Message(Base):
         nullable=False,
     )
 
-    encrypted_key: Mapped[str] = mapped_column(
+    encrypted_key_sender: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+    )
+
+    encrypted_key_receiver: Mapped[str] = mapped_column(
         String,
         nullable=False,
     )

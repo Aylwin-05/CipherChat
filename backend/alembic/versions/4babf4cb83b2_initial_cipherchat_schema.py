@@ -1,8 +1,8 @@
-"""Initial schema
+"""Initial CipherChat schema
 
-Revision ID: a6853ca075c1
+Revision ID: 4babf4cb83b2
 Revises: 
-Create Date: 2026-07-25 22:58:51.089077
+Create Date: 2026-07-26 22:30:22.340274
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'a6853ca075c1'
+revision: str = '4babf4cb83b2'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -87,7 +87,8 @@ def upgrade() -> None:
     sa.Column('conversation_id', sa.UUID(), nullable=False),
     sa.Column('sender_id', sa.UUID(), nullable=False),
     sa.Column('ciphertext', sa.String(), nullable=False),
-    sa.Column('encrypted_key', sa.String(), nullable=False),
+    sa.Column('encrypted_key_sender', sa.String(), nullable=False),
+    sa.Column('encrypted_key_receiver', sa.String(), nullable=False),
     sa.Column('nonce', sa.String(), nullable=False),
     sa.Column('message_type', sa.String(length=30), nullable=False),
     sa.Column('crypto_version', sa.Integer(), nullable=False),

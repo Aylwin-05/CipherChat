@@ -1,4 +1,3 @@
-import base64
 from uuid import UUID
 
 from fastapi import UploadFile
@@ -75,7 +74,8 @@ class MessageService:
         current_user: User,
         conversation_id: UUID,
         ciphertext: str,
-        encrypted_key: str,
+        encrypted_key_sender: str,
+        encrypted_key_receiver: str,
         nonce: str,
         message_type: str = "text",
         reply_to_id: UUID | None = None,
@@ -104,11 +104,17 @@ class MessageService:
             sender_id=current_user.id,
 
             ciphertext=ciphertext,
-            encrypted_key=encrypted_key,
+
+            encrypted_key_sender=encrypted_key_sender,
+
+            encrypted_key_receiver=encrypted_key_receiver,
+
             nonce=nonce,
 
             crypto_version=1,
+
             message_type=message_type,
+
             reply_to_id=reply_to_id,
         )
 

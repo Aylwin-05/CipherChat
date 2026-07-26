@@ -36,6 +36,28 @@ const authService = {
         return response.data;
 
     },
+    async refreshAccessToken() {
+
+    const refreshToken =
+        this.getRefreshToken();
+
+    const response =
+        await api.post(
+            "/auth/refresh",
+            {
+                refresh_token:
+                    refreshToken,
+            }
+        );
+
+    localStorage.setItem(
+        "access_token",
+        response.data.access_token
+    );
+
+    return response.data.access_token;
+
+    },
 
     // ======================================================
     // Get Logged-in User

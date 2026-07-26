@@ -157,7 +157,9 @@ class WebSocketService:
 
             "ciphertext",
 
-            "encrypted_key",
+            "encrypted_key_sender",
+
+            "encrypted_key_receiver",
 
             "nonce",
 
@@ -190,8 +192,11 @@ class WebSocketService:
                 "ciphertext":
                     data["ciphertext"],
 
-                "encrypted_key":
-                    data["encrypted_key"],
+                "encrypted_key_sender":
+                    data["encrypted_key_sender"],
+
+                "encrypted_key_receiver":
+                    data["encrypted_key_receiver"],
 
                 "nonce":
                     data["nonce"],

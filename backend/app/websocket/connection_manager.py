@@ -120,6 +120,10 @@ class ConnectionManager:
 
         dead = []
 
+        print(
+            f"Broadcasting to {len(self.conversation_connections[conversation_id])} sockets"
+        )
+
         for _, websocket in self.conversation_connections[
             conversation_id
         ]:

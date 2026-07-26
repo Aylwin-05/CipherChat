@@ -85,20 +85,18 @@ export default function useMessages(
 
                             try {
 
-                                const plaintext =
-                                    await decryptMessage(
+                        const encryptedKey =
+                            message.sender_id === user.id
+                                ? message.encrypted_key_sender
+                                : message.encrypted_key_receiver;
 
-                                        message.ciphertext,
-
-                                        message.encrypted_key,
-
-                                        message.nonce,
-
-                                        await importPrivateKey(
-                                            getPrivateKey()
-                                        )
-
-                                    );
+                        const plaintext =
+                            await decryptMessage(
+                                message.ciphertext,
+                                encryptedKey,
+                                message.nonce,
+                                getPrivateKey()
+                            );
 
                                 return {
 
@@ -171,20 +169,18 @@ export default function useMessages(
 
                             try {
 
-                                const plaintext =
-                                    await decryptMessage(
+                            const encryptedKey =
+                                event.sender_id === user.id
+                                    ? event.encrypted_key_sender
+                                    : event.encrypted_key_receiver;
 
-                                        event.ciphertext,
-
-                                        event.encrypted_key,
-
-                                        event.nonce,
-
-                                        await importPrivateKey(
-                                           getPrivateKey()
-                                        ),
-
-                                    );
+                            const plaintext =
+                                await decryptMessage(
+                                    event.ciphertext,
+                                    encryptedKey,
+                                    event.nonce,
+                                    getPrivateKey()
+                                );
 
                                 const message = {
 
@@ -471,24 +467,22 @@ export default function useMessages(
             // Fetch recipient public key
             //------------------------------------------
 
-            console.log("1. Fetching recipient key...");
-
-            const response =
+            const receiver =
                 await keyService.getPublicKey(
                     conversation.other_user.id
                 );
 
-            console.log("Recipient key:", response);
+            const senderPublicKey =
+                localStorage.getItem(
+                    "cipherchat_public_key"
+                );
 
-            console.log("2. Encrypting...");
-
-                const encrypted =
-                    await encryptMessage(
-                        plaintext,
-                        response.public_key,
-                    );
-
-            console.log("Encrypted payload:", encrypted);
+            const encrypted =
+                await encryptMessage(
+                    plaintext,
+                    senderPublicKey,
+                    receiver.public_key
+                );
 
             //------------------------------------------
             // Save encrypted payload via REST
@@ -549,8 +543,11 @@ export default function useMessages(
                 ciphertext:
                     saved.ciphertext,
 
-                encrypted_key:
-                    saved.encrypted_key,
+                encrypted_key_sender:
+                saved.encrypted_key_sender,
+
+                encrypted_key_receiver:
+                saved.encrypted_key_receiver,
 
                 nonce:
                     saved.nonce,
