@@ -4,7 +4,6 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
-    LargeBinary,
     String,
     func,
 )
@@ -62,18 +61,18 @@ class Message(Base):
     # Encrypted Payload
     # ==========================================================
 
-    ciphertext: Mapped[bytes] = mapped_column(
-        LargeBinary,
+    ciphertext: Mapped[str] = mapped_column(
+        String,
         nullable=False,
     )
 
-    encrypted_key: Mapped[bytes] = mapped_column(
-        LargeBinary,
+    encrypted_key: Mapped[str] = mapped_column(
+        String,
         nullable=False,
     )
 
-    nonce: Mapped[bytes] = mapped_column(
-        LargeBinary,
+    nonce: Mapped[str] = mapped_column(
+        String,
         nullable=False,
     )
 

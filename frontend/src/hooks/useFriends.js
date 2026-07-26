@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 
 import friendService from "../services/friendService";
 
@@ -64,6 +65,11 @@ export default function useFriends() {
 
             setError(err);
 
+            toast.error(
+                err.response?.data?.detail ??
+                "Unable to load friends."
+            );
+
         }
 
         finally {
@@ -103,6 +109,13 @@ export default function useFriends() {
 
             console.error(err);
 
+            setSearchResults([]);
+
+            toast.error(
+                err.response?.data?.detail ??
+                "Unable to search users."
+            );
+
         }
 
         finally {
@@ -119,7 +132,34 @@ export default function useFriends() {
 
     async function sendFriendRequest(receiverId) {
 
-        await friendService.sendFriendRequest(receiverId);
+        try {
+
+            const response =
+                await friendService.sendFriendRequest(
+                    receiverId
+                );
+
+            toast.success(
+                response.message ??
+                "Friend request sent."
+            );
+
+            await loadData();
+
+            return response;
+
+        }
+
+        catch (error) {
+
+            console.error(error);
+
+            toast.error(
+                error.response?.data?.detail ??
+                "Failed to send friend request."
+            );
+
+        }
 
     }
 
@@ -129,9 +169,32 @@ export default function useFriends() {
 
     async function acceptRequest(friendshipId) {
 
-        await friendService.acceptRequest(friendshipId);
+        try {
 
-        await loadData();
+            const response =
+                await friendService.acceptRequest(
+                    friendshipId
+                );
+
+            toast.success(
+                response.message ??
+                "Friend request accepted."
+            );
+
+            await loadData();
+
+        }
+
+        catch (error) {
+
+            console.error(error);
+
+            toast.error(
+                error.response?.data?.detail ??
+                "Unable to accept request."
+            );
+
+        }
 
     }
 
@@ -141,9 +204,32 @@ export default function useFriends() {
 
     async function rejectRequest(friendshipId) {
 
-        await friendService.rejectRequest(friendshipId);
+        try {
 
-        await loadData();
+            const response =
+                await friendService.rejectRequest(
+                    friendshipId
+                );
+
+            toast.success(
+                response.message ??
+                "Friend request rejected."
+            );
+
+            await loadData();
+
+        }
+
+        catch (error) {
+
+            console.error(error);
+
+            toast.error(
+                error.response?.data?.detail ??
+                "Unable to reject request."
+            );
+
+        }
 
     }
 
@@ -153,9 +239,32 @@ export default function useFriends() {
 
     async function removeFriend(friendshipId) {
 
-        await friendService.removeFriend(friendshipId);
+        try {
 
-        await loadData();
+            const response =
+                await friendService.removeFriend(
+                    friendshipId
+                );
+
+            toast.success(
+                response.message ??
+                "Friend removed successfully."
+            );
+
+            await loadData();
+
+        }
+
+        catch (error) {
+
+            console.error(error);
+
+            toast.error(
+                error.response?.data?.detail ??
+                "Unable to remove friend."
+            );
+
+        }
 
     }
 

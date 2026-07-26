@@ -1,4 +1,3 @@
-from base64 import b64decode, b64encode
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -12,9 +11,12 @@ class KeyService:
     """
     Handles public key management.
 
-    Backend stores ONLY the public key.
+    CipherChat design:
 
-    Private keys never leave the client.
+    • Client generates RSA key pair.
+    • Client stores the private key locally.
+    • Client uploads ONLY the Base64-encoded public key.
+    • Backend stores the Base64 string exactly as received.
     """
 
     def __init__(
@@ -37,13 +39,13 @@ class KeyService:
             current_user.id
         )
 
-        public_key_bytes = b64decode(public_key)
-
         if existing:
 
-            existing.public_key = public_key_bytes
+            existing.public_key = public_key
 
             await self.repository.save(existing)
+
+            await self.repository.commit()
 
             return {
                 "success": True,
@@ -52,13 +54,16 @@ class KeyService:
 
         key = UserKey(
             user_id=current_user.id,
-            public_key=public_key_bytes,
+            public_key=public_key,
 
-            # kept only because your DB schema currently requires it
-            private_key_encrypted=b"",
+            # Keep this only because your current schema requires it.
+            # We'll remove this column later.
+            private_key_encrypted="",
         )
 
         await self.repository.create_key(key)
+
+        await self.repository.commit()
 
         return {
             "success": True,
@@ -86,7 +91,5 @@ class KeyService:
             )
 
         return {
-            "public_key": b64encode(
-                key.public_key
-            ).decode()
+            "public_key": key.public_key,
         }

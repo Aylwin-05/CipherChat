@@ -67,11 +67,9 @@ class UserRepository(BaseRepository):
         result = await self.execute(
             select(User)
             .where(
-                or_(
-                    User.username.ilike(f"%{query}%"),
-                    User.display_name.ilike(f"%{query}%"),
-                )
+                User.email.ilike(f"%{query}%")
             )
+            .order_by(User.email)
             .limit(limit)
         )
 

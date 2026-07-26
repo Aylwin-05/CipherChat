@@ -1,2 +1,4 @@
-from cryptography.fernet import Fernet
-print(Fernet.generate_key().decode())
+from app.database.base import Base
+from app.models import *
+
+print(Base.metadata.tables.keys())

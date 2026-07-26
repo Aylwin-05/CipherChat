@@ -4,6 +4,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     LargeBinary,
+    String,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -53,13 +54,13 @@ class UserKey(Base):
     # Keys
     # ==========================================================
 
-    public_key: Mapped[bytes] = mapped_column(
-        LargeBinary,
+    public_key: Mapped[str] = mapped_column(
+        String,
         nullable=False,
     )
 
-    private_key_encrypted: Mapped[bytes] = mapped_column(
-        LargeBinary,
+    private_key_encrypted: Mapped[str] = mapped_column(
+        String,
         nullable=False,
     )
 

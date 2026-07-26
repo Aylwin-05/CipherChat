@@ -65,7 +65,25 @@ class FriendResponse(BaseModel):
 
     receiver: FriendUser
 
+# ==========================================================
+# Search User Response
+# ==========================================================
 
+class SearchUserResponse(BaseModel):
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+
+    email: str
+
+    username: str
+
+    display_name: str
+
+    avatar_url: str | None = None
+
+    online_status: str
 # ==========================================================
 # Generic Message
 # ==========================================================

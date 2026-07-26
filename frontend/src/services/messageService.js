@@ -19,44 +19,48 @@ const messageService = {
 
     },
 
-    // ======================================================
-    // Send Encrypted Message
-    // ======================================================
+        // ======================================================
+        // Send Encrypted Message
+        // ======================================================
 
-    async sendMessage(
-        conversationId,
-        encrypted,
-    ) {
+        async sendMessage(
+            conversationId,
+            encrypted,
+            replyToId = null,
+        ) {
 
-        const response =
-            await api.post(
+            const response =
+                await api.post(
 
-                "/messages/send",
+                    "/messages/send",
 
-                {
+                    {
 
-                    conversation_id:
-                        conversationId,
+                        conversation_id:
+                            conversationId,
 
-                    ciphertext:
-                        encrypted.ciphertext,
+                        ciphertext:
+                            encrypted.ciphertext,
 
-                    encrypted_key:
-                        encrypted.encrypted_key,
+                        encrypted_key:
+                            encrypted.encrypted_key,
 
-                    nonce:
-                        encrypted.nonce,
+                        nonce:
+                            encrypted.nonce,
 
-                    message_type:
-                        "text",
+                        message_type:
+                            "text",
 
-                }
+                        reply_to_id:
+                            replyToId,
 
-            );
+                    }
 
-        return response.data;
+                );
 
-    },
+            return response.data;
+
+        }
 
 };
 

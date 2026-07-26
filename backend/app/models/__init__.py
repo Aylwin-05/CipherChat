@@ -1,16 +1,19 @@
-from app.models.conversation import Conversation
-from app.models.conversation_participant import ConversationParticipant
-from app.models.friendship import Friendship
-from app.models.message import Message
-from app.models.otp import OTPCode
-from app.models.user import User
-from app.models.attachment import Attachment
+from .user import User
+from .user_key import UserKey
+from .conversation import Conversation
+from .conversation_participant import ConversationParticipant
+from .message import Message
+from .attachment import Attachment
+from .friendship import Friendship
+from .otp import OTPCode
+
 __all__ = [
     "User",
-    "OTPCode",
-    "Friendship",
+    "UserKey",
     "Conversation",
     "ConversationParticipant",
     "Message",
     "Attachment",
+    "Friendship",
+    "OTPCode",
 ]

@@ -56,6 +56,11 @@ class FriendService:
 
             await self.repository.commit()
 
+            # Reload with sender/receiver relationships loaded
+            friendship = await self.repository.get_by_id(
+                friendship.id
+            )
+
             return friendship
 
         except Exception:
@@ -211,4 +216,18 @@ class FriendService:
 
         return await self.repository.get_friends(
             current_user.id
+        )
+    # ==========================================================
+    # Search Users
+    # ==========================================================
+
+    async def search_users(
+        self,
+        current_user: User,
+        email: str,
+    ):
+
+        return await self.repository.search_users(
+            current_user.id,
+            email,
         )

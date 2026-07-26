@@ -85,10 +85,7 @@ class AuthService:
         if otp_record.attempts >= self.MAX_ATTEMPTS:
             return None
 
-        if (
-            datetime.now(timezone.utc)
-            > otp_record.expires_at
-        ):
+        if datetime.now(timezone.utc) > otp_record.expires_at:
             return None
 
         if not SecurityUtils.verify_otp(
@@ -130,7 +127,24 @@ class AuthService:
         # New User Registration
         # =====================================================
 
-        username = email.split("@")[0]
+        base_username = (
+            email.split("@")[0]
+            .strip()
+            .lower()
+        )
+
+        username = base_username
+
+        counter = 1
+
+        # Generate a unique username
+        while await self.repository.get_user_by_username(
+            username
+        ):
+
+            username = f"{base_username}{counter}"
+
+            counter += 1
 
         user = User(
             email=email,

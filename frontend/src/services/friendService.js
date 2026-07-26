@@ -9,7 +9,7 @@ const friendService = {
     async searchUsers(query) {
 
         const response = await api.get(
-            `/users/search?q=${encodeURIComponent(query)}`
+            `/friends/search?email=${encodeURIComponent(query)}`
         );
 
         return response.data;

@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from sqlalchemy import and_, or_, select
+from app.models.user import User
 from sqlalchemy.orm import selectinload
 from app.core.enums import FriendRequestStatus
 from app.models.friendship import Friendship
@@ -155,6 +156,37 @@ class FriendRepository(BaseRepository):
         )
 
         return result.scalars().all()
+    # ==========================================================
+    # Search Users by Email
+    # ==========================================================
+
+    async def search_users(
+        self,
+        current_user_id: UUID,
+        email: str,
+    ):
+
+        from app.models.user import User
+
+        result = await self.execute(
+
+            select(User)
+
+            .where(
+
+                User.id != current_user_id,
+
+                User.email.ilike(f"%{email}%"),
+
+            )
+
+            .order_by(User.email)
+
+            .limit(20)
+
+        )
+
+        return result.scalars().all()
 
     # ==========================================================
     # Update Friendship
@@ -172,3 +204,33 @@ class FriendRepository(BaseRepository):
         friendship: Friendship,
     ):
         await self.delete(friendship)
+
+    # ==========================================================
+# Search Users by Email
+# ==========================================================
+
+async def search_users(
+    self,
+    current_user_id: UUID,
+    email: str,
+):
+
+    result = await self.execute(
+
+        select(User)
+
+        .where(
+
+            User.id != current_user_id,
+
+            User.email.ilike(f"%{email}%"),
+
+        )
+
+        .order_by(User.email)
+
+        .limit(20)
+
+    )
+
+    return result.scalars().all()

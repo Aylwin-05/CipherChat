@@ -32,6 +32,19 @@ class AuthRepository(BaseRepository):
 
         return result.scalar_one_or_none()
 
+    async def get_user_by_username(
+        self,
+        username: str,
+    ) -> User | None:
+
+        result = await self.execute(
+            select(User).where(
+                User.username == username
+            )
+        )
+
+        return result.scalar_one_or_none()
+
     async def get_user_by_id(
         self,
         user_id: UUID,
@@ -160,7 +173,7 @@ class AuthRepository(BaseRepository):
         await self.update()
 
     # ==========================================================
-    # Commit
+    # Transaction Helpers
     # ==========================================================
 
     async def commit(self):

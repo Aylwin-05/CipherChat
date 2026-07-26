@@ -12,10 +12,7 @@ import keyService from "../services/keyService";
 import {
     encryptMessage,
     decryptMessage,
-    importPrivateKey,
-    importPublicKey,
 } from "../crypto/cryptoService";
-
 import {
     getPrivateKey,
 } from "../crypto/keyStorage";
@@ -51,7 +48,7 @@ export default function useMessages(
 
         }
 
-        initialize();
+        void initialize();
 
         return () => {
 
@@ -77,15 +74,6 @@ export default function useMessages(
                 );
 
             //--------------------------------------------------
-            // Import my private key
-            //--------------------------------------------------
-
-            const privateKey =
-                await importPrivateKey(
-                    getPrivateKey()
-                );
-
-            //--------------------------------------------------
             // Decrypt every message
             //--------------------------------------------------
 
@@ -106,7 +94,9 @@ export default function useMessages(
 
                                         message.nonce,
 
-                                        privateKey,
+                                        await importPrivateKey(
+                                            getPrivateKey()
+                                        )
 
                                     );
 
@@ -181,11 +171,6 @@ export default function useMessages(
 
                             try {
 
-                                const privateKey =
-                                    await importPrivateKey(
-                                        getPrivateKey()
-                                    );
-
                                 const plaintext =
                                     await decryptMessage(
 
@@ -195,7 +180,9 @@ export default function useMessages(
 
                                         event.nonce,
 
-                                        privateKey,
+                                        await importPrivateKey(
+                                           getPrivateKey()
+                                        ),
 
                                     );
 
@@ -484,38 +471,38 @@ export default function useMessages(
             // Fetch recipient public key
             //------------------------------------------
 
+            console.log("1. Fetching recipient key...");
+
             const response =
                 await keyService.getPublicKey(
                     conversation.other_user.id
                 );
 
-            const recipientPublicKey =
-                await importPublicKey(
-                    response.public_key
-                );
+            console.log("Recipient key:", response);
 
-            //------------------------------------------
-            // Encrypt locally
-            //------------------------------------------
+            console.log("2. Encrypting...");
 
-            const encrypted =
-                await encryptMessage(
-                    plaintext,
-                    recipientPublicKey,
-                );
+                const encrypted =
+                    await encryptMessage(
+                        plaintext,
+                        response.public_key,
+                    );
+
+            console.log("Encrypted payload:", encrypted);
 
             //------------------------------------------
             // Save encrypted payload via REST
             //------------------------------------------
 
+            console.log("3. Sending to backend...");
+
             const saved =
                 await messageService.sendMessage(
-
                     conversation.id,
-
                     encrypted,
-
                 );
+
+            console.log("Backend response:", saved);
 
             //------------------------------------------
             // Show instantly for sender

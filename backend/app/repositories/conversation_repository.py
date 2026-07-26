@@ -47,25 +47,31 @@ class ConversationRepository(BaseRepository):
         user2: UUID,
     ) -> Conversation | None:
 
+        participant_count = (
+            select(
+                ConversationParticipant.conversation_id
+            )
+            .group_by(
+                ConversationParticipant.conversation_id
+            )
+            .having(
+                func.count() == 2
+            )
+            .subquery()
+        )
+
         result = await self.execute(
             select(Conversation)
             .join(
                 ConversationParticipant,
-                Conversation.id
-                == ConversationParticipant.conversation_id,
+                Conversation.id == ConversationParticipant.conversation_id,
             )
             .where(
-                ConversationParticipant.user_id.in_(
-                    [user1, user2]
-                )
+                Conversation.id.in_(select(participant_count.c.conversation_id)),
+                ConversationParticipant.user_id.in_([user1, user2]),
             )
             .group_by(Conversation.id)
-            .having(
-                func.count(
-                    ConversationParticipant.user_id
-                )
-                == 2
-            )
+            .having(func.count() == 2)
         )
 
         return result.scalar_one_or_none()

@@ -73,7 +73,7 @@ async def search_users(
     q: str = Query(
         ...,
         min_length=1,
-        description="Username or display name",
+        description="Search by email",
     ),
     db: AsyncSession = Depends(get_db),
 ):

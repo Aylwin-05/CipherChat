@@ -35,12 +35,37 @@ class WebSocketService {
 
         this.socket.onmessage = (event) => {
 
-            const data =
-                JSON.parse(event.data);
+            try {
 
-            this.listeners.forEach(
-                listener => listener(data)
-            );
+                const data =
+                    JSON.parse(event.data);
+
+                // Show backend websocket errors
+                if (data.event === "error") {
+
+                    console.error(
+                        "WebSocket:",
+                        data.message,
+                    );
+
+                    return;
+
+                }
+
+                this.listeners.forEach(
+                    listener => listener(data)
+                );
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    "Invalid websocket payload",
+                    error,
+                );
+
+            }
 
         };
 
@@ -56,7 +81,7 @@ class WebSocketService {
 
             console.error(
                 "WebSocket error",
-                error
+                error,
             );
 
         };
@@ -144,7 +169,9 @@ class WebSocketService {
     // READ RECEIPT
     // ======================================================
 
-    sendRead(messageId) {
+    sendRead(
+        messageId,
+    ) {
 
         if (
             !this.socket ||
@@ -171,7 +198,9 @@ class WebSocketService {
     // DELIVERED RECEIPT
     // ======================================================
 
-    sendDelivered(messageId) {
+    sendDelivered(
+        messageId,
+    ) {
 
         if (
             !this.socket ||
@@ -278,16 +307,18 @@ class WebSocketService {
     }
 
     // ======================================================
-    // LISTENER
+    // LISTENERS
     // ======================================================
 
     onMessage(listener) {
 
-        this.listeners = [
+        this.listeners.push(listener);
 
-            listener,
+    }
 
-        ];
+    removeListeners() {
+
+        this.listeners = [];
 
     }
 
@@ -304,6 +335,8 @@ class WebSocketService {
             this.socket = null;
 
         }
+
+        this.removeListeners();
 
     }
 

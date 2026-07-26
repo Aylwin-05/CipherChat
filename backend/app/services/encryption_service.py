@@ -1,9 +1,10 @@
 import base64
-import os
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+
+from app.core.config import settings
 
 
 class EncryptionService:
@@ -31,22 +32,17 @@ class EncryptionService:
     @staticmethod
     def get_master_key() -> bytes:
         """
-        Reads the server master key from an
-        environment variable.
-
-        Generate once using:
-
-        Fernet.generate_key()
+        Returns the server master key from the
+        application settings.
         """
 
-        key = os.getenv("MASTER_KEY")
+        if not settings.MASTER_KEY:
 
-        if key is None:
             raise RuntimeError(
-                "MASTER_KEY environment variable is missing."
+                "MASTER_KEY is missing from configuration."
             )
 
-        return key.encode()
+        return settings.MASTER_KEY.encode()
 
     # ==========================================================
     # Fernet

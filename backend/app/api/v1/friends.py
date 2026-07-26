@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import get_db
@@ -9,6 +9,7 @@ from app.schemas.friend import (
     FriendMessage,
     FriendRequestAction,
     FriendResponse,
+    SearchUserResponse,
     SendFriendRequest,
 )
 from app.services.friend_service import FriendService
@@ -18,7 +19,28 @@ router = APIRouter(
     tags=["Friends"],
 )
 
+# ==========================================================
+# Search Users
+# ==========================================================
 
+@router.get(
+    "/search",
+    response_model=list[SearchUserResponse],
+)
+async def search_users(
+    email: str = Query(..., min_length=1),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+
+    repository = FriendRepository(db)
+
+    service = FriendService(repository)
+
+    return await service.search_users(
+        current_user,
+        email,
+    )
 # ==========================================================
 # Send Friend Request
 # ==========================================================
@@ -44,6 +66,8 @@ async def send_friend_request(
         return friendship
 
     except ValueError as e:
+        print("Friend Request Error:", str(e))
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),

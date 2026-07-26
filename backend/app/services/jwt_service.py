@@ -85,15 +85,23 @@ class JWTService:
     ) -> dict[str, Any] | None:
 
         try:
+
             payload = jwt.decode(
                 token,
                 self.secret_key,
                 algorithms=[self.algorithm],
             )
 
+            print("JWT Payload:", payload)
+
             return payload
 
-        except JWTError:
+        except JWTError as e:
+
+            print("=" * 60)
+            print("JWT ERROR:", repr(e))
+            print("=" * 60)
+
             return None
 
     # ======================================================
