@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select
-
+from sqlalchemy.orm import selectinload
 from app.models.message import Message
 from app.repositories.base_repository import BaseRepository
 
@@ -44,9 +44,15 @@ class MessageRepository(BaseRepository):
     ) -> Message | None:
 
         result = await self.execute(
-            select(Message).where(
+
+            select(Message)
+            .options(
+                selectinload(Message.attachments)
+            )
+            .where(
                 Message.id == message_id
             )
+
         )
 
         return result.scalar_one_or_none()
@@ -63,9 +69,11 @@ class MessageRepository(BaseRepository):
         result = await self.execute(
 
             select(Message)
+            .options(
+                selectinload(Message.attachments)
+            )
             .where(
-                Message.conversation_id
-                == conversation_id
+                Message.conversation_id == conversation_id
             )
             .order_by(
                 Message.created_at.asc()
@@ -87,9 +95,11 @@ class MessageRepository(BaseRepository):
         result = await self.execute(
 
             select(Message)
+            .options(
+                selectinload(Message.attachments)
+            )
             .where(
-                Message.conversation_id
-                == conversation_id
+                Message.conversation_id == conversation_id
             )
             .order_by(
                 Message.created_at.desc()

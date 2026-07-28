@@ -8,6 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import messageService from "../services/messageService";
 import websocketService from "../services/websocketService";
 import keyService from "../services/keyService";
+import attachmentService from "../services/attachmentService";
 
 import {
     encryptMessage,
@@ -26,6 +27,9 @@ export default function useMessages(
 
     const [messages, setMessages] =
         useState([]);
+
+    const [imageUrls, setImageUrls] =
+        useState({});
 
     const [typingUsers, setTypingUsers] =
         useState([]);
@@ -57,6 +61,19 @@ export default function useMessages(
         };
 
     }, [conversation?.id]);
+    useEffect(() => {
+
+    return () => {
+
+        Object.values(imageUrls).forEach(
+
+            (url) => URL.revokeObjectURL(url)
+
+        );
+
+    };
+
+    }, [imageUrls]);
 
     async function initialize() {
 
@@ -129,6 +146,57 @@ export default function useMessages(
                 );
 
             setMessages(decrypted);
+            //--------------------------------------------------
+            // Download all image attachments
+            //--------------------------------------------------
+
+            for (const message of decrypted) {
+
+                if (!message.attachments?.length) {
+
+                    continue;
+
+                }
+
+                for (const attachment of message.attachments) {
+
+                    if (
+                        attachment.attachment_type ===
+                        "image"
+                    ) {
+
+                        try {
+
+                            const imageUrl =
+                                await attachmentService.getImage(
+                                    attachment.id
+                                );
+
+                            setImageUrls(previous => ({
+
+                                ...previous,
+
+                                [attachment.id]:
+                                    imageUrl,
+
+                            }));
+
+                        }
+
+                        catch (error) {
+
+                            console.error(
+                                "Image download failed",
+                                error
+                            );
+
+                        }
+
+                    }
+
+                }
+
+            }
 
             //--------------------------------------------------
             // Connect websocket
@@ -423,6 +491,65 @@ export default function useMessages(
                                     )
 
                             );
+                            case "attachment":
+
+                            if (
+                                event.attachment?.attachment_type ===
+                                "image"
+                            ) {
+
+                                try {
+
+                                    const imageUrl =
+                                        await attachmentService.getImage(
+                                            event.attachment.id
+                                        );
+
+                                    setImageUrls(previous => ({
+
+                                        ...previous,
+
+                                        [event.attachment.id]:
+                                            imageUrl,
+
+                                    }));
+
+                                }
+
+                                catch (error) {
+
+                                    console.error(error);
+
+                                }
+
+                            }
+
+                            setMessages(previous =>
+
+                                previous.map(message =>
+
+                                    message.id ===
+                                    event.message_id
+
+                                        ? {
+
+                                            ...message,
+
+                                            attachments: [
+
+                                                ...(message.attachments || []),
+
+                                                event.attachment,
+
+                                            ],
+
+                                        }
+
+                                        : message
+
+                                )
+
+                            );
 
                             break;
 
@@ -459,7 +586,9 @@ export default function useMessages(
 
     async function sendMessage(
         plaintext,
-    ) {
+        file = null,
+    )
+    {
 
         try {
 
@@ -498,6 +627,48 @@ export default function useMessages(
 
             console.log("Backend response:", saved);
 
+            // ==========================================
+            // Upload attachment (if selected)
+            // ==========================================
+
+            let upload = null;
+
+            if (file) {
+
+                upload =
+                    await messageService.uploadAttachment(
+                        saved.id,
+                        file,
+                    );
+
+                console.log(
+                    "Attachment uploaded:",
+                    upload
+                );
+
+                if (
+                    upload?.attachment?.attachment_type ===
+                    "image"
+                ) {
+
+                    const imageUrl =
+                        await attachmentService.getImage(
+                            upload.attachment.id
+                        );
+
+                    setImageUrls(previous => ({
+
+                        ...previous,
+
+                        [upload.attachment.id]:
+                            imageUrl,
+
+                    }));
+
+                }
+
+            }
+
             //------------------------------------------
             // Show instantly for sender
             //------------------------------------------
@@ -507,6 +678,12 @@ export default function useMessages(
                 ...saved,
 
                 content: plaintext,
+
+                attachments: file && upload
+                    ? [
+                        upload.attachment
+                    ]
+                    : [],
 
             };
 
@@ -607,6 +784,8 @@ export default function useMessages(
     return {
 
         messages,
+
+        imageUrls,
 
         typingUsers,
 

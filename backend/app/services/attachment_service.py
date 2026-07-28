@@ -210,35 +210,47 @@ class AttachmentService:
         extension: str,
     ) -> tuple[str, str]:
 
+        print("========== SAVE FILE ==========")
+        print("Original filename:", file.filename)
+        print("Attachment type:", attachment_type)
+        print("Extension:", extension)
+
         filename = self.generate_filename(
             extension
         )
 
+        print("Generated filename:", filename)
+
         upload_directory = self.upload_directory(
             attachment_type
         )
+
+        print("Upload directory:", upload_directory)
 
         upload_directory.mkdir(
             parents=True,
             exist_ok=True,
         )
 
-        destination = (
-            upload_directory / filename
-        )
+        destination = upload_directory / filename
+
+        print("Destination:", destination)
 
         with destination.open("wb") as buffer:
+
+            print("Writing file...")
 
             shutil.copyfileobj(
                 file.file,
                 buffer,
             )
 
+        print("Saved successfully!")
+
         return (
             filename,
             str(destination),
         )
-
     # ==========================================================
     # Guess MIME Type
     # ==========================================================

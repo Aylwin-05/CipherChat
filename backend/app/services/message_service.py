@@ -79,6 +79,7 @@ class MessageService:
         nonce: str,
         message_type: str = "text",
         reply_to_id: UUID | None = None,
+        attachment_ids: list[UUID] | None = None,
     ) -> Message:
 
         await self._validate_participant(
@@ -118,9 +119,24 @@ class MessageService:
             reply_to_id=reply_to_id,
         )
 
-        return await self.message_repository.create_message(
+        message = await self.message_repository.create_message(
             message
         )
+
+        # Attach uploaded files to this message
+        if attachment_ids:
+
+            for attachment_id in attachment_ids:
+
+                attachment = await self.attachment_service.get_attachment(
+                    attachment_id
+                )
+
+                if attachment:
+
+                    attachment.message_id = message.id
+
+        return message
 
     # ==========================================================
     # GET MESSAGES

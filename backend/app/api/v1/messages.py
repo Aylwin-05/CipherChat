@@ -28,13 +28,32 @@ router = APIRouter(
     prefix="/messages",
     tags=["Messages"],
 )
-
+from app.schemas.attachment import AttachmentResponse
 
 # ==========================================================
 # Convert DB model -> API response
 # ==========================================================
-
 def serialize_message(message):
+
+    attachments = [    {
+        "id": attachment.id,
+        "original_name": attachment.original_name,
+        "filename": attachment.filename,
+        "mime_type": attachment.mime_type,
+        "attachment_type": attachment.attachment_type,
+        "extension": attachment.extension,
+        "size": attachment.size,
+        "download_url": f"/api/v1/attachments/{attachment.id}",
+        "created_at": attachment.created_at,
+    }
+    for attachment in message.attachments]
+
+    # Only serialize if SQLAlchemy has already loaded them
+    if "attachments" in message.__dict__:
+        attachments = [
+            AttachmentResponse.model_validate(a)
+            for a in message.attachments
+        ]
 
     return MessageResponse(
         id=message.id,
@@ -42,11 +61,8 @@ def serialize_message(message):
         sender_id=message.sender_id,
 
         ciphertext=message.ciphertext,
-
         encrypted_key_sender=message.encrypted_key_sender,
-
         encrypted_key_receiver=message.encrypted_key_receiver,
-
         nonce=message.nonce,
         crypto_version=message.crypto_version,
 
@@ -63,7 +79,7 @@ def serialize_message(message):
         created_at=message.created_at,
         updated_at=message.updated_at,
 
-        attachments=[],
+        attachments=attachments,
     )
 
 
@@ -110,7 +126,12 @@ async def send_message(
 
         await db.commit()
 
-        await db.refresh(message)
+        await db.refresh(
+        message,
+        [
+            "attachments"
+        ]
+        )
 
         return serialize_message(message)
 

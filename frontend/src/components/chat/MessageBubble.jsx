@@ -1,14 +1,55 @@
 import { useAuth } from "../../context/AuthContext";
-
-export default function MessageBubble({
-    message,
-}) {
-
+import { useEffect, useState } from "react";
+import attachmentService from "../../services/attachmentService";
+export default function MessageBubble({ message }) {
     const { user } = useAuth();
+    const [imageUrls, setImageUrls] = useState({});
+    useEffect(()=>{
 
-    if (!message) {
-        return null;
-    }
+        async function loadImages(){
+
+            const urls={};
+
+            for(
+                const attachment of message.attachments || []
+            ){
+
+                if(
+                    attachment.mime_type.startsWith("image")
+                ){
+
+                    urls[attachment.id]=
+                        await attachmentService.getImage(
+                            attachment.id
+                        );
+
+                }
+
+            }
+
+            setImageUrls(urls);
+
+        }
+
+        loadImages();
+
+    },[message]);
+
+    useEffect(() => {
+
+        return () => {
+
+            Object.values(imageUrls).forEach(
+
+                (url)=>
+                    URL.revokeObjectURL(url)
+
+            );
+
+        };
+
+    },[imageUrls]);
+    if (!message) return null;
 
     const isMine =
         String(user?.id) ===
@@ -22,22 +63,60 @@ export default function MessageBubble({
     return (
 
         <div
-            className={`message-row ${
-                isMine ? "mine" : "other"
-            }`}
+            className={`message-row ${isMine ? "mine" : "other"}`}
         >
 
             <div
-                className={`message-bubble ${
-                    isMine ? "mine" : "other"
-                }`}
+                className={`message-bubble ${isMine ? "mine" : "other"}`}
             >
 
-                <div className="message-content">
+                {/* TEXT */}
 
-                    {content}
+                {content && (
 
-                </div>
+                    <div className="message-content">
+
+                        {content}
+
+                    </div>
+
+                )}
+
+                {/* ATTACHMENTS */}
+
+                {message.attachments?.map((attachment) => {
+
+                    if (attachment.attachment_type === "image") {
+
+                        return (
+
+                            <img
+                                key={attachment.id}
+                                src={imageUrls[attachment.id]}
+                                className="chat-image"
+                                alt={attachment.original_name}
+                            />
+
+                        );
+
+                    }
+
+                    return (
+
+                        <a
+                            key={attachment.id}
+                            href={attachmentService.downloadUrl(
+                                attachment.id
+                            )}
+                            target="_blank"
+                            rel="noreferrer"
+                        >
+                            📄 {attachment.original_name}
+                        </a>
+
+                    );
+
+                })}
 
                 <div className="message-footer">
 
@@ -55,45 +134,29 @@ export default function MessageBubble({
 
                     </span>
 
-                    {
+                    {message.edited && (
 
-                        message.edited && (
+                        <span className="message-edited">
 
-                            <span className="message-edited">
+                            Edited
 
-                                Edited
+                        </span>
 
-                            </span>
+                    )}
 
-                        )
+                    {isMine && (
 
-                    }
+                        <span className="message-status">
 
-                    {
+                            {message.is_read
+                                ? "✓✓"
+                                : message.delivered_at
+                                    ? "✓✓"
+                                    : "✓"}
 
-                        isMine && (
+                        </span>
 
-                            <span className="message-status">
-
-                                {
-
-                                    message.is_read
-
-                                        ? "✓✓"
-
-                                        : message.delivered_at
-
-                                            ? "✓✓"
-
-                                            : "✓"
-
-                                }
-
-                            </span>
-
-                        )
-
-                    }
+                    )}
 
                 </div>
 

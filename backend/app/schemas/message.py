@@ -42,6 +42,8 @@ class SendMessageRequest(BaseModel):
 
     reply_to_id: UUID | None = None
 
+    # NEW
+    attachment_ids: list[UUID] = []
 
 # ==========================================================
 # EDIT MESSAGE

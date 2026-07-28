@@ -163,11 +163,6 @@ const authService = {
             refreshToken,
         );
 
-        const user =
-            await this.loadCurrentUser();
-
-        return user;
-
     },
 
     // ======================================================

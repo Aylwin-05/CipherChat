@@ -91,7 +91,14 @@ async def upload_attachment(
         message.id,
         file,
     )
+    await db.commit()
+    await db.refresh(attachment)
 
+    print("AFTER COMMIT")
+    print("Attachment ID:", attachment.id)
+    print("Attachment object:", attachment)
+    print("Attachment ID:", attachment.id)
+    print("Message ID:", attachment.message_id)
     # ==========================================================
     # Broadcast Attachment
     # ==========================================================

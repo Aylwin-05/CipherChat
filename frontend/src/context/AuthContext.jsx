@@ -96,11 +96,10 @@ export function AuthProvider({ children }) {
 
             console.log("========== LOGIN ==========");
 
-            const profile =
-                await authService.login(
-                    accessToken,
-                    refreshToken,
-                );
+            await authService.login(
+                accessToken,
+                refreshToken,
+            );
 
             // --------------------------------------------------
             // Generate identity only once
@@ -164,11 +163,6 @@ export function AuthProvider({ children }) {
             setAccessToken(
                 accessToken
             );
-
-            setUser(
-                profile
-            );
-
         }
 
         catch (error) {

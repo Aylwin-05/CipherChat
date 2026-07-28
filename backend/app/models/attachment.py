@@ -61,7 +61,7 @@ class Attachment(Base):
             "messages.id",
             ondelete="CASCADE",
         ),
-        nullable=False,
+        nullable=True,
     )
 
     # ==========================================================

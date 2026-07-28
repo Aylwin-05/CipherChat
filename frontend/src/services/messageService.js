@@ -6,64 +6,97 @@ const messageService = {
     // Get Messages
     // ======================================================
 
-    async getMessages(
+    async getMessages(conversationId) {
+
+        const response = await api.get(
+            `/messages/${conversationId}`
+        );
+
+        return response.data;
+
+    },
+
+    // ======================================================
+    // Send Encrypted Message
+    // ======================================================
+
+    async sendMessage(
         conversationId,
+        encrypted,
+        replyToId = null,
     ) {
 
         const response =
-            await api.get(
-                `/messages/${conversationId}`
+            await api.post(
+
+                "/messages/send",
+
+                {
+
+                    conversation_id:
+                        conversationId,
+
+                    ciphertext:
+                        encrypted.ciphertext,
+
+                    encrypted_key_sender:
+                        encrypted.encrypted_key_sender,
+
+                    encrypted_key_receiver:
+                        encrypted.encrypted_key_receiver,
+
+                    nonce:
+                        encrypted.nonce,
+
+                    message_type:
+                        "text",
+
+                    reply_to_id:
+                        replyToId,
+
+                }
+
             );
 
         return response.data;
 
     },
 
-        // ======================================================
-        // Send Encrypted Message
-        // ======================================================
+    // ======================================================
+    // Upload Attachment
+    // ======================================================
 
-        async sendMessage(
-            conversationId,
-            encrypted,
-            replyToId = null,
-        ) {
+    async uploadAttachment(
+        messageId,
+        file,
+    ) {
 
-            const response =
-                await api.post(
+        const formData = new FormData();
 
-                    "/messages/send",
+        formData.append(
+            "file",
+            file
+        );
 
-                    {
+        const response =
+            await api.post(
 
-                        conversation_id:
-                            conversationId,
+                `/attachments/upload/${messageId}`,
 
-                        ciphertext:
-                            encrypted.ciphertext,
+                formData,
 
-                        encrypted_key_sender:
-                        encrypted.encrypted_key_sender,
+                {
+                    headers: {
+                        "Content-Type":
+                            "multipart/form-data",
+                    },
+                }
 
-                        encrypted_key_receiver:
-                        encrypted.encrypted_key_receiver,
+            );
 
-                        nonce:
-                            encrypted.nonce,
+        return response.data;
 
-                        message_type:
-                            "text",
-
-                        reply_to_id:
-                            replyToId,
-
-                    }
-
-                );
-
-            return response.data;
-
-        }
+    },
 
 };
 

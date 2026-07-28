@@ -32,8 +32,6 @@ class UserResponse(BaseModel):
 
     created_at: datetime
 
-    # NEW
-    public_key: str | None = None
 
 
 # ==========================================================
@@ -74,8 +72,6 @@ class SearchUserResponse(BaseModel):
 
     online_status: str
 
-    # NEW
-    public_key: str | None = None
 
 
 # ==========================================================
