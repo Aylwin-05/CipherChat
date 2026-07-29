@@ -11,6 +11,7 @@ from app.api.v1.attachments import (
     router as attachments_router,
 )
 from app.api.v1.users import router as users_router
+from app.api.v1 import user_keys
 
 api_router = APIRouter()
 
@@ -55,3 +56,9 @@ api_router.include_router(attachments_router)
 # ==========================================================
 
 api_router.include_router(keys_router)
+
+# ==========================================================
+# User Keys
+# ==========================================================
+
+api_router.include_router(user_keys.router)

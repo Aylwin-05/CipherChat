@@ -54,12 +54,20 @@ class UserKey(Base):
     # Keys
     # ==========================================================
 
+    # Identity Public Key
     public_key: Mapped[str] = mapped_column(
         String,
         nullable=False,
     )
 
-    private_key_encrypted: Mapped[str] = mapped_column(
+    # Signed PreKey (public only)
+    signed_prekey: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+    )
+
+    # Signature of Signed PreKey
+    signed_prekey_signature: Mapped[str] = mapped_column(
         String,
         nullable=False,
     )

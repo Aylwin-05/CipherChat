@@ -17,7 +17,9 @@ router = APIRouter(
     prefix="/auth",
     tags=["Authentication"],
 )
-
+from app.dependencies.auth import get_current_user
+from app.models.user import User
+from app.schemas.user_key import RegisterKeysRequest
 
 # ==========================================================
 # Send OTP
@@ -93,6 +95,35 @@ async def verify_otp(
         access_token=access_token,
         refresh_token=refresh_token,
         user=user,
+    )
+# ==========================================================
+# Register Public Keys
+# ==========================================================
+
+@router.post(
+    "/register-keys",
+    response_model=MessageResponse,
+)
+async def register_public_keys(
+    request: RegisterKeysRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+
+    repository = AuthRepository(db)
+
+    service = AuthService(repository)
+
+    await service.register_public_keys(
+        user=current_user,
+        public_key=request.public_key,
+        signed_prekey=request.signed_prekey,
+        signed_prekey_signature=request.signed_prekey_signature,
+    )
+
+    return MessageResponse(
+        success=True,
+        message="Public keys registered successfully.",
     )
 
 # ==========================================================
