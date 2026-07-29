@@ -64,9 +64,14 @@ class AttachmentService:
     def detect_attachment_type(
         self,
         extension: str,
+        mime_type: str,
     ) -> str:
 
         extension = extension.lower()
+
+        # Voice notes recorded by MediaRecorder
+        if mime_type.startswith("audio/"):
+            return "voice"
 
         if extension in IMAGE_EXTENSIONS:
             return "image"
@@ -76,9 +81,6 @@ class AttachmentService:
 
         if extension in AUDIO_EXTENSIONS:
             return "audio"
-
-        if extension in VOICE_EXTENSIONS:
-            return "voice"
 
         if extension in DOCUMENT_EXTENSIONS:
             return "document"
@@ -158,6 +160,7 @@ class AttachmentService:
     ) -> tuple[str, str, int]:
 
         if not file.filename:
+
             raise HTTPException(
                 status_code=400,
                 detail="Invalid filename.",
@@ -167,9 +170,15 @@ class AttachmentService:
             file.filename
         ).suffix.lower()
 
+        mime_type = (
+            file.content_type
+            or "application/octet-stream"
+        )
+
         attachment_type = (
             self.detect_attachment_type(
-                extension
+                extension,
+                mime_type,
             )
         )
 
@@ -198,7 +207,6 @@ class AttachmentService:
             attachment_type,
             size,
         )
-
     # ==========================================================
     # Save File To Disk
     # ==========================================================

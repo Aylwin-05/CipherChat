@@ -1,59 +1,76 @@
 import { useAuth } from "../../context/AuthContext";
 import { useEffect, useState } from "react";
 import attachmentService from "../../services/attachmentService";
+
 export default function MessageBubble({ message }) {
+
     const { user } = useAuth();
-    const [imageUrls, setImageUrls] = useState({});
-    useEffect(()=>{
 
-        async function loadImages(){
+    const [attachmentUrls, setAttachmentUrls] = useState({});
 
-            const urls={};
+    // ==========================================================
+    // Load attachment blobs (authenticated)
+    // ==========================================================
 
-            for(
-                const attachment of message.attachments || []
-            ){
+    useEffect(() => {
 
-                if(
-                    attachment.mime_type.startsWith("image")
-                ){
+        async function loadAttachments() {
 
-                    urls[attachment.id]=
-                        await attachmentService.getImage(
+            const urls = {};
+
+            for (const attachment of message.attachments || []) {
+
+                try {
+
+                    urls[attachment.id] =
+                        await attachmentService.getAttachment(
                             attachment.id
                         );
 
                 }
 
+                catch (err) {
+
+                    console.error(
+                        "Attachment load failed:",
+                        err
+                    );
+
+                }
+
             }
 
-            setImageUrls(urls);
+            setAttachmentUrls(urls);
 
         }
 
-        loadImages();
+        loadAttachments();
 
-    },[message]);
+    }, [message]);
+
+    // ==========================================================
+    // Cleanup blob URLs
+    // ==========================================================
 
     useEffect(() => {
 
         return () => {
 
-            Object.values(imageUrls).forEach(
+            Object.values(attachmentUrls).forEach(url => {
 
-                (url)=>
-                    URL.revokeObjectURL(url)
+                URL.revokeObjectURL(url);
 
-            );
+            });
 
         };
 
-    },[imageUrls]);
+    }, [attachmentUrls]);
+
     if (!message) return null;
 
     const isMine =
         String(user?.id) ===
-        String(message?.sender_id);
+        String(message.sender_id);
 
     const content =
         message.deleted_for_everyone
@@ -86,37 +103,73 @@ export default function MessageBubble({ message }) {
 
                 {message.attachments?.map((attachment) => {
 
-                    if (attachment.attachment_type === "image") {
+                    const url =
+                        attachmentUrls[attachment.id];
 
-                        return (
+                    if (!url) return null;
 
-                            <img
-                                key={attachment.id}
-                                src={imageUrls[attachment.id]}
-                                className="chat-image"
-                                alt={attachment.original_name}
-                            />
+                    switch (attachment.attachment_type) {
 
-                        );
+                        case "image":
+
+                            return (
+
+                                <img
+                                    key={attachment.id}
+                                    src={url}
+                                    alt={attachment.original_name}
+                                    className="chat-image"
+                                />
+
+                            );
+
+                        case "voice":
+
+                        case "audio":
+
+                            return (
+
+                                <audio
+                                    key={attachment.id}
+                                    controls
+                                    src={url}
+                                    className="chat-audio"
+                                />
+
+                            );
+
+                        case "video":
+
+                            return (
+
+                                <video
+                                    key={attachment.id}
+                                    controls
+                                    src={url}
+                                    className="chat-video"
+                                />
+
+                            );
+
+                        default:
+
+                            return (
+
+                                <a
+                                    key={attachment.id}
+                                    href={url}
+                                    download={attachment.original_name}
+                                >
+                                    📄 {attachment.original_name}
+                                </a>
+
+                            );
 
                     }
 
-                    return (
-
-                        <a
-                            key={attachment.id}
-                            href={attachmentService.downloadUrl(
-                                attachment.id
-                            )}
-                            target="_blank"
-                            rel="noreferrer"
-                        >
-                            📄 {attachment.original_name}
-                        </a>
-
-                    );
-
                 })}
+
+                {/* FOOTER */}
 
                 <div className="message-footer">
 

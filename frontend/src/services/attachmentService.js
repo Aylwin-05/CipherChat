@@ -2,65 +2,49 @@ import api from "../api/api";
 
 const attachmentService = {
 
-    // ======================================================
-    // Upload Attachment
-    // ======================================================
-
-    async upload(
-        messageId,
-        file,
-    ) {
+    async upload(messageId, file) {
 
         const formData = new FormData();
 
-        formData.append(
-            "file",
-            file,
+        formData.append("file", file);
+
+        const response = await api.post(
+
+            `/attachments/upload/${messageId}`,
+
+            formData,
+
+            {
+                headers: {
+                    "Content-Type": "multipart/form-data",
+                },
+            }
+
         );
-
-        const response =
-            await api.post(
-
-                `/attachments/upload/${messageId}`,
-
-                formData,
-
-                {
-                    headers: {
-                        "Content-Type":
-                            "multipart/form-data",
-                    },
-                }
-
-            );
 
         return response.data;
 
     },
 
-    // ======================================================
-    // Download Attachment as Blob URL
-    // (JWT automatically included by Axios)
-    // ======================================================
+    downloadUrl(id) {
 
-    async getImage(
-        attachmentId,
-    ) {
+        return `http://127.0.0.1:8000/api/v1/attachments/${id}`;
 
-        const response =
-            await api.get(
+    },
 
-                `/attachments/${attachmentId}`,
+    async getAttachment(id) {
 
-                {
-                    responseType: "blob",
-                }
+        const response = await api.get(
 
-            );
+            `/attachments/${id}`,
 
-        return URL.createObjectURL(
-            response.data
+            {
+                responseType: "blob",
+            }
+
         );
+
+        return URL.createObjectURL(response.data);
 
     },
 

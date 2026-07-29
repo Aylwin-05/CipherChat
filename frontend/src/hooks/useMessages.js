@@ -256,6 +256,10 @@ export default function useMessages(
 
                                     content: plaintext,
 
+                                    attachments:
+                                        event.attachments || [],
+
+
                                 };
 
                                 setMessages(
@@ -552,6 +556,75 @@ export default function useMessages(
                             );
 
                             break;
+                        //--------------------------------------------------
+                        // Attachment
+                        //--------------------------------------------------
+
+                        case "attachment":
+
+                            setMessages(previous =>
+
+                                previous.map(message =>
+
+                                    message.id === event.message_id
+
+                                        ? {
+
+                                            ...message,
+
+                                            attachments: [
+
+                                                ...(message.attachments || []),
+
+                                                event.attachment,
+
+                                            ],
+
+                                        }
+
+                                        : message
+
+                                )
+
+                            );
+
+                            break;
+
+                            //--------------------------------------------------
+                            // Attachment Deleted
+                            //--------------------------------------------------
+
+                            case "attachment_deleted":
+
+                                setMessages(previous =>
+
+                                    previous.map(message =>
+
+                                        message.id === event.message_id
+
+                                            ? {
+
+                                                ...message,
+
+                                                attachments:
+
+                                                    (message.attachments || []).filter(
+
+                                                        attachment =>
+
+                                                            attachment.id !== event.attachment_id
+
+                                                    ),
+
+                                            }
+
+                                            : message
+
+                                    )
+
+                                );
+
+                                break;
 
                         default:
 
@@ -707,41 +780,44 @@ export default function useMessages(
             // Broadcast encrypted payload
             //------------------------------------------
 
-            websocketService.sendMessage({
+        websocketService.sendMessage({
 
-                id: saved.id,
+            id: saved.id,
 
-                conversation_id:
-                    saved.conversation_id,
+            conversation_id:
+                saved.conversation_id,
 
-                sender_id:
-                    saved.sender_id,
+            sender_id:
+                saved.sender_id,
 
-                ciphertext:
-                    saved.ciphertext,
+            ciphertext:
+                saved.ciphertext,
 
-                encrypted_key_sender:
+            encrypted_key_sender:
                 saved.encrypted_key_sender,
 
-                encrypted_key_receiver:
+            encrypted_key_receiver:
                 saved.encrypted_key_receiver,
 
-                nonce:
-                    saved.nonce,
+            nonce:
+                saved.nonce,
 
-                crypto_version:
-                    saved.crypto_version,
+            crypto_version:
+                saved.crypto_version,
 
-                message_type:
-                    saved.message_type,
+            message_type:
+                saved.message_type,
 
-                reply_to_id:
-                    saved.reply_to_id,
+            reply_to_id:
+                saved.reply_to_id,
 
-                created_at:
-                    saved.created_at,
+            created_at:
+                saved.created_at,
 
-            });
+            attachments:
+                localMessage.attachments,
+
+        });
 
         }
 

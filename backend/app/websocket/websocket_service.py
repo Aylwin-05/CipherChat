@@ -244,6 +244,11 @@ class WebSocketService:
                         "updated_at",
                         data["created_at"],
                     ),
+                "attachments":
+                    data.get(
+                        "attachments",
+                        [],
+                    ),
             },
         )
             # ======================================================

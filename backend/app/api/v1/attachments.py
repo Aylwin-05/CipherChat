@@ -91,6 +91,8 @@ async def upload_attachment(
         message.id,
         file,
     )
+    print(attachment.attachment_type)
+    print(attachment.mime_type)
     await db.commit()
     await db.refresh(attachment)
 

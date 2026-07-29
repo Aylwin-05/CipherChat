@@ -1,19 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 
+import VoiceRecorder from "./VoiceRecorder";
+
 export default function ChatInput({
     onSend,
     typing,
     stopTyping,
 }) {
 
-    const [text, setText] = useState("");
+    const [text, setText] =
+        useState("");
 
     const [selectedFile, setSelectedFile] =
         useState(null);
 
-    const timeoutRef = useRef(null);
+    const timeoutRef =
+        useRef(null);
 
-    const fileInputRef = useRef(null);
+    const fileInputRef =
+        useRef(null);
 
     // ==========================================================
     // Typing
@@ -21,35 +26,50 @@ export default function ChatInput({
 
     function handleChange(e) {
 
-        const value = e.target.value;
+        const value =
+            e.target.value;
 
         setText(value);
 
         typing();
 
-        clearTimeout(timeoutRef.current);
+        clearTimeout(
+            timeoutRef.current
+        );
 
-        timeoutRef.current = setTimeout(() => {
+        timeoutRef.current =
+            setTimeout(() => {
 
-            stopTyping();
+                stopTyping();
 
-        }, 1000);
+            }, 1000);
 
     }
 
     // ==========================================================
-    // File Select
+    // File Picker
     // ==========================================================
 
     function handleFileSelect(e) {
 
-        const file = e.target.files[0];
+        const file =
+            e.target.files[0];
 
         if (!file) return;
 
         setSelectedFile(file);
 
         e.target.value = "";
+
+    }
+
+    // ==========================================================
+    // Voice Recorder Callback
+    // ==========================================================
+
+    function handleVoiceRecorded(file) {
+
+        setSelectedFile(file);
 
     }
 
@@ -67,8 +87,11 @@ export default function ChatInput({
         }
 
         await onSend(
+
             text,
+
             selectedFile,
+
         );
 
         setText("");
@@ -87,7 +110,9 @@ export default function ChatInput({
 
         return () => {
 
-            clearTimeout(timeoutRef.current);
+            clearTimeout(
+                timeoutRef.current
+            );
 
         };
 
@@ -98,28 +123,40 @@ export default function ChatInput({
         <div className="chat-input">
 
             <input
+
                 ref={fileInputRef}
+
                 type="file"
-                style={{ display: "none" }}
-                onChange={handleFileSelect}
+
+                style={{
+                    display: "none",
+                }}
+
+                onChange={
+                    handleFileSelect
+                }
+
             />
 
             {selectedFile && (
 
-                <div
-                    className="selected-file"
-                >
+                <div className="selected-file">
 
                     <span>
+
                         📎 {selectedFile.name}
+
                     </span>
 
                     <button
+
                         onClick={() =>
                             setSelectedFile(null)
                         }
+
                     >
                         ✕
+
                     </button>
 
                 </div>
@@ -128,35 +165,67 @@ export default function ChatInput({
 
             <div className="chat-input-row">
 
+                {/* Voice Recorder */}
+
+                <VoiceRecorder
+
+                    onRecorded={
+                        handleVoiceRecorded
+                    }
+
+                />
+
+                {/* File Picker */}
+
                 <button
+
                     type="button"
+
                     onClick={() =>
                         fileInputRef.current.click()
                     }
+
                 >
                     📎
+
                 </button>
 
+                {/* Text */}
+
                 <input
+
                     type="text"
+
                     value={text}
+
                     placeholder="Type a message..."
+
                     onChange={handleChange}
+
                     onKeyDown={(e) => {
 
-                        if (e.key === "Enter") {
+                        if (
+                            e.key === "Enter"
+                        ) {
 
                             handleSend();
 
                         }
 
                     }}
+
                 />
 
+                {/* Send */}
+
                 <button
+
                     onClick={handleSend}
+
                 >
+
                     Send
+
                 </button>
 
             </div>
