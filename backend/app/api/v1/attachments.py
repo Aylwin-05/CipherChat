@@ -1,15 +1,19 @@
 from uuid import UUID
-
+from datetime import datetime
+from pathlib import Path
 from fastapi import (
     APIRouter,
     Depends,
     File,
+    Form,
     HTTPException,
     UploadFile,
 )
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+import logging
 
+logger = logging.getLogger(__name__)
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 from app.models.user import User
@@ -43,8 +47,19 @@ router = APIRouter(
 )
 async def upload_attachment(
     message_id: UUID,
+
     file: UploadFile = File(...),
+
+    encrypted: bool = Form(False),
+
+    encrypted_key_sender: str | None = Form(None),
+
+    encrypted_key_receiver: str | None = Form(None),
+
+    nonce: str | None = Form(None),
+
     current_user: User = Depends(get_current_user),
+
     db: AsyncSession = Depends(get_db),
 ):
 
@@ -80,27 +95,43 @@ async def upload_attachment(
         for participant in participants
     )
 
-    if not allowed:
+    if encrypted:
 
-        raise HTTPException(
-            status_code=403,
-            detail="Access denied.",
+        if not encrypted_key_sender:
+            raise HTTPException(
+                status_code=400,
+                detail="Missing sender encrypted key.",
+            )
+
+        if not encrypted_key_receiver:
+            raise HTTPException(
+                status_code=400,
+                detail="Missing receiver encrypted key.",
+            )
+
+        if not nonce:
+            raise HTTPException(
+                status_code=400,
+                detail="Missing encryption nonce.",
+            )
+    try:
+        attachment = await attachment_service.upload_attachment(
+            message.id,
+            file,
+            encrypted=encrypted,
+            encrypted_key_sender=encrypted_key_sender,
+            encrypted_key_receiver=encrypted_key_receiver,
+            nonce=nonce,
         )
 
-    attachment = await attachment_service.upload_attachment(
-        message.id,
-        file,
-    )
-    print(attachment.attachment_type)
-    print(attachment.mime_type)
+    except Exception as e:
+        logger.exception("Attachment upload failed")
+        raise
+
     await db.commit()
+
     await db.refresh(attachment)
 
-    print("AFTER COMMIT")
-    print("Attachment ID:", attachment.id)
-    print("Attachment object:", attachment)
-    print("Attachment ID:", attachment.id)
-    print("Message ID:", attachment.message_id)
     # ==========================================================
     # Broadcast Attachment
     # ==========================================================
@@ -155,14 +186,6 @@ async def upload_attachment(
         },
     )
 
-    return UploadResponse(
-        success=True,
-        message="File uploaded successfully.",
-        attachment=AttachmentResponse.model_validate(
-            attachment
-        ),
-    )
-
 
 # ==========================================================
 # Download Attachment
@@ -208,6 +231,12 @@ async def download_attachment(
             status_code=404,
             detail="Message not found.",
         )
+    if message.sender_id != current_user.id:
+
+        raise HTTPException(
+            status_code=403,
+            detail="You can only upload attachments to your own messages.",
+        )
 
     participants = (
         await conversation_repository.get_participants(
@@ -227,8 +256,17 @@ async def download_attachment(
             detail="Access denied.",
         )
 
+    file_path = Path(attachment.storage_path)
+
+    if not file_path.exists():
+
+        raise HTTPException(
+            status_code=404,
+            detail="Attachment file not found.",
+        )
+
     return FileResponse(
-        path=attachment.storage_path,
+        path=file_path,
         filename=attachment.original_name,
         media_type=attachment.mime_type,
     )
@@ -302,12 +340,12 @@ async def delete_attachment(
     )
 
     if not deleted:
-
+    
         raise HTTPException(
             status_code=404,
             detail="Attachment not found.",
         )
-
+    await db.commit()
     # ==========================================================
     # Broadcast Delete
     # ==========================================================

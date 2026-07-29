@@ -9,7 +9,7 @@ import messageService from "../services/messageService";
 import websocketService from "../services/websocketService";
 import keyService from "../services/keyService";
 import attachmentService from "../services/attachmentService";
-
+import { encryptFile } from "../utils/fileEncryption";
 import {
     encryptMessage,
     decryptMessage,
@@ -168,7 +168,7 @@ export default function useMessages(
                         try {
 
                             const imageUrl =
-                                await attachmentService.getImage(
+                                await attachmentService.getAttachment(
                                     attachment.id
                                 );
 
@@ -505,7 +505,7 @@ export default function useMessages(
                                 try {
 
                                     const imageUrl =
-                                        await attachmentService.getImage(
+                                        await attachmentService.getAttachment(
                                             event.attachment.id
                                         );
 
@@ -708,37 +708,51 @@ export default function useMessages(
 
             if (file) {
 
+                console.log("Encrypting attachment...");
+
+                const encryptedAttachment =
+                    await encryptFile(file);
+
+                const encryptedFile =
+                    new File(
+
+                        [
+                            encryptedAttachment.encryptedFile,
+                        ],
+
+                        file.name + ".bin",
+
+                        {
+                            type: "application/octet-stream",
+                        }
+
+                    );
+
                 upload =
                     await messageService.uploadAttachment(
+
                         saved.id,
-                        file,
+
+                        encryptedFile,
+
                     );
 
                 console.log(
-                    "Attachment uploaded:",
+                    "Encrypted attachment uploaded:",
                     upload
                 );
 
-                if (
-                    upload?.attachment?.attachment_type ===
-                    "image"
-                ) {
+                // Save for next step (RSA encryption)
 
-                    const imageUrl =
-                        await attachmentService.getImage(
-                            upload.attachment.id
-                        );
+                upload.encryption = {
 
-                    setImageUrls(previous => ({
+                    rawKey:
+                        encryptedAttachment.rawKey,
 
-                        ...previous,
+                    iv:
+                        encryptedAttachment.iv,
 
-                        [upload.attachment.id]:
-                            imageUrl,
-
-                    }));
-
-                }
+                };
 
             }
 

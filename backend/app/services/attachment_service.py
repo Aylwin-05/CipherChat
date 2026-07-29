@@ -69,17 +69,13 @@ class AttachmentService:
 
         extension = extension.lower()
 
-        # Voice notes recorded by MediaRecorder
-        if mime_type.startswith("audio/"):
-            return "voice"
-
         if extension in IMAGE_EXTENSIONS:
             return "image"
 
         if extension in VIDEO_EXTENSIONS:
             return "video"
 
-        if extension in AUDIO_EXTENSIONS:
+        if extension in AUDIO_EXTENSIONS or extension in VOICE_EXTENSIONS:
             return "audio"
 
         if extension in DOCUMENT_EXTENSIONS:
@@ -158,6 +154,9 @@ class AttachmentService:
         self,
         file: UploadFile,
     ) -> tuple[str, str, int]:
+        print("========== VALIDATE ==========")
+        print("Filename:", file.filename)
+        print("Content-Type:", file.content_type)
 
         if not file.filename:
 
@@ -170,6 +169,8 @@ class AttachmentService:
             file.filename
         ).suffix.lower()
 
+        print("Extension:", extension)
+
         mime_type = (
             file.content_type
             or "application/octet-stream"
@@ -181,6 +182,7 @@ class AttachmentService:
                 mime_type,
             )
         )
+        print("Attachment type:", attachment_type)
 
         contents = await file.read()
 
@@ -281,41 +283,77 @@ class AttachmentService:
     # ==========================================================
 
     async def upload_attachment(
-        self,
-        message_id: UUID,   
-        file: UploadFile,
+    self,
+    message_id: UUID,
+    file: UploadFile,
+
+    encrypted: bool = False,
+
+    encrypted_key_sender: str | None = None,
+
+    encrypted_key_receiver: str | None = None,
+
+    nonce: str | None = None,
     ) -> Attachment:
 
         extension, attachment_type, size = (
             await self.validate_file(file)  
         )
 
-        filename, storage_path = (
-            await self.save_file(
+        filename = None
+        storage_path = None
+
+        try:
+
+            filename, storage_path = await self.save_file(
                 file,
                 attachment_type,
                 extension,
             )
-        )
 
-        mime_type = self.detect_mime_type(
-            filename
-        )
+            mime_type = self.detect_mime_type(filename)
 
-        attachment = Attachment(
-            message_id=message_id,
-            original_name=file.filename,
-            filename=filename,
-            mime_type=mime_type,
-            extension=extension,
-            attachment_type=attachment_type,
-            size=size,
-            storage_path=storage_path,
-        )
+            attachment = Attachment(
 
-        return await self.repository.create_attachment(
-            attachment
-        )
+                message_id=message_id,
+
+                original_name=file.filename,
+
+                filename=filename,
+
+                mime_type=mime_type,
+
+                extension=extension,
+
+                attachment_type=attachment_type,
+
+                size=size,
+
+                storage_path=storage_path,
+
+                encrypted=encrypted,
+
+                encrypted_key_sender=encrypted_key_sender,
+
+                encrypted_key_receiver=encrypted_key_receiver,
+
+                nonce=nonce,
+            )
+
+            return await self.repository.create_attachment(
+                attachment
+            )
+
+        except Exception:
+
+            if storage_path:
+
+                path = Path(storage_path)
+
+                if path.exists():
+                    path.unlink()
+
+            raise
 
     # ==========================================================
     # Get Attachment
@@ -358,7 +396,8 @@ class AttachmentService:
         )
 
         return True
-        # ==========================================================
+
+    # ==========================================================
     # Get Attachment File Path
     # ==========================================================
 
