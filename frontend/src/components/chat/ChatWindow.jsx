@@ -16,6 +16,7 @@ export default function ChatWindow({
         messages,
         typingUsers,
         loading,
+        error,
         sendMessage,
         typing,
         stopTyping,
@@ -96,6 +97,17 @@ export default function ChatWindow({
             online_status: "offline",
         };
 
+    // Friendly wording for common errors
+    const errorMessage = error
+        ? /no (registered )?devic|no-such-device|bundle unavailable/i.test(
+            error.message ?? "",
+        )
+            ? `${otherUser.display_name} hasn't set up
+               end-to-end encryption yet. Ask them to
+               log in once so their secure device is ready.`
+            : error.message
+        : null;
+
     return (
 
         <div className="chat-window">
@@ -130,6 +142,16 @@ export default function ChatWindow({
                 messages={messages}
                 loading={loading}
             />
+
+            {errorMessage ? (
+
+                <div className="chat-error-banner">
+
+                    {errorMessage}
+
+                </div>
+
+            ) : null}
 
             <ChatInput
                 onSend={sendMessage}

@@ -416,3 +416,13 @@
 .message-attachment{
     margin-top:8px;
 }
+.chat-error-banner{
+    margin:0 12px;
+    padding:10px 14px;
+    border:1px solid #e74c3c;
+    border-radius:8px;
+    background:#fdecea;
+    color:#c0392b;
+    font-size:13px;
+    line-height:1.5;
+}

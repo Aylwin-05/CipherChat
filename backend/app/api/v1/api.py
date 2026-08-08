@@ -11,6 +11,7 @@ from app.api.v1.attachments import (
     router as attachments_router,
 )
 from app.api.v1.users import router as users_router
+from app.api.v1.devices import router as devices_router
 
 api_router = APIRouter()
 
@@ -25,6 +26,12 @@ api_router.include_router(auth_router)
 # ==========================================================
 
 api_router.include_router(users_router)
+
+# ==========================================================
+# Devices
+# ==========================================================
+
+api_router.include_router(devices_router)
 
 # ==========================================================
 # Friends

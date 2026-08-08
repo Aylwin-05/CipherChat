@@ -125,6 +125,13 @@ class User(Base, TimestampMixin):
         cascade="all, delete-orphan",
     )
 
+    devices = relationship(
+        "Device",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="dynamic",
+    )
+
     # ==========================================================
     # Representation
     # ==========================================================

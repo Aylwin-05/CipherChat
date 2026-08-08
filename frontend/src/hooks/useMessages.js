@@ -7,11 +7,17 @@ import { useAuth } from "../context/AuthContext";
 
 import messageService from "../services/messageService";
 import websocketService from "../services/websocketService";
-import keyService from "../services/keyService";
 import attachmentService from "../services/attachmentService";
-
+import deviceService from "../services/deviceService";
 import {
-    encryptMessage,
+    replenishPreKeys,
+} from "../services/signalService";
+import {
+    encryptForConversation,
+    decryptMessage as signalDecryptMessage,
+} from "../services/signalChatService";
+import { encryptFile } from "../utils/fileEncryption";
+import {
     decryptMessage,
 } from "../crypto/cryptoService";
 import {
@@ -39,6 +45,53 @@ export default function useMessages(
 
     const [error, setError] =
         useState(null);
+
+    //------------------------------------------------------
+    // Decrypt an incoming message (Signal first, RSA fallback)
+    //------------------------------------------------------
+
+    async function decryptIncoming(message) {
+
+        const conversationId =
+            message.conversation_id || conversation.id;
+
+        try {
+
+            // Signal envelope JSON?
+            return await signalDecryptMessage({
+                conversationId,
+                senderId: message.sender_id,
+                ciphertext: message.ciphertext,
+            });
+
+        }
+        catch {
+
+            // Legacy RSA fallback
+            try {
+
+                const encryptedKey =
+                    message.sender_id === user.id
+                        ? message.encrypted_key_sender
+                        : message.encrypted_key_receiver;
+
+                return await decryptMessage(
+                    message.ciphertext,
+                    encryptedKey,
+                    message.nonce,
+                    getPrivateKey()
+                );
+
+            }
+            catch {
+
+                return "[Unable to decrypt]";
+
+            }
+
+        }
+
+    }
 
     useEffect(() => {
 
@@ -102,18 +155,8 @@ export default function useMessages(
 
                             try {
 
-                        const encryptedKey =
-                            message.sender_id === user.id
-                                ? message.encrypted_key_sender
-                                : message.encrypted_key_receiver;
-
-                        const plaintext =
-                            await decryptMessage(
-                                message.ciphertext,
-                                encryptedKey,
-                                message.nonce,
-                                getPrivateKey()
-                            );
+                                const plaintext =
+                                    await decryptIncoming(message);
 
                                 return {
 
@@ -168,7 +211,7 @@ export default function useMessages(
                         try {
 
                             const imageUrl =
-                                await attachmentService.getImage(
+                                await attachmentService.getAttachment(
                                     attachment.id
                                 );
 
@@ -237,18 +280,8 @@ export default function useMessages(
 
                             try {
 
-                            const encryptedKey =
-                                event.sender_id === user.id
-                                    ? event.encrypted_key_sender
-                                    : event.encrypted_key_receiver;
-
                             const plaintext =
-                                await decryptMessage(
-                                    event.ciphertext,
-                                    encryptedKey,
-                                    event.nonce,
-                                    getPrivateKey()
-                                );
+                                await decryptIncoming(event);
 
                                 const message = {
 
@@ -505,7 +538,7 @@ export default function useMessages(
                                 try {
 
                                     const imageUrl =
-                                        await attachmentService.getImage(
+                                        await attachmentService.getAttachment(
                                             event.attachment.id
                                         );
 
@@ -666,25 +699,19 @@ export default function useMessages(
         try {
 
             //------------------------------------------
-            // Fetch recipient public key
+            // Signal-encrypt for the recipient
             //------------------------------------------
 
-            const receiver =
-                await keyService.getPublicKey(
-                    conversation.other_user.id
-                );
-
-            const senderPublicKey =
-                localStorage.getItem(
-                    "cipherchat_public_key"
-                );
-
             const encrypted =
-                await encryptMessage(
+                await encryptForConversation({
+                    conversationId: conversation.id,
+                    otherUserId: conversation.other_user.id,
                     plaintext,
-                    senderPublicKey,
-                    receiver.public_key
-                );
+                    bundleProvider: async () =>
+                        deviceService.getBundle(
+                            conversation.other_user.id
+                        ),
+                });
 
             //------------------------------------------
             // Save encrypted payload via REST
@@ -708,37 +735,51 @@ export default function useMessages(
 
             if (file) {
 
+                console.log("Encrypting attachment...");
+
+                const encryptedAttachment =
+                    await encryptFile(file);
+
+                const encryptedFile =
+                    new File(
+
+                        [
+                            encryptedAttachment.encryptedFile,
+                        ],
+
+                        file.name + ".bin",
+
+                        {
+                            type: "application/octet-stream",
+                        }
+
+                    );
+
                 upload =
                     await messageService.uploadAttachment(
+
                         saved.id,
-                        file,
+
+                        encryptedFile,
+
                     );
 
                 console.log(
-                    "Attachment uploaded:",
+                    "Encrypted attachment uploaded:",
                     upload
                 );
 
-                if (
-                    upload?.attachment?.attachment_type ===
-                    "image"
-                ) {
+                // Save for next step (RSA encryption)
 
-                    const imageUrl =
-                        await attachmentService.getImage(
-                            upload.attachment.id
-                        );
+                upload.encryption = {
 
-                    setImageUrls(previous => ({
+                    rawKey:
+                        encryptedAttachment.rawKey,
 
-                        ...previous,
+                    iv:
+                        encryptedAttachment.iv,
 
-                        [upload.attachment.id]:
-                            imageUrl,
-
-                    }));
-
-                }
+                };
 
             }
 
@@ -818,6 +859,28 @@ export default function useMessages(
                 localMessage.attachments,
 
         });
+
+            //------------------------------------------
+            // Clear any stale error from a previous send
+            //------------------------------------------
+
+            if (error) {
+
+                setError(null);
+
+            }
+
+            //------------------------------------------
+            // Keep the one-time prekey pool topped up
+            //------------------------------------------
+
+            replenishPreKeys()
+                .catch((error) =>
+                    console.error(
+                        "One-time prekey replenishment failed:",
+                        error
+                    )
+                );
 
         }
 

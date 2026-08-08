@@ -18,6 +18,10 @@ const messageService = {
 
     // ======================================================
     // Send Encrypted Message
+    //
+    // Signal mode: ciphertext carries the envelope JSON;
+    // legacy RSA fields receive placeholders so the backend
+    // schema stays untouched.
     // ======================================================
 
     async sendMessage(
@@ -40,13 +44,16 @@ const messageService = {
                         encrypted.ciphertext,
 
                     encrypted_key_sender:
-                        encrypted.encrypted_key_sender,
+                        encrypted.encrypted_key_sender ||
+                        "signal",
 
                     encrypted_key_receiver:
-                        encrypted.encrypted_key_receiver,
+                        encrypted.encrypted_key_receiver ||
+                        "signal",
 
                     nonce:
-                        encrypted.nonce,
+                        encrypted.nonce ||
+                        "signal",
 
                     message_type:
                         "text",

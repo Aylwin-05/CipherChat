@@ -7,6 +7,11 @@ import {
 
 import authService from "../services/authService";
 import keyService from "../services/keyService";
+import {
+    ensureDeviceRegistered,
+    replenishPreKeys,
+    wipeDeviceData,
+} from "../services/signalService";
 
 import {
     generateIdentityKeys,
@@ -96,6 +101,8 @@ export function AuthProvider({ children }) {
 
             console.log("========== LOGIN ==========");
 
+            let signalDevice = null;
+
             await authService.login(
                 accessToken,
                 refreshToken,
@@ -160,6 +167,73 @@ export function AuthProvider({ children }) {
 
             }
 
+            // --------------------------------------------------
+            // Signal device registration (first time only)
+            // --------------------------------------------------
+
+            if (!signalDevice) {
+
+                console.log(
+                    "Registering Signal device..."
+                );
+
+                try {
+
+                    const result =
+                        await ensureDeviceRegistered();
+
+                    signalDevice = result;
+
+                    console.log(
+                        "Signal device registered:",
+                        result.deviceId,
+                        result.isPrimary
+                            ? "(primary)"
+                            : "(secondary)"
+                    );
+
+                }
+
+                catch (error) {
+
+                    console.error(
+                        "Signal device registration failed:",
+                        error
+                    );
+
+                }
+
+            }
+
+            // --------------------------------------------------
+            // Keep the one-time prekey pool topped up
+            // --------------------------------------------------
+
+            try {
+
+                const topUp =
+                    await replenishPreKeys();
+
+                if (topUp.replenished > 0) {
+
+                    console.log(
+                        `Replenished ${topUp.replenished} one-time prekeys ` +
+                        `(${topUp.uploaded} uploaded).`
+                    );
+
+                }
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    "One-time prekey replenishment failed:",
+                    error
+                );
+
+            }
+
             setAccessToken(
                 accessToken
             );
@@ -180,6 +254,18 @@ export function AuthProvider({ children }) {
     // ==========================================================
 
     const logout = () => {
+
+        // Wipe the local Signal key store (and best-effort
+        // remove the device from the server). Fire-and-forget:
+        // logout must not block on the network.
+
+        wipeDeviceData()
+            .catch((error) =>
+                console.error(
+                    "Device wipe failed:",
+                    error
+                )
+            );
 
         authService.logout();
 

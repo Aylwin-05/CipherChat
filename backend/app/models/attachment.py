@@ -105,6 +105,30 @@ class Attachment(Base):
     )
 
     # ==========================================================
+    # Encryption Metadata
+    # ==========================================================
+
+    encrypted: Mapped[bool] = mapped_column(
+        default=False,
+        nullable=False,
+    )
+
+    encrypted_key_sender: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+    )
+
+    encrypted_key_receiver: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+    )
+
+    nonce: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+    )
+    
+    # ==========================================================
     # Optional Media Metadata
     # ==========================================================
 
