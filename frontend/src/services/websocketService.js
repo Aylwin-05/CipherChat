@@ -6,6 +6,28 @@ class WebSocketService {
 
         this.listeners = [];
 
+        this.reconnectTimer = null;
+
+        this.heartbeatTimer = null;
+
+        this.shouldReconnect = false;
+
+        this.reconnectAttempts = 0;
+
+        this.lastAliveAt = null;
+
+        this.conversationId = null;
+
+        this.token = null;
+
+        // Reconnect policy: 1s, 2s, 4s ... capped at 30s
+        this.maxReconnectDelay = 30_000;
+
+        // Heartbeat every 20s; declare dead if silent for 60s
+        this.heartbeatInterval = 20_000;
+
+        this.staleThreshold = 60_000;
+
     }
 
     // ======================================================
@@ -17,13 +39,41 @@ class WebSocketService {
         token,
     ) {
 
+        this.conversationId = conversationId;
+
+        this.token = token;
+
+        this.shouldReconnect = true;
+
+        this.reconnectAttempts = 0;
+
+        this._openSocket();
+
+    }
+
+    _openSocket() {
+
         this.disconnect();
 
-        const url =
-            `ws://127.0.0.1:8000/ws/${conversationId}?token=${token}`;
+        this.shouldReconnect = true;
+
+        const configured =
+            import.meta.env.VITE_WS_URL;
+
+        const url = configured
+            ? `${configured}/ws/${this.conversationId}`
+            : `${window.location.protocol === "https:"
+                ? "wss"
+                : "ws"
+            }://${window.location.host}/ws/${this.conversationId}`;
 
         this.socket =
-            new WebSocket(url);
+            new WebSocket(
+                url,
+                ["cipherchat." + this.token]
+            );
+
+        this.lastAliveAt = Date.now();
 
         this.socket.onopen = () => {
 
@@ -31,9 +81,15 @@ class WebSocketService {
                 "WebSocket connected"
             );
 
+            this.reconnectAttempts = 0;
+
+            this._startHeartbeat();
+
         };
 
         this.socket.onmessage = (event) => {
+
+            this.lastAliveAt = Date.now();
 
             try {
 
@@ -71,9 +127,15 @@ class WebSocketService {
 
         this.socket.onclose = () => {
 
-            console.log(
-                "WebSocket disconnected"
-            );
+            this._stopHeartbeat();
+
+            this.socket = null;
+
+            if (this.shouldReconnect) {
+
+                this._scheduleReconnect();
+
+            }
 
         };
 
@@ -85,6 +147,90 @@ class WebSocketService {
             );
 
         };
+
+    }
+
+    // ======================================================
+    // RECONNECT / HEARTBEAT
+    // ======================================================
+
+    _scheduleReconnect() {
+
+        if (!this.shouldReconnect) return;
+
+        const delay =
+            Math.min(
+                1000 * (2 ** this.reconnectAttempts),
+                this.maxReconnectDelay
+            );
+
+        this.reconnectAttempts += 1;
+
+        console.log(
+            `WebSocket reconnect in ${delay}ms`
+        );
+
+        this.reconnectTimer =
+            setTimeout(
+                () => this._openSocket(),
+                delay,
+            );
+
+    }
+
+    _startHeartbeat() {
+
+        this._stopHeartbeat();
+
+        this.heartbeatTimer =
+            setInterval(
+                () => this._checkAlive(),
+                this.heartbeatInterval,
+            );
+
+    }
+
+    _stopHeartbeat() {
+
+        if (this.heartbeatTimer) {
+
+            clearInterval(this.heartbeatTimer);
+
+            this.heartbeatTimer = null;
+
+        }
+
+    }
+
+    _checkAlive() {
+
+        if (
+            !this.socket ||
+            this.socket.readyState !== WebSocket.OPEN
+        ) {
+            return;
+        }
+
+        const now = Date.now();
+
+        if (now - this.lastAliveAt > this.staleThreshold) {
+
+            console.warn(
+                "WebSocket heartbeat timeout, reconnecting"
+            );
+
+            // Closing triggers onclose -> reconnect
+            this.socket.close();
+
+            return;
+
+        }
+
+        this.socket.send(
+            JSON.stringify({
+                event: "ping",
+            })
+        );
 
     }
 
@@ -327,6 +473,18 @@ class WebSocketService {
     // ======================================================
 
     disconnect() {
+
+        this.shouldReconnect = false;
+
+        this._stopHeartbeat();
+
+        if (this.reconnectTimer) {
+
+            clearTimeout(this.reconnectTimer);
+
+            this.reconnectTimer = null;
+
+        }
 
         if (this.socket) {
 

@@ -51,6 +51,29 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # ======================================================
+    # Cookies (refresh token transport)
+    # ======================================================
+
+    COOKIE_SECURE: bool = False
+    COOKIE_SAMESITE: str = "lax"
+    COOKIE_DOMAIN: str | None = None
+
+    # ======================================================
+    # CORS / Hosts
+    # ======================================================
+
+    CORS_ORIGINS: str = (
+        "http://localhost:5173,http://127.0.0.1:5173"
+    )
+    ALLOWED_HOSTS: str = "*"
+
+    # ======================================================
+    # Redis (rate limiting; falls back to in-memory)
+    # ======================================================
+
+    REDIS_URL: str | None = None
+
+    # ======================================================
     # Encryption
     # ======================================================
 

@@ -10,6 +10,11 @@ export default function ConversationItem({
 
     const user = conversation.other_user;
 
+    const unread =
+        !selected
+            ? (conversation.unread_count ?? 0)
+            : 0;
+
     return (
 
         <div
@@ -42,13 +47,24 @@ export default function ConversationItem({
                 <p>
 
                     {
-                        conversation.last_message?.content ||
-                        "No messages yet"
+                        conversation.last_message
+                            ? "🔒 Encrypted message"
+                            : "No messages yet"
                     }
 
                 </p>
 
             </div>
+
+            {unread > 0 ? (
+
+                <span className="unread-badge">
+
+                    {unread}
+
+                </span>
+
+            ) : null}
 
         </div>
 

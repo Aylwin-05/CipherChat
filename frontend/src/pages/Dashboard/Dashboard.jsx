@@ -84,6 +84,42 @@ export default function Dashboard() {
     }
 
     //----------------------------------------------------------
+    // Select conversation (clears its unread badge)
+    //----------------------------------------------------------
+
+    function handleSelectConversation(conversation) {
+
+        setSelectedConversation(conversation);
+
+        if (
+            conversation.unread_count > 0 ||
+            conversation.other_user
+        ) {
+
+            setConversations(previous =>
+
+                previous.map(item =>
+
+                    item.id === conversation.id
+
+                        ? {
+
+                            ...item,
+
+                            unread_count: 0,
+
+                        }
+                        : item
+
+                )
+
+            );
+
+        }
+
+    }
+
+    //----------------------------------------------------------
     // Start Chat
     //----------------------------------------------------------
 
@@ -236,7 +272,7 @@ export default function Dashboard() {
                                         }
 
                                         onSelectConversation={
-                                            setSelectedConversation
+                                            handleSelectConversation
                                         }
 
                                     />

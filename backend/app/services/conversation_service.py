@@ -132,6 +132,13 @@ class ConversationService:
                 )
             )
 
+            unread_count = (
+                await self.message_repository.count_unread(
+                    conversation.id,
+                    current_user.id,
+                )
+            )
+
             response.append(
                 {
                     "id": conversation.id,
@@ -146,6 +153,7 @@ class ConversationService:
                         if last_message
                         else None
                     ),
+                    "unread_count": unread_count,
                 }
             )
 

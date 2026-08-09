@@ -33,31 +33,92 @@ export function AuthProvider({ children }) {
 
     const [loading, setLoading] = useState(true);
 
-    const [accessToken, setAccessToken] = useState(
-        authService.getAccessToken()
-    );
+    const [accessToken, setAccessToken] = useState(null);
 
     // ==========================================================
     // Initialize Authentication
+    //
+    // Boot restore: if there is no in-memory access token (fresh
+    // page load), try to renew the session from the HttpOnly
+    // refresh cookie. If the cookie is gone or expired, the user
+    // silently lands on the login page.
     // ==========================================================
 
     useEffect(() => {
 
-        async function initialize() {
+        let active = true;
 
-            if (!accessToken) {
+        // --------------------------------------------------
+        // Register the Signal device on every boot (no-op if
+        // already registered). Accounts created before the
+        // device feature, or whose local key store was wiped,
+        // self-heal here instead of needing a manual re-login.
+        // --------------------------------------------------
 
-                setLoading(false);
-                return;
+        async function ensureCryptoSetup() {
+
+            try {
+
+                const result =
+                    await ensureDeviceRegistered();
+
+                if (result.generated) {
+
+                    console.log(
+                        "Signal device registered:",
+                        result.deviceId,
+                        result.isPrimary
+                            ? "(primary)"
+                            : "(secondary)"
+                    );
+
+                }
+
+                await replenishPreKeys();
 
             }
 
+            catch (error) {
+
+                console.error(
+                    "Signal device setup failed:",
+                    error
+                );
+
+            }
+
+        }
+
+        async function initialize() {
+
             try {
+
+                if (accessToken) {
+
+                    const profile =
+                        await authService.loadCurrentUser();
+
+                    if (active) setUser(profile);
+
+                    await ensureCryptoSetup();
+
+                    return;
+
+                }
+
+                const token =
+                    await authService.refreshAccessToken();
+
+                if (!active) return;
+
+                setAccessToken(token);
 
                 const profile =
                     await authService.loadCurrentUser();
 
                 setUser(profile);
+
+                await ensureCryptoSetup();
 
             }
 
@@ -65,17 +126,19 @@ export function AuthProvider({ children }) {
 
                 console.error(error);
 
-                authService.logout();
+                if (active) {
 
-                setUser(null);
+                    authService.logout();
 
-                setAccessToken(null);
+                    setUser(null);
+
+                }
 
             }
 
             finally {
 
-                setLoading(false);
+                if (active) setLoading(false);
 
             }
 
@@ -83,40 +146,32 @@ export function AuthProvider({ children }) {
 
         initialize();
 
-    }, [accessToken]);
+        return () => { active = false; };
+
+    }, []);
 
     // ==========================================================
     // Login
     // ==========================================================
 
     const login = async (
-
         accessToken,
-
-        refreshToken,
-
     ) => {
 
         try {
 
-            console.log("========== LOGIN ==========");
+            authService.login(accessToken);
 
-            let signalDevice = null;
+            const profile =
+                await authService.loadCurrentUser();
 
-            await authService.login(
-                accessToken,
-                refreshToken,
-            );
+            setUser(profile);
 
             // --------------------------------------------------
             // Generate identity only once
             // --------------------------------------------------
 
             if (!hasKeyPair()) {
-
-                console.log(
-                    "Generating RSA identity..."
-                );
 
                 const keys =
                     await generateIdentityKeys();
@@ -126,29 +181,16 @@ export function AuthProvider({ children }) {
                     keys.privateKey,
                 );
 
-                console.log(
-                    "Uploading public key..."
-                );
-
                 await keyService.uploadPublicKey(
                     keys.publicKey
-                );
-
-                console.log(
-                    "Public key uploaded."
                 );
 
             }
 
             else {
 
-                console.log(
-                    "Key pair already exists."
-                );
-
-                // Optional safety check
-                // Upload again if backend lost it
-
+                // Optional safety check: upload again if the
+                // backend lost it.
                 try {
 
                     await keyService.uploadPublicKey(
@@ -171,37 +213,27 @@ export function AuthProvider({ children }) {
             // Signal device registration (first time only)
             // --------------------------------------------------
 
-            if (!signalDevice) {
+            try {
+
+                const result =
+                    await ensureDeviceRegistered();
 
                 console.log(
-                    "Registering Signal device..."
+                    "Signal device registered:",
+                    result.deviceId,
+                    result.isPrimary
+                        ? "(primary)"
+                        : "(secondary)"
                 );
 
-                try {
+            }
 
-                    const result =
-                        await ensureDeviceRegistered();
+            catch (error) {
 
-                    signalDevice = result;
-
-                    console.log(
-                        "Signal device registered:",
-                        result.deviceId,
-                        result.isPrimary
-                            ? "(primary)"
-                            : "(secondary)"
-                    );
-
-                }
-
-                catch (error) {
-
-                    console.error(
-                        "Signal device registration failed:",
-                        error
-                    );
-
-                }
+                console.error(
+                    "Signal device registration failed:",
+                    error
+                );
 
             }
 

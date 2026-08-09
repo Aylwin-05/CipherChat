@@ -1,7 +1,10 @@
+import logging
 from collections import defaultdict
 from uuid import UUID
 
 from fastapi import WebSocket
+
+logger = logging.getLogger("app.websocket.connection_manager")
 
 
 class ConnectionManager:
@@ -30,8 +33,6 @@ class ConnectionManager:
         user_id: UUID,
         websocket: WebSocket,
     ):
-        await websocket.accept()
-
         self.conversation_connections[
             conversation_id
         ].append(
@@ -45,12 +46,12 @@ class ConnectionManager:
             websocket
         )
 
-        print("\n========== CONNECT ==========")
-        print(f"User: {user_id}")
-        print(f"Conversation: {conversation_id}")
-        print("Current Online Users:")
-        print(list(self.user_connections.keys()))
-        print("=============================\n")
+        logger.debug(
+            "WS connect: user=%s conversation=%s online=%s",
+            user_id,
+            conversation_id,
+            list(self.user_connections.keys()),
+        )
 
     # ==========================================================
     # Disconnect
@@ -97,11 +98,11 @@ class ConnectionManager:
             if not self.user_connections[user_id]:
                 del self.user_connections[user_id]
 
-        print("\n======== DISCONNECT =========")
-        print(f"User: {user_id}")
-        print("Remaining Online Users:")
-        print(list(self.user_connections.keys()))
-        print("=============================\n")
+        logger.debug(
+            "User disconnect: user=%s remaining=%s",
+            user_id,
+            list(self.user_connections.keys()),
+        )
 
     # ==========================================================
     # Broadcast to Conversation
@@ -120,9 +121,12 @@ class ConnectionManager:
 
         dead = []
 
-        print(
-            f"Broadcasting to {len(self.conversation_connections[conversation_id])} sockets"
-        )
+        if self.conversation_connections.get(conversation_id):
+            logger.debug(
+                "Broadcasting to %d sockets in conversation %s",
+                len(self.conversation_connections[conversation_id]),
+                conversation_id,
+            )
 
         for _, websocket in self.conversation_connections[
             conversation_id
@@ -181,25 +185,14 @@ class ConnectionManager:
         user_id: UUID,
     ) -> bool:
 
-        print("\n========== ONLINE CHECK ==========")
-        print(f"Checking User: {user_id}")
-        print("Current Online Users:")
-        print(list(self.user_connections.keys()))
-
         online = (
             user_id in self.user_connections
             and len(self.user_connections[user_id]) > 0
         )
 
-        print(f"Result: {online}")
-        print("==================================\n")
-
         return online
 
     def online_users(self):
-        print("\nONLINE USERS:")
-        print(list(self.user_connections.keys()))
-        print()
 
         return list(
             self.user_connections.keys()

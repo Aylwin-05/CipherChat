@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -8,6 +9,8 @@ from app.models.user import User
 from app.repositories.auth_repository import AuthRepository
 from app.websocket.connection_manager import manager
 from app.websocket.websocket_service import WebSocketService
+
+logger = logging.getLogger("app.websocket.ws")
 
 router = APIRouter()
 
@@ -33,8 +36,10 @@ async def websocket_endpoint(
     # Authenticate
     # ==========================================================
 
-    payload = await websocket_auth.authenticate(
-        websocket
+    payload, subprotocol = (
+        await websocket_auth.authenticate(
+            websocket
+        )
     )
 
     if payload is None:
@@ -76,6 +81,12 @@ async def websocket_endpoint(
             return
 
         # ======================================================
+        # Accept Handshake (echo validated subprotocol)
+        # ======================================================
+
+        await websocket.accept(subprotocol=subprotocol)
+
+        # ======================================================
         # Connect
         # ======================================================
 
@@ -104,8 +115,10 @@ async def websocket_endpoint(
             },
         )
 
-        print(
-            f"Connected: {current_user.email}"
+        logger.info(
+            "WS connected: user=%s conversation=%s",
+            current_user.email,
+            conversation_id,
         )
 
         # ======================================================
@@ -127,8 +140,10 @@ async def websocket_endpoint(
 
         except WebSocketDisconnect:
 
-            print(
-                f"Disconnected: {current_user.email}"
+            logger.info(
+                "WS disconnected: user=%s conversation=%s",
+                current_user.email,
+                conversation_id,
             )
 
         except ValueError as e:
@@ -142,8 +157,10 @@ async def websocket_endpoint(
 
         except Exception as e:
 
-            print(
-                f"WebSocket Error: {e}"
+            logger.exception(
+                "WebSocket error for user=%s: %s",
+                current_user.email,
+                e,
             )
 
             try:

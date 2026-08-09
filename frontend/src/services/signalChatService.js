@@ -67,7 +67,25 @@ async function resolveRemoteDevice(
     };
 
     let remoteDeviceId = peers.conversations[conversationId];
-    if (remoteDeviceId) return remoteDeviceId;
+
+    if (remoteDeviceId) {
+
+        // No fresh bundle means "use the pinned device" (session
+        // continuation) — honour the pin. With a bundle, verify the
+        // pin still exists: the peer may have wiped/re-registered
+        // its device, so drop the pin and pick the current one.
+        const stillExists =
+            !remoteDevices ||
+            remoteDevices.some(
+                (d) => d.device_id === remoteDeviceId,
+            );
+
+        if (stillExists) return remoteDeviceId;
+
+        delete peers.conversations[conversationId];
+        await keyStore.saveMeta({ id: PEER_MAP_ID, ...peers });
+
+    }
 
     if (!remoteDevices?.length) {
         throw new SignalChatError("Peer has no registered devices.");
@@ -102,10 +120,20 @@ export async function encryptForConversation({
         remoteDevices = await bundleProvider();
     }
 
+    // getBundle returns the API bundle object
+    // `{ user_id, devices: [...] }` — normalize to the array.
+    // Keep `null` when no bundle was provided so the pinned
+    // device path (session continuation) still works.
+    const deviceList = remoteDevices == null
+        ? null
+        : (Array.isArray(remoteDevices)
+            ? remoteDevices
+            : (remoteDevices.devices ?? []));
+
     const remoteDeviceId = await resolveRemoteDevice(
         keyStore,
         conversationId,
-        remoteDevices,
+        deviceList,
     );
 
     const session = await manager.store.get(
@@ -124,7 +152,7 @@ export async function encryptForConversation({
             plaintext: utf8Bytes(plaintext),
         });
     } else {
-        const device = remoteDevices?.find(
+        const device = deviceList.find(
             (d) => d.device_id === remoteDeviceId,
         );
         if (!device) {

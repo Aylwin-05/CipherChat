@@ -71,3 +71,5 @@ class ConversationResponse(BaseModel):
     other_user: ConversationUser
 
     last_message: LastMessage | None = None
+
+    unread_count: int = 0

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-import traceback
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
+from app.dependencies.rate_limit import rate_limit
 
 from app.models.user import User
 
@@ -35,6 +35,9 @@ router = APIRouter(
 @router.post(
     "/private",
     response_model=ConversationResponse,
+    dependencies=[
+        rate_limit("conversations.create", 30, 60),
+    ],
 )
 async def create_private_conversation(
     request: CreateConversationRequest,
@@ -50,40 +53,32 @@ async def create_private_conversation(
             message_repository,
         )
 
-        print("STEP 1")
-
+        
         conversation = await service.get_or_create_private_conversation(
             current_user,
             request.user_id,
         )
 
-        print("STEP 2")
-
+        
         await db.commit()
 
-        print("STEP 3")
-
+        
         await db.refresh(conversation)
 
-        print("STEP 4")
-
+        
         other_user = await conversation_repository.get_other_user(
             conversation.id,
             current_user.id,
         )
 
-        print("OTHER USER:", other_user)
-
-        print("STEP 5")
-
+        
+        
         last_message = await message_repository.get_last_message(
             conversation.id,
         )
 
-        print("LAST MESSAGE:", last_message)
-
-        print("STEP 6")
-
+        
+        
         return {
             "id": conversation.id,
             "updated_at": conversation.updated_at,

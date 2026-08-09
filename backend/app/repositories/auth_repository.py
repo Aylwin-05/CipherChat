@@ -48,7 +48,10 @@ class AuthRepository(BaseRepository):
     async def get_user_by_id(
         self,
         user_id,
-    ) -> User | None:
+    ):
+
+        from sqlalchemy import select
+        from app.models.user import User
 
         result = await self.execute(
             select(User).where(
@@ -57,15 +60,6 @@ class AuthRepository(BaseRepository):
         )
 
         return result.scalar_one_or_none()
-
-    async def update_user_key(
-        self,
-        key: UserKey,
-    ) -> UserKey:
-
-        await self.update()
-
-        return key
 
     async def create_user(
         self,

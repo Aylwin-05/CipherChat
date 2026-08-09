@@ -1,4 +1,8 @@
-import api from "../api/api";
+import api, {
+    refreshAccessToken,
+    setAccessToken,
+    clearAccessToken,
+} from "../api/api";
 
 const authService = {
 
@@ -36,26 +40,21 @@ const authService = {
         return response.data;
 
     },
+
+    // ======================================================
+    // Refresh Access Token
+    //
+    // The refresh token lives in the HttpOnly cookie, which the
+    // browser attaches automatically. Nothing is read from
+    // localStorage and nothing is written back to it.
+    // ======================================================
+
     async refreshAccessToken() {
 
-    const refreshToken =
-        this.getRefreshToken();
+        const token =
+            await refreshAccessToken();
 
-    const response =
-        await api.post(
-            "/auth/refresh",
-            {
-                refresh_token:
-                    refreshToken,
-            }
-        );
-
-    localStorage.setItem(
-        "access_token",
-        response.data.access_token
-    );
-
-    return response.data.access_token;
+        return token;
 
     },
 
@@ -74,39 +73,12 @@ const authService = {
     },
 
     // ======================================================
-    // Token Helpers
+    // Token Helpers (memory only)
     // ======================================================
 
-    saveTokens(
-        accessToken,
-        refreshToken,
-    ) {
+    login(accessToken) {
 
-        localStorage.setItem(
-            "access_token",
-            accessToken,
-        );
-
-        localStorage.setItem(
-            "refresh_token",
-            refreshToken,
-        );
-
-    },
-
-    getAccessToken() {
-
-        return localStorage.getItem(
-            "access_token",
-        );
-
-    },
-
-    getRefreshToken() {
-
-        return localStorage.getItem(
-            "refresh_token",
-        );
+        setAccessToken(accessToken);
 
     },
 
@@ -150,34 +122,33 @@ const authService = {
     },
 
     // ======================================================
-    // Login Helper
-    // ======================================================
-
-    async login(
-        accessToken,
-        refreshToken,
-    ) {
-
-        this.saveTokens(
-            accessToken,
-            refreshToken,
-        );
-
-    },
-
-    // ======================================================
     // Logout
+    //
+    // Revokes the refresh-token family server-side (the cookie
+    // travels along automatically) and clears local state.
     // ======================================================
 
-    logout() {
+    async logout() {
 
-        localStorage.removeItem(
-            "access_token",
-        );
+        try {
 
-        localStorage.removeItem(
-            "refresh_token",
-        );
+            await api.post(
+                "/auth/logout",
+                {},
+            );
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Logout revocation failed:",
+                error
+            );
+
+        }
+
+        clearAccessToken();
 
         localStorage.removeItem(
             "user",

@@ -11,8 +11,15 @@ from app.models import *
 
 config = context.config
 
+# Alembic uses a synchronous driver even though the application
+# connects with asyncpg: rewrite `+asyncpg` -> `+psycopg2`.
+sync_url = settings.DATABASE_URL.replace(
+    "+asyncpg",
+    "+psycopg2",
+)
+
 # Override the database URL from our application settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", sync_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

@@ -11,7 +11,7 @@ const conversationService = {
         try {
 
             const response = await api.get(
-                "/conversations"
+                "/conversations/"
             );
 
             return response.data;

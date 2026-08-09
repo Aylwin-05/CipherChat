@@ -8,8 +8,10 @@ import { useAuth } from "../context/AuthContext";
 import messageService from "../services/messageService";
 import websocketService from "../services/websocketService";
 import attachmentService from "../services/attachmentService";
-<<<<<<< HEAD
 import deviceService from "../services/deviceService";
+import {
+    getAccessToken,
+} from "../api/api";
 import {
     replenishPreKeys,
 } from "../services/signalService";
@@ -17,8 +19,6 @@ import {
     encryptForConversation,
     decryptMessage as signalDecryptMessage,
 } from "../services/signalChatService";
-=======
->>>>>>> b1fe404574da5b5ac3ebc7bc51357101824c53c6
 import { encryptFile } from "../utils/fileEncryption";
 import {
     decryptMessage,
@@ -42,6 +42,9 @@ export default function useMessages(
 
     const [typingUsers, setTypingUsers] =
         useState([]);
+
+    const [presence, setPresence] =
+        useState({});
 
     const [loading, setLoading] =
         useState(false);
@@ -192,6 +195,33 @@ export default function useMessages(
                 );
 
             setMessages(decrypted);
+
+            //--------------------------------------------------
+            // Read receipts: opening a chat reads its history
+            //--------------------------------------------------
+
+            const latestIncoming =
+                decrypted
+                    .filter(
+                        message =>
+                            message.sender_id !== user?.id &&
+                            !message.is_read
+                    )
+                    .sort(
+                        (a, b) =>
+                            new Date(a.created_at) -
+                            new Date(b.created_at)
+                    )
+                    .pop();
+
+            if (latestIncoming) {
+
+                websocketService.sendRead(
+                    latestIncoming.id
+                );
+
+            }
+
             //--------------------------------------------------
             // Download all image attachments
             //--------------------------------------------------
@@ -249,9 +279,7 @@ export default function useMessages(
             //--------------------------------------------------
 
             const token =
-                localStorage.getItem(
-                    "access_token"
-                );
+                getAccessToken();
 
             websocketService.connect(
                 conversation.id,
@@ -276,6 +304,30 @@ export default function useMessages(
                             break;
 
                         //--------------------------------------------------
+                        // Presence (live online/offline)
+                        //--------------------------------------------------
+
+                        case "presence":
+
+                            if (
+                                event.user_id &&
+                                event.user_id !== user?.id
+                            ) {
+
+                                setPresence(previous => ({
+
+                                    ...previous,
+
+                                    [event.user_id]:
+                                        event.online,
+
+                                }));
+
+                            }
+
+                            break;
+
+                        //--------------------------------------------------
                         // Incoming encrypted message
                         //--------------------------------------------------
 
@@ -294,7 +346,6 @@ export default function useMessages(
 
                                     attachments:
                                         event.attachments || [],
-
 
                                 };
 
@@ -328,6 +379,25 @@ export default function useMessages(
                                 onNewMessage?.(
                                     message
                                 );
+
+                                //------------------------------------------
+                                // Read receipts: the chat is open, so the
+                                // incoming message is seen instantly.
+                                //------------------------------------------
+
+                                if (
+                                    event.sender_id !== user?.id
+                                ) {
+
+                                    websocketService.sendDelivered(
+                                        message.id
+                                    );
+
+                                    websocketService.sendRead(
+                                        message.id
+                                    );
+
+                                }
 
                             }
 
@@ -531,6 +601,9 @@ export default function useMessages(
                                     )
 
                             );
+
+                            break;
+
                             case "attachment":
 
                             if (
@@ -570,39 +643,6 @@ export default function useMessages(
 
                                     message.id ===
                                     event.message_id
-
-                                        ? {
-
-                                            ...message,
-
-                                            attachments: [
-
-                                                ...(message.attachments || []),
-
-                                                event.attachment,
-
-                                            ],
-
-                                        }
-
-                                        : message
-
-                                )
-
-                            );
-
-                            break;
-                        //--------------------------------------------------
-                        // Attachment
-                        //--------------------------------------------------
-
-                        case "attachment":
-
-                            setMessages(previous =>
-
-                                previous.map(message =>
-
-                                    message.id === event.message_id
 
                                         ? {
 
@@ -930,6 +970,8 @@ export default function useMessages(
         imageUrls,
 
         typingUsers,
+
+        presence,
 
         loading,
 

@@ -1,6 +1,9 @@
 fastapi
 uvicorn[standard]
 
+# Async PostgreSQL driver (used by the application)
+asyncpg
+
 sqlalchemy
 psycopg2-binary
 
@@ -26,3 +29,8 @@ python-multipart
 
 cryptography
 hkdf
+
+# Tests
+pytest
+pytest-asyncio
+aiosqlite

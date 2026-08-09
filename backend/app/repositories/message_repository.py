@@ -153,6 +153,28 @@ class MessageRepository(BaseRepository):
         await self.update()
 
     # ==========================================================
+    # UNREAD COUNT
+    # ==========================================================
+
+    async def count_unread(
+        self,
+        conversation_id: UUID,
+        user_id: UUID,
+    ) -> int:
+        """Count messages sent by others that the user hasn't read."""
+
+        result = await self.db.execute(
+            select(Message.id)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.sender_id != user_id,
+                Message.is_read.is_(False),
+            )
+        )
+
+        return len(result.all())
+
+    # ==========================================================
     # DELETE
     # ==========================================================
 

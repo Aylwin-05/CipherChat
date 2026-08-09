@@ -1,0 +1,8 @@
+__pycache__
+.pytest_cache
+*.pyc
+.env
+uploads
+tests
+test_crypto.py
+test_jwt.py

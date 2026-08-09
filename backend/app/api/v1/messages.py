@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
+from app.dependencies.rate_limit import rate_limit
 from app.models.user import User
 from app.repositories.attachment_repository import AttachmentRepository
 from app.repositories.conversation_repository import ConversationRepository
@@ -90,6 +91,9 @@ def serialize_message(message):
 @router.post(
     "/send",
     response_model=MessageResponse,
+    dependencies=[
+        rate_limit("messages.send", 60, 60),
+    ],
 )
 async def send_message(
     request: SendMessageRequest,
@@ -152,6 +156,9 @@ async def send_message(
 @router.get(
     "/{conversation_id}",
     response_model=list[MessageResponse],
+    dependencies=[
+        rate_limit("messages.history", 120, 60),
+    ],
 )
 async def get_messages(
     conversation_id: UUID,

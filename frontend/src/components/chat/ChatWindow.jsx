@@ -15,6 +15,7 @@ export default function ChatWindow({
     const {
         messages,
         typingUsers,
+        presence,
         loading,
         error,
         sendMessage,
@@ -97,6 +98,10 @@ export default function ChatWindow({
             online_status: "offline",
         };
 
+    const liveOnline =
+        presence[otherUser.id] ??
+        otherUser.online_status === "online";
+
     // Friendly wording for common errors
     const errorMessage = error
         ? /no (registered )?devic|no-such-device|bundle unavailable/i.test(
@@ -128,7 +133,7 @@ export default function ChatWindow({
 
                     <span className="online-status">
 
-                        {otherUser.online_status === "online"
+                        {liveOnline
                             ? "🟢 Online"
                             : "⚫ Offline"}
 

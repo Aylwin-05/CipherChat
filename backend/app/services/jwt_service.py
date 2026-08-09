@@ -56,18 +56,22 @@ class JWTService:
         self,
         user_id: str,
         email: str,
+        jti: str | None = None,
     ) -> str:
 
         expire = datetime.now(timezone.utc) + timedelta(
             days=self.refresh_token_expire
         )
 
-        payload = {
+        payload: dict[str, Any] = {
             "sub": user_id,
             "email": email,
             "type": "refresh",
             "exp": expire,
         }
+
+        if jti:
+            payload["jti"] = jti
 
         return jwt.encode(
             payload,
@@ -86,21 +90,13 @@ class JWTService:
 
         try:
 
-            payload = jwt.decode(
+            return jwt.decode(
                 token,
                 self.secret_key,
                 algorithms=[self.algorithm],
             )
 
-            print("JWT Payload:", payload)
-
-            return payload
-
-        except JWTError as e:
-
-            print("=" * 60)
-            print("JWT ERROR:", repr(e))
-            print("=" * 60)
+        except JWTError:
 
             return None
 

@@ -1,10 +1,15 @@
+import logging
+
 from datetime import datetime, timedelta, timezone
-from app.models.user_key import UserKey
+
+from app.core.config import settings
 from app.models.otp import OTPCode
 from app.models.user import User
 from app.repositories.auth_repository import AuthRepository
 from app.services.email_service import EmailService
 from app.utils.security import SecurityUtils
+
+logger = logging.getLogger(__name__)
 
 
 class AuthService:
@@ -35,6 +40,7 @@ class AuthService:
     async def send_otp(
         self,
         email: str,
+        client_ip: str | None = None,
     ) -> bool:
 
         await self.repository.delete_expired_otps()
@@ -55,7 +61,20 @@ class AuthService:
 
         await self.repository.commit()
 
-        self.email_service.send_otp_email(
+        # ==================================================
+        # DEVELOPMENT shortcut: print the OTP to the server
+        # console instead of sending real mail (DEBUG only)
+        # ==================================================
+
+        if settings.DEBUG and settings.APP_ENV == "development":
+
+            logger.warning(
+                "[DEV] OTP for %s: %s",
+                email,
+                otp,
+            )
+
+        await self.email_service.send_otp_email(
             recipient_email=email,
             otp=otp,
         )
@@ -85,7 +104,15 @@ class AuthService:
         if otp_record.attempts >= self.MAX_ATTEMPTS:
             return None
 
-        if datetime.now(timezone.utc) > otp_record.expires_at:
+        expires_at = otp_record.expires_at
+
+        if expires_at.tzinfo is None:
+
+            expires_at = expires_at.replace(
+                tzinfo=timezone.utc
+            )
+
+        if datetime.now(timezone.utc) > expires_at:
             return None
 
         if not SecurityUtils.verify_otp(
@@ -174,54 +201,3 @@ class AuthService:
         return {
             "user": user,
         }
-    # =====================================================
-    # REGISTER USER PUBLIC KEYS
-    # =====================================================
-
-    async def register_public_keys(
-        self,
-        user: User,
-        public_key: str,
-        signed_prekey: str,
-        signed_prekey_signature: str,
-    ):
-        """
-        Stores only the user's public cryptographic keys.
-
-        Private keys NEVER reach the server.
-        """
-
-        existing = await self.repository.get_user_key(
-            user.id
-        )
-
-        if existing:
-
-            existing.public_key = public_key
-            existing.signed_prekey = signed_prekey
-            existing.signed_prekey_signature = (
-                signed_prekey_signature
-            )
-
-            await self.repository.update_user_key(
-                existing
-            )
-
-            await self.repository.commit()
-
-            return existing
-
-        key = UserKey(
-            user_id=user.id,
-            public_key=public_key,
-            signed_prekey=signed_prekey,
-            signed_prekey_signature=signed_prekey_signature,
-        )
-
-        await self.repository.create_user_key(
-            key
-        )
-
-        await self.repository.commit()
-
-        return key

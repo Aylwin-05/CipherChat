@@ -1,8 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
+import logging
+
+logger = logging.getLogger("app.api.friends")
 
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
+from app.dependencies.rate_limit import rate_limit
 from app.models.user import User
 from app.repositories.friend_repository import FriendRepository
 from app.schemas.friend import (
@@ -26,6 +30,9 @@ router = APIRouter(
 @router.get(
     "/search",
     response_model=list[SearchUserResponse],
+    dependencies=[
+        rate_limit("friends.search", 30, 60),
+    ],
 )
 async def search_users(
     email: str = Query(..., min_length=1),
@@ -48,6 +55,9 @@ async def search_users(
 @router.post(
     "/request",
     response_model=FriendResponse,
+    dependencies=[
+        rate_limit("friends.request", 20, 60),
+    ],
 )
 async def send_friend_request(
     request: SendFriendRequest,
@@ -66,7 +76,11 @@ async def send_friend_request(
         return friendship
 
     except ValueError as e:
-        print("Friend Request Error:", str(e))
+        logger.warning(
+            "Friend request failed for user %s: %s",
+            current_user.id,
+            e,
+        )
 
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -117,6 +131,9 @@ async def get_friends(
 @router.post(
     "/accept",
     response_model=FriendResponse,
+    dependencies=[
+        rate_limit("friends.accept", 20, 60),
+    ],
 )
 async def accept_friend_request(
     request: FriendRequestAction,
@@ -146,6 +163,9 @@ async def accept_friend_request(
 @router.post(
     "/reject",
     response_model=FriendMessage,
+    dependencies=[
+        rate_limit("friends.reject", 20, 60),
+    ],
 )
 async def reject_friend_request(
     request: FriendRequestAction,

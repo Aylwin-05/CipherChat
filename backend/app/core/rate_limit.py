@@ -1,0 +1,131 @@
+"""
+Fully-async rate limiting.
+
+Uses Redis (INCR + EXPIRE) when REDIS_URL is configured,
+otherwise falls back to an in-process sliding-window store —
+fine for a single worker, and Redis is the production upgrade
+path (zero code changes).
+
+Usage (FastAPI):
+
+    limiter = RateLimiter()
+    await limiter.hit("otp.send", ip=request.client.host, email=email)
+    -> raises RateLimitExceeded (HTTP 429)
+"""
+
+import asyncio
+import time
+from collections import defaultdict, deque
+
+from app.core.config import settings
+
+# ==========================================================
+# Exceptions
+# ==========================================================
+
+
+class RateLimitExceeded(Exception):
+    def __init__(self, retry_after: int):
+        super().__init__("Too many requests.")
+        self.retry_after = retry_after
+
+
+# ==========================================================
+# In-memory store (single worker)
+# ==========================================================
+
+
+class _MemoryStore:
+    def __init__(self):
+        self._buckets: dict[str, deque] = defaultdict(deque)
+        self._lock = asyncio.Lock()
+
+    async def incr_with_ttl(
+        self,
+        key: str,
+        ttl_seconds: int,
+    ) -> int:
+        now = time.monotonic()
+        async with self._lock:
+            bucket = self._buckets[key]
+            while bucket and now - bucket[0] > ttl_seconds:
+                bucket.popleft()
+            bucket.append(now)
+            return len(bucket)
+
+
+# ==========================================================
+# Redis store (multi worker)
+# ==========================================================
+
+
+class _RedisStore:
+    def __init__(self):
+        self._client = None
+
+    async def _get_client(self):
+        if self._client is None:
+            import redis.asyncio as aioredis
+
+            self._client = aioredis.from_url(
+                settings.REDIS_URL,
+                encoding="utf-8",
+                decode_responses=True,
+            )
+        return self._client
+
+    async def incr_with_ttl(
+        self,
+        key: str,
+        ttl_seconds: int,
+    ) -> int:
+        client = await self._get_client()
+        count = await client.incr(key)
+        if count == 1:
+            await client.expire(key, ttl_seconds)
+        return count
+
+
+# ==========================================================
+# Limiter
+# ==========================================================
+
+
+class RateLimiter:
+    """Rate limiter with per-key counts over a rolling window."""
+
+    def __init__(self):
+        self._store = _RedisStore() if settings.REDIS_URL else _MemoryStore()
+
+    async def check(
+        self,
+        key: str,
+        limit: int,
+        window_seconds: int,
+    ) -> None:
+        """Increment the counter for `key`; raise when over `limit`."""
+
+        count = await self._store.incr_with_ttl(
+            f"rl:{key}",
+            window_seconds,
+        )
+
+        if count > limit:
+            raise RateLimitExceeded(retry_after=window_seconds)
+
+
+_limiter: RateLimiter | None = None
+
+
+def get_limiter() -> RateLimiter:
+    global _limiter
+    if _limiter is None:
+        _limiter = RateLimiter()
+    return _limiter
+
+
+def reset_limiter():
+    """Clear the shared limiter (used by tests between cases)."""
+
+    global _limiter
+    _limiter = None

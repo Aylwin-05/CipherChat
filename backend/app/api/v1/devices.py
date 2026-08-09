@@ -82,6 +82,7 @@ async def register_device(
 )
 async def get_key_bundle(
     user_id: UUID,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     repository = DeviceRepository(db)

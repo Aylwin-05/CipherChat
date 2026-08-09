@@ -6,10 +6,45 @@ from app.services.jwt_service import JWTService
 class WebSocketAuth:
     """
     Handles authentication for WebSocket connections.
+
+    The JWT is carried in the `Sec-WebSocket-Protocol` header
+    as a subprotocol named `cipherchat.<token>` instead of
+    a query parameter, so it never leaks into access / proxy logs.
     """
+
+    TOKEN_PREFIX = "cipherchat."
 
     def __init__(self):
         self.jwt_service = JWTService()
+
+    def extract_token(
+        self,
+        websocket: WebSocket,
+    ) -> tuple[str | None, str | None]:
+        """
+        Returns (token, full_subprotocol).
+        """
+
+        header = websocket.headers.get(
+            "sec-websocket-protocol",
+            "",
+        )
+
+        for offered in header.split(","):
+
+            offered = offered.strip()
+
+            if offered.startswith(self.TOKEN_PREFIX):
+
+                return (
+                    offered[len(self.TOKEN_PREFIX):],
+                    offered,
+                )
+
+        return (
+            None,
+            None,
+        )
 
     async def authenticate(
         self,
@@ -17,17 +52,22 @@ class WebSocketAuth:
     ):
         """
         Authenticate a websocket using the JWT access token
-        provided as a query parameter.
+        supplied through the WebSocket subprotocol.
 
-        Example:
-        ws://localhost:8000/ws/<conversation_id>?token=<JWT>
+        Returns `(payload, subprotocol)` on success
+        or `(None, None)` after closing the connection.
         """
 
-        token = websocket.query_params.get("token")
+        token, subprotocol = (
+            self.extract_token(websocket)
+        )
 
         if not token:
             await websocket.close(code=1008)
-            return None
+            return (
+                None,
+                None,
+            )
 
         payload = self.jwt_service.verify_access_token(
             token
@@ -35,9 +75,15 @@ class WebSocketAuth:
 
         if payload is None:
             await websocket.close(code=1008)
-            return None
+            return (
+                None,
+                None,
+            )
 
-        return payload
+        return (
+            payload,
+            subprotocol,
+        )
 
 
 websocket_auth = WebSocketAuth()

@@ -20,6 +20,8 @@ VOICE_DIR = BASE_UPLOAD_DIR / "voice"
 
 ARCHIVE_DIR = BASE_UPLOAD_DIR / "archives"
 
+ENCRYPTED_DIR = BASE_UPLOAD_DIR / "encrypted"
+
 THUMBNAIL_DIR = BASE_UPLOAD_DIR / "thumbnails"
 
 
@@ -36,6 +38,8 @@ MAX_AUDIO_SIZE = 100 * 1024 * 1024
 MAX_DOCUMENT_SIZE = 100 * 1024 * 1024
 
 MAX_ARCHIVE_SIZE = 200 * 1024 * 1024
+
+MAX_ENCRYPTED_SIZE = 500 * 1024 * 1024
 
 
 # ==========================================================
@@ -90,6 +94,10 @@ ARCHIVE_EXTENSIONS = {
     ".7z",
 }
 
+ENCRYPTED_EXTENSIONS = {
+    ".bin",
+}
+
 
 # ==========================================================
 # Create folders automatically
@@ -110,6 +118,8 @@ for directory in [
     VOICE_DIR,
 
     ARCHIVE_DIR,
+
+    ENCRYPTED_DIR,
 
     THUMBNAIL_DIR,
 

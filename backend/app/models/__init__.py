@@ -8,6 +8,7 @@ from .message import Message
 from .attachment import Attachment
 from .friendship import Friendship
 from .otp import OTPCode
+from .refresh_token import RefreshToken
 
 __all__ = [
     "User",
@@ -24,4 +25,5 @@ __all__ = [
     "Attachment",
     "Friendship",
     "OTPCode",
+    "RefreshToken",
 ]

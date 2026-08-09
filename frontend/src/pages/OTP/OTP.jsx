@@ -52,13 +52,16 @@ export default function OTP() {
                     otp
                 );
 
-            // ==========================================
+// ==========================================
             // Login + Load User Profile
+            //
+            // The refresh token was already written into the
+            // HttpOnly cookie by the server; only the access
+            // token is kept (in memory).
             // ==========================================
 
             await login(
-                response.access_token,
-                response.refresh_token
+                response.access_token
             );
 
             navigate(

@@ -28,7 +28,10 @@ const attachmentService = {
 
     downloadUrl(id) {
 
-        return `http://127.0.0.1:8000/api/v1/attachments/${id}`;
+        const base =
+            import.meta.env.VITE_API_URL || "/api/v1";
+
+        return `${base}/attachments/${id}`;
 
     },
 

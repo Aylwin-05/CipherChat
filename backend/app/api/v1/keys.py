@@ -62,6 +62,7 @@ async def upload_public_key(
 )
 async def get_public_key(
     user_id: UUID,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
 

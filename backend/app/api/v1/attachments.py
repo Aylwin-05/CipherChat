@@ -16,6 +16,7 @@ import logging
 logger = logging.getLogger(__name__)
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
+from app.dependencies.rate_limit import rate_limit
 from app.models.user import User
 from app.repositories.attachment_repository import AttachmentRepository
 from app.repositories.conversation_repository import (
@@ -44,6 +45,9 @@ router = APIRouter(
 @router.post(
     "/upload/{message_id}",
     response_model=UploadResponse,
+    dependencies=[
+        rate_limit("attachments.upload", 10, 60),
+    ],
 )
 async def upload_attachment(
     message_id: UUID,
@@ -186,6 +190,12 @@ async def upload_attachment(
         },
     )
 
+    return {
+        "success": True,
+        "message": "Attachment uploaded successfully.",
+        "attachment": attachment,
+    }
+
 
 # ==========================================================
 # Download Attachment
@@ -230,12 +240,6 @@ async def download_attachment(
         raise HTTPException(
             status_code=404,
             detail="Message not found.",
-        )
-    if message.sender_id != current_user.id:
-
-        raise HTTPException(
-            status_code=403,
-            detail="You can only upload attachments to your own messages.",
         )
 
     participants = (

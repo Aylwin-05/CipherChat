@@ -4,16 +4,19 @@ import { BrowserRouter } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import App from "./App";
 import { AuthProvider } from "./context/AuthContext";
+import ErrorBoundary from "./components/layout/ErrorBoundary";
 
 ReactDOM.createRoot(
     document.getElementById("root")
 ).render(
     <React.StrictMode>
-        <BrowserRouter>
-            <AuthProvider>
-                <App />
-                    <Toaster position="top-right" reverseOrder={false}/>
-            </AuthProvider>
-        </BrowserRouter>
+        <ErrorBoundary>
+            <BrowserRouter>
+                <AuthProvider>
+                    <App />
+                    <Toaster position="top-right" reverseOrder={false} />
+                </AuthProvider>
+            </BrowserRouter>
+        </ErrorBoundary>
     </React.StrictMode>
 );

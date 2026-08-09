@@ -13,17 +13,20 @@ from app.core.file_config import (
     VOICE_DIR,
     DOCUMENT_DIR,
     ARCHIVE_DIR,
+    ENCRYPTED_DIR,
     IMAGE_EXTENSIONS,
     VIDEO_EXTENSIONS,
     AUDIO_EXTENSIONS,
     VOICE_EXTENSIONS,
     DOCUMENT_EXTENSIONS,
     ARCHIVE_EXTENSIONS,
+    ENCRYPTED_EXTENSIONS,
     MAX_IMAGE_SIZE,
     MAX_VIDEO_SIZE,
     MAX_AUDIO_SIZE,
     MAX_DOCUMENT_SIZE,
     MAX_ARCHIVE_SIZE,
+    MAX_ENCRYPTED_SIZE,
 )
 
 from app.models.attachment import Attachment
@@ -84,6 +87,9 @@ class AttachmentService:
         if extension in ARCHIVE_EXTENSIONS:
             return "archive"
 
+        if extension in ENCRYPTED_EXTENSIONS:
+            return "encrypted"
+
         raise HTTPException(
             status_code=400,
             detail="Unsupported file type.",
@@ -105,6 +111,7 @@ class AttachmentService:
             "voice": VOICE_DIR,
             "document": DOCUMENT_DIR,
             "archive": ARCHIVE_DIR,
+            "encrypted": ENCRYPTED_DIR,
         }
 
         return mapping[attachment_type]
@@ -131,6 +138,8 @@ class AttachmentService:
             "document": MAX_DOCUMENT_SIZE,
 
             "archive": MAX_ARCHIVE_SIZE,
+
+            "encrypted": MAX_ENCRYPTED_SIZE,
         }
 
         return mapping[attachment_type]
@@ -154,9 +163,6 @@ class AttachmentService:
         self,
         file: UploadFile,
     ) -> tuple[str, str, int]:
-        print("========== VALIDATE ==========")
-        print("Filename:", file.filename)
-        print("Content-Type:", file.content_type)
 
         if not file.filename:
 
@@ -169,8 +175,6 @@ class AttachmentService:
             file.filename
         ).suffix.lower()
 
-        print("Extension:", extension)
-
         mime_type = (
             file.content_type
             or "application/octet-stream"
@@ -182,11 +186,12 @@ class AttachmentService:
                 mime_type,
             )
         )
-        print("Attachment type:", attachment_type)
 
-        contents = await file.read()
+        size = 0
 
-        size = len(contents)
+        while chunk := await file.read(64 * 1024):
+
+            size += len(chunk)
 
         await file.seek(0)
 
@@ -220,22 +225,13 @@ class AttachmentService:
         extension: str,
     ) -> tuple[str, str]:
 
-        print("========== SAVE FILE ==========")
-        print("Original filename:", file.filename)
-        print("Attachment type:", attachment_type)
-        print("Extension:", extension)
-
         filename = self.generate_filename(
             extension
         )
 
-        print("Generated filename:", filename)
-
         upload_directory = self.upload_directory(
             attachment_type
         )
-
-        print("Upload directory:", upload_directory)
 
         upload_directory.mkdir(
             parents=True,
@@ -244,18 +240,12 @@ class AttachmentService:
 
         destination = upload_directory / filename
 
-        print("Destination:", destination)
-
         with destination.open("wb") as buffer:
-
-            print("Writing file...")
 
             shutil.copyfileobj(
                 file.file,
                 buffer,
             )
-
-        print("Saved successfully!")
 
         return (
             filename,
