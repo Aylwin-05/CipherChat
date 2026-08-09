@@ -154,7 +154,8 @@ class MessageService:
         )
 
         return await self.message_repository.get_conversation_messages(
-            conversation_id
+            conversation_id,
+            current_user.id,
         )
 
     # ==========================================================
@@ -224,4 +225,24 @@ class MessageService:
 
         return await self.message_repository.delete_for_everyone(
             message
+        )
+
+    # ==========================================================
+    # DELETE FOR ME
+    # ==========================================================
+
+    async def delete_for_me(
+        self,
+        current_user: User,
+        message_id: UUID,
+    ):
+
+        message = await self.get_message(
+            current_user,
+            message_id,
+        )
+
+        return await self.message_repository.delete_for_me(
+            message,
+            current_user.id,
         )

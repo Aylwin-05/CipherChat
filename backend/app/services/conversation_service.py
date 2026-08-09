@@ -128,7 +128,8 @@ class ConversationService:
 
             last_message = (
                 await self.message_repository.get_last_message(
-                    conversation.id
+                    conversation.id,
+                    current_user.id,
                 )
             )
 

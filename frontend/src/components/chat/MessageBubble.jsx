@@ -3,13 +3,75 @@ import { useEffect, useRef, useState } from "react";
 import attachmentService from "../../services/attachmentService";
 import ImageLightbox from "./ImageLightbox";
 
-export default function MessageBubble({ message }) {
+export default function MessageBubble({ message, onDelete }) {
 
     const { user } = useAuth();
 
     const [attachmentUrls, setAttachmentUrls] = useState({});
 
     const [lightbox, setLightbox] = useState(null);
+
+    const [menuOpen, setMenuOpen] = useState(false);
+
+    const [confirming, setConfirming] = useState(null);
+
+    // Close the actions menu when clicking elsewhere
+    useEffect(() => {
+
+        if (!menuOpen) return;
+
+        function closeMenu() {
+
+            setMenuOpen(false);
+
+            setConfirming(null);
+
+        }
+
+        document.addEventListener(
+            "click",
+            closeMenu,
+        );
+
+        return () => {
+
+            document.removeEventListener(
+                "click",
+                closeMenu,
+            );
+
+        };
+
+    }, [menuOpen]);
+
+    // ==========================================================
+    // Delete actions
+    // ==========================================================
+
+    async function handleAction(scope) {
+
+        // "Delete for everyone" needs a second tap to confirm
+        if (
+            scope === "everyone" &&
+            confirming !== "everyone"
+        ) {
+
+            setConfirming("everyone");
+
+            return;
+
+        }
+
+        setMenuOpen(false);
+
+        setConfirming(null);
+
+        await onDelete?.(
+            message.id,
+            scope,
+        );
+
+    }
 
     // ==========================================================
     // Load attachment blobs (authenticated + decrypted)
@@ -141,6 +203,97 @@ export default function MessageBubble({ message }) {
                     deleted ? "deleted" : "",
                 ].join(" ")}
             >
+
+                {/* ACTIONS MENU */}
+
+                {!deleted && (
+
+                    <div
+                        className={`bubble-actions ${
+                            menuOpen ? "open" : ""
+                        }`}
+                    >
+
+                        <button
+                            type="button"
+                            className="bubble-actions-btn"
+                            aria-label="Message actions"
+                            onClick={(event) => {
+
+                                event.stopPropagation();
+
+                                setMenuOpen(open => !open);
+
+                                setConfirming(null);
+
+                            }}
+                        >
+
+                            <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                            >
+                                <circle cx="5" cy="12" r="1.7" />
+                                <circle cx="12" cy="12" r="1.7" />
+                                <circle cx="19" cy="12" r="1.7" />
+                            </svg>
+
+                        </button>
+
+                        {menuOpen && (
+
+                            <div
+                                className="bubble-menu"
+                                onClick={(event) =>
+                                    event.stopPropagation()
+                                }
+                            >
+
+                                <button
+                                    type="button"
+                                    className="bubble-menu-item"
+                                    onClick={() =>
+                                        handleAction("me")
+                                    }
+                                >
+
+                                    Delete for me
+
+                                </button>
+
+                                {isMine && (
+
+                                    <button
+                                        type="button"
+                                        className={[
+                                            "bubble-menu-item",
+                                            "danger",
+                                            confirming === "everyone"
+                                                ? "confirm"
+                                                : "",
+                                        ].join(" ")}
+                                        onClick={() =>
+                                            handleAction("everyone")
+                                        }
+                                    >
+
+                                        {confirming === "everyone"
+                                            ? "Tap again to confirm"
+                                            : "Delete for everyone"}
+
+                                    </button>
+
+                                )}
+
+                            </div>
+
+                        )}
+
+                    </div>
+
+                )}
 
                 {/* TEXT */}
 

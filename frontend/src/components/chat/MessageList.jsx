@@ -5,6 +5,7 @@ import MessageBubble from "./MessageBubble";
 export default function MessageList({
     messages,
     loading,
+    onDelete,
 }) {
 
     const bottomRef = useRef(null);
@@ -101,6 +102,7 @@ export default function MessageList({
                     <MessageBubble
                         key={message.id}
                         message={message}
+                        onDelete={onDelete}
                     />
 
                 ))

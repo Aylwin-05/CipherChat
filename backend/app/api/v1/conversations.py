@@ -75,6 +75,7 @@ async def create_private_conversation(
         
         last_message = await message_repository.get_last_message(
             conversation.id,
+            current_user.id,
         )
 
         

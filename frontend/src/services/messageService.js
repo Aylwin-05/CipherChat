@@ -70,6 +70,36 @@ const messageService = {
     },
 
     // ======================================================
+    // Delete For Everyone (sender only)
+    // ======================================================
+
+    async deleteForEveryone(messageId) {
+
+        const response =
+            await api.delete(
+                `/messages/${messageId}`
+            );
+
+        return response.data;
+
+    },
+
+    // ======================================================
+    // Delete For Me (any participant)
+    // ======================================================
+
+    async deleteForMe(messageId) {
+
+        const response =
+            await api.delete(
+                `/messages/${messageId}/me`
+            );
+
+        return response.data;
+
+    },
+
+    // ======================================================
     // Upload Attachment
     //
     // Client-side encrypted: the file is AES-GCM encrypted in

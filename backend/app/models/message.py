@@ -5,12 +5,57 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     String,
+    TypeDecorator,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import (
+    ARRAY,
+    UUID,
+)
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import JSON
 
 from app.database.base import Base
+
+
+class UUIDStringArray(TypeDecorator):
+    """
+    Stores a list of user UUIDs (as strings).
+
+    PostgreSQL: native UUID[] column (uuid list, indexed-friendly).
+    Other dialects (SQLite in tests): JSON fallback so the type
+    still compiles. Values are normalized to list[str] on read.
+    """
+
+    cache_ok = True
+
+    impl = JSON
+
+    def load_dialect_impl(self, dialect):
+
+        if dialect.name == "postgresql":
+
+            return dialect.type_descriptor(
+                ARRAY(UUID(as_uuid=True))
+            )
+
+        return dialect.type_descriptor(JSON())
+
+    def process_bind_param(self, value, dialect):
+
+        return value
+
+    def process_result_value(self, value, dialect):
+
+        if value is None:
+
+            return value
+
+        if dialect.name == "postgresql":
+
+            return [str(item) for item in value]
+
+        return value
 
 
 class Message(Base):
@@ -114,6 +159,12 @@ class Message(Base):
     deleted_for_everyone: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
+        nullable=False,
+    )
+
+    deleted_for: Mapped[list[str]] = mapped_column(
+        UUIDStringArray,
+        default=list,
         nullable=False,
     )
 

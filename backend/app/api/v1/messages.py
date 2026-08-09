@@ -202,3 +202,103 @@ async def get_messages(
             status_code=400,
             detail=str(e),
         )
+
+
+# ==========================================================
+# DELETE FOR EVERYONE
+# ==========================================================
+
+@router.delete(
+    "/{message_id}",
+    status_code=204,
+    dependencies=[
+        rate_limit("messages.delete", 30, 60),
+    ],
+)
+async def delete_for_everyone(
+    message_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+
+    message_repository = MessageRepository(db)
+    conversation_repository = ConversationRepository(db)
+    attachment_repository = AttachmentRepository(db)
+
+    attachment_service = AttachmentService(
+        attachment_repository
+    )
+
+    service = MessageService(
+        message_repository,
+        conversation_repository,
+        attachment_service,
+    )
+
+    try:
+
+        await service.delete_for_everyone(
+            current_user=current_user,
+            message_id=message_id,
+        )
+
+        await db.commit()
+
+    except ValueError as e:
+
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+
+# ==========================================================
+# DELETE FOR ME
+# ==========================================================
+
+@router.delete(
+    "/{message_id}/me",
+    status_code=204,
+    dependencies=[
+        rate_limit("messages.delete", 30, 60),
+    ],
+)
+async def delete_for_me(
+    message_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+
+    message_repository = MessageRepository(db)
+    conversation_repository = ConversationRepository(db)
+    attachment_repository = AttachmentRepository(db)
+
+    attachment_service = AttachmentService(
+        attachment_repository
+    )
+
+    service = MessageService(
+        message_repository,
+        conversation_repository,
+        attachment_service,
+    )
+
+    try:
+
+        await service.delete_for_me(
+            current_user=current_user,
+            message_id=message_id,
+        )
+
+        await db.commit()
+
+    except ValueError as e:
+
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )

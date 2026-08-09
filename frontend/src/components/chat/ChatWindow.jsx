@@ -21,6 +21,7 @@ export default function ChatWindow({
         loading,
         error,
         sendMessage,
+        deleteMessage,
         typing,
         stopTyping,
     } = useMessages(
@@ -242,6 +243,7 @@ export default function ChatWindow({
             <MessageList
                 messages={messages}
                 loading={loading}
+                onDelete={deleteMessage}
             />
 
             {errorMessage ? (

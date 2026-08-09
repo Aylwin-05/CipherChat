@@ -64,6 +64,7 @@ class MessageRepository(BaseRepository):
     async def get_conversation_messages(
         self,
         conversation_id: UUID,
+        user_id: UUID | None = None,
     ) -> list[Message]:
 
         result = await self.execute(
@@ -81,7 +82,19 @@ class MessageRepository(BaseRepository):
 
         )
 
-        return result.scalars().all()
+        messages = result.scalars().all()
+
+        # "Delete for me": hide messages the user removed
+        if user_id is not None:
+
+            messages = [
+                message
+                for message in messages
+                if str(user_id)
+                not in (message.deleted_for or [])
+            ]
+
+        return messages
 
     # ==========================================================
     # LAST MESSAGE
@@ -90,6 +103,7 @@ class MessageRepository(BaseRepository):
     async def get_last_message(
         self,
         conversation_id: UUID,
+        user_id: UUID | None = None,
     ) -> Message | None:
 
         result = await self.execute(
@@ -104,11 +118,23 @@ class MessageRepository(BaseRepository):
             .order_by(
                 Message.created_at.desc()
             )
-            .limit(1)
+            .limit(200)
 
         )
 
-        return result.scalar_one_or_none()
+        messages = result.scalars().all()
+
+        # "Delete for me": hide messages the user removed
+        if user_id is not None:
+
+            messages = [
+                message
+                for message in messages
+                if str(user_id)
+                not in (message.deleted_for or [])
+            ]
+
+        return messages[0] if messages else None
 
     # ==========================================================
     # DELIVERY
@@ -186,6 +212,22 @@ class MessageRepository(BaseRepository):
         message.deleted_for_everyone = True
 
         await self.update()
+
+        return message
+
+    async def delete_for_me(
+        self,
+        message: Message,
+        user_id: UUID,
+    ) -> Message:
+
+        user_id = str(user_id)
+
+        if user_id not in message.deleted_for:
+
+            message.deleted_for.append(user_id)
+
+            await self.update()
 
         return message
 

@@ -1125,6 +1125,92 @@ export default function useMessages(
 
     }
         //--------------------------------------------------
+    // Delete Message
+    //--------------------------------------------------
+
+    async function deleteMessage(
+        messageId,
+        scope,
+    ) {
+
+        try {
+
+            if (scope === "everyone") {
+
+                await messageService.deleteForEveryone(
+                    messageId
+                );
+
+                //---------
+                // Update own UI instantly
+                //---------
+
+                setMessages(
+                    previous => previous.map(
+                        message =>
+
+                            message.id === messageId
+
+                                ? {
+
+                                    ...message,
+
+                                    deleted_for_everyone: true,
+
+                                    content:
+                                        "Message deleted",
+
+                                }
+
+                                : message
+                    )
+                );
+
+                //---------
+                // Notify the other participant in real time
+                //---------
+
+                websocketService
+                    .sendDelete(messageId);
+
+            }
+            else {
+
+                await messageService.deleteForMe(
+                    messageId
+                );
+
+                //---------
+                // "Delete for me" removes it from MY history
+                //---------
+
+                setMessages(
+                    previous => previous.filter(
+                        message =>
+                            message.id !== messageId
+                    )
+                );
+
+            }
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Failed to delete message",
+                error
+            );
+
+            setError(error);
+
+            throw error;
+
+        }
+
+    }
+
+    //--------------------------------------------------
     // Return Hook API
     //--------------------------------------------------
 
@@ -1143,6 +1229,8 @@ export default function useMessages(
         error,
 
         sendMessage,
+
+        deleteMessage,
 
         typing,
 
