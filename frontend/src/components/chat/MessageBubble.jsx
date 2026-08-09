@@ -1,6 +1,7 @@
 import { useAuth } from "../../context/AuthContext";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import attachmentService from "../../services/attachmentService";
+import ImageLightbox from "./ImageLightbox";
 
 export default function MessageBubble({ message }) {
 
@@ -8,11 +9,27 @@ export default function MessageBubble({ message }) {
 
     const [attachmentUrls, setAttachmentUrls] = useState({});
 
+    const [lightbox, setLightbox] = useState(null);
+
     // ==========================================================
-    // Load attachment blobs (authenticated)
+    // Load attachment blobs (authenticated + decrypted)
+    //
+    // Reload only when the actual attachment set changes, NOT
+    // when unrelated updates (read receipts, typing) remap the
+    // message objects — otherwise old blob URLs get replaced
+    // (and revoked) while the lightbox is still showing one.
     // ==========================================================
 
+    const attachmentKey =
+        `${message.id}:${(message.attachments || [])
+            .map(attachment => attachment.id)
+            .join(",")}`;
+
+    const urlsRef = useRef({});
+
     useEffect(() => {
+
+        let cancelled = false;
 
         async function loadAttachments() {
 
@@ -24,7 +41,16 @@ export default function MessageBubble({ message }) {
 
                     urls[attachment.id] =
                         await attachmentService.getAttachment(
-                            attachment.id
+                            attachment.id,
+                            {
+                                wrappedKey:
+                                    message.sender_id === user?.id
+                                        ? attachment.encrypted_key_sender
+                                        : attachment.encrypted_key_receiver,
+
+                                nonce:
+                                    attachment.nonce,
+                            }
                         );
 
                 }
@@ -40,23 +66,46 @@ export default function MessageBubble({ message }) {
 
             }
 
+            if (cancelled) {
+
+                Object.values(urls).forEach(url =>
+                    URL.revokeObjectURL(url)
+                );
+
+                return;
+
+            }
+
             setAttachmentUrls(urls);
 
         }
 
         loadAttachments();
 
-    }, [message]);
+        return () => {
+
+            cancelled = true;
+
+        };
+
+    }, [attachmentKey, user?.id]);
 
     // ==========================================================
-    // Cleanup blob URLs
+    // Cleanup blob URLs — only on unmount (switching messages
+    // or leaving the chat), so live lightbox URLs stay valid.
     // ==========================================================
+
+    useEffect(() => {
+
+        urlsRef.current = attachmentUrls;
+
+    }, [attachmentUrls]);
 
     useEffect(() => {
 
         return () => {
 
-            Object.values(attachmentUrls).forEach(url => {
+            Object.values(urlsRef.current).forEach(url => {
 
                 URL.revokeObjectURL(url);
 
@@ -64,7 +113,7 @@ export default function MessageBubble({ message }) {
 
         };
 
-    }, [attachmentUrls]);
+    }, []);
 
     if (!message) return null;
 
@@ -119,6 +168,10 @@ export default function MessageBubble({ message }) {
                                     src={url}
                                     alt={attachment.original_name}
                                     className="chat-image"
+                                    onClick={() => setLightbox({
+                                        attachment,
+                                        url,
+                                    })}
                                 />
 
                             );
@@ -159,8 +212,11 @@ export default function MessageBubble({ message }) {
                                     key={attachment.id}
                                     href={url}
                                     download={attachment.original_name}
+                                    className="message-attachment"
                                 >
+
                                     📄 {attachment.original_name}
+
                                 </a>
 
                             );
@@ -214,6 +270,14 @@ export default function MessageBubble({ message }) {
                 </div>
 
             </div>
+
+            <ImageLightbox
+                attachment={lightbox?.attachment}
+                url={lightbox?.url}
+                onClose={() =>
+                    setLightbox(null)
+                }
+            />
 
         </div>
 

@@ -46,6 +46,10 @@ def serialize_message(message):
         "size": attachment.size,
         "download_url": f"/api/v1/attachments/{attachment.id}",
         "created_at": attachment.created_at,
+        "encrypted": attachment.encrypted,
+        "encrypted_key_sender": attachment.encrypted_key_sender,
+        "encrypted_key_receiver": attachment.encrypted_key_receiver,
+        "nonce": attachment.nonce,
     }
     for attachment in message.attachments]
 

@@ -1,4 +1,10 @@
 import api from "../api/api";
+import { getPrivateKey } from "../crypto/keyStorage";
+import { base64ToArrayBuffer } from "../crypto/base64";
+import {
+    decryptFile,
+    unwrapFileKey,
+} from "../utils/fileEncryption";
 
 const attachmentService = {
 
@@ -35,7 +41,22 @@ const attachmentService = {
 
     },
 
-    async getAttachment(id) {
+    // ==========================================================
+    // Get Attachment (decrypted when the file key is provided)
+    //
+    // `wrappedKey` is the RSA-OAEP ciphertext of the file's AES
+    // key (base64). It is unwrapped with the local private key,
+    // then the stored ciphertext blob is AES-GCM decrypted so
+    // the browser gets the original plaintext file.
+    // ==========================================================
+
+    async getAttachment(
+        id,
+        {
+            wrappedKey = null,
+            nonce = null,
+        } = {},
+    ) {
 
         const response = await api.get(
 
@@ -47,7 +68,41 @@ const attachmentService = {
 
         );
 
-        return URL.createObjectURL(response.data);
+        let blob = response.data;
+
+        if (wrappedKey && nonce) {
+
+            try {
+
+                const rawKey =
+                    await unwrapFileKey(
+                        wrappedKey,
+                        getPrivateKey()
+                    );
+
+                blob =
+                    await decryptFile(
+                        blob,
+                        rawKey,
+                        base64ToArrayBuffer(nonce)
+                    );
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    "Attachment decryption failed:",
+                    error
+                );
+
+                throw error;
+
+            }
+
+        }
+
+        return URL.createObjectURL(blob);
 
     },
 

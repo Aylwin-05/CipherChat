@@ -71,11 +71,18 @@ const messageService = {
 
     // ======================================================
     // Upload Attachment
+    //
+    // Client-side encrypted: the file is AES-GCM encrypted in
+    // the browser; the file's AES key is RSA-OAEP wrapped for
+    // the sender and the recipient, and the wrap + IV are sent
+    // as form fields so the backend stores them alongside the
+    // ciphertext (the backend never sees plaintext or the key).
     // ======================================================
 
     async uploadAttachment(
         messageId,
         file,
+        encryption = null,
     ) {
 
         const formData = new FormData();
@@ -84,6 +91,30 @@ const messageService = {
             "file",
             file
         );
+
+        if (encryption) {
+
+            formData.append(
+                "encrypted",
+                "true"
+            );
+
+            formData.append(
+                "encrypted_key_sender",
+                encryption.encrypted_key_sender
+            );
+
+            formData.append(
+                "encrypted_key_receiver",
+                encryption.encrypted_key_receiver
+            );
+
+            formData.append(
+                "nonce",
+                encryption.nonce
+            );
+
+        }
 
         const response =
             await api.post(

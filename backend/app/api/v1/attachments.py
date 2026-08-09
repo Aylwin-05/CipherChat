@@ -181,6 +181,18 @@ async def upload_attachment(
                 "size":
                     attachment.size,
 
+                "encrypted":
+                    attachment.encrypted,
+
+                "encrypted_key_sender":
+                    attachment.encrypted_key_sender,
+
+                "encrypted_key_receiver":
+                    attachment.encrypted_key_receiver,
+
+                "nonce":
+                    attachment.nonce,
+
                 "download_url":
                     f"/api/v1/attachments/{attachment.id}",
 

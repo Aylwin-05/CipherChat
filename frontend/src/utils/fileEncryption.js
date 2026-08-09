@@ -1,3 +1,13 @@
+import {
+    arrayBufferToBase64,
+    base64ToArrayBuffer,
+} from "../crypto/base64";
+
+import {
+    importPublicKey,
+    importPrivateKey,
+} from "../crypto/cryptoService";
+
 // ==========================================================
 // Generate AES-256 Key
 // ==========================================================
@@ -139,5 +149,67 @@ export async function decryptFile(
         );
 
     return new Blob([decrypted]);
+
+}
+
+// ==========================================================
+// Wrap the file's AES key for a recipient (RSA-OAEP)
+//
+// Returns a base64 RSA-OAEP ciphertext of the raw AES key.
+// ==========================================================
+
+export async function wrapFileKey(
+    rawKey,
+    publicKeyBase64,
+) {
+
+    const publicKey =
+        await importPublicKey(
+            publicKeyBase64
+        );
+
+    const wrapped =
+        await crypto.subtle.encrypt(
+            {
+                name: "RSA-OAEP",
+            },
+            publicKey,
+            rawKey,
+        );
+
+    return arrayBufferToBase64(
+        wrapped
+    );
+
+}
+
+// ==========================================================
+// Unwrap the file's AES key with the local RSA private key
+// ==========================================================
+
+export async function unwrapFileKey(
+    wrappedKeyBase64,
+    privateKeyBase64,
+) {
+
+    const privateKey =
+        await importPrivateKey(
+            privateKeyBase64
+        );
+
+    const rawKey =
+        await crypto.subtle.decrypt(
+            {
+                name: "RSA-OAEP",
+            },
+            privateKey,
+            base64ToArrayBuffer(
+                wrappedKeyBase64
+            ),
+        );
+
+    return new Uint8Array(
+        rawKey
+    );
 
 }

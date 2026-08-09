@@ -9,6 +9,12 @@
 //   - "one_time_prekeys": local pool of OPK privates
 //   - "sessions":         double-ratchet session states
 //   - "meta":             device info / storage secrets
+//   - "plaintext_cache":  locally readable plaintext of sent AND
+//                         received messages that could NEVER be
+//                         re-decrypted after a page reload (the
+//                         sender lacks a (me, me) ratchet, the
+//                         receiver's first handshake prekey is
+//                         consumed and deleted).
 //
 // All values are base64 strings (the raw bytes live at the JS
 // layer only). In a hardened product these records would be
@@ -17,35 +23,57 @@
 // ==========================================================
 
 const DB_NAME = "cipherchat-signal";
-const DB_VERSION = 1;
+const DB_VERSION = 4;
 
 const STORE_IDENTITY = "identity";
 const STORE_SIGNED_PREKEY = "signed_prekey";
 const STORE_ONE_TIME_PREKEYS = "one_time_prekeys";
 const STORE_SESSIONS = "sessions";
 const STORE_META = "meta";
+const STORE_PLAINTEXT_CACHE = "plaintext_cache";
+const STORE_SENT_TEXT = "sent_text"; // legacy name (<= v2)
 
-function openDb(dbName) {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(dbName, DB_VERSION);
-        request.onupgradeneeded = () => {
-            const db = request.result;
-            if (!db.objectStoreNames.contains(STORE_SIGNED_PREKEY)) {
-                db.createObjectStore(STORE_SIGNED_PREKEY, { keyPath: "keyId" });
-            }
-            if (!db.objectStoreNames.contains(STORE_ONE_TIME_PREKEYS)) {
-                db.createObjectStore(STORE_ONE_TIME_PREKEYS, { keyPath: "keyId" });
-            }
-            if (!db.objectStoreNames.contains(STORE_SESSIONS)) {
-                db.createObjectStore(STORE_SESSIONS, { keyPath: "id" });
-            }
-            if (!db.objectStoreNames.contains(STORE_IDENTITY)) {
-                db.createObjectStore(STORE_IDENTITY, { keyPath: "id" });
-            }
-            if (!db.objectStoreNames.contains(STORE_META)) {
-                db.createObjectStore(STORE_META, { keyPath: "id" });
+// Every store this app needs. Created idempotently so any
+// partially-upgraded database heals back to the full schema.
+const STORE_DEFS = [
+    { name: STORE_SIGNED_PREKEY, keyPath: "keyId" },
+    { name: STORE_ONE_TIME_PREKEYS, keyPath: "keyId" },
+    { name: STORE_SESSIONS, keyPath: "id" },
+    { name: STORE_IDENTITY, keyPath: "id" },
+    { name: STORE_META, keyPath: "id" },
+    { name: STORE_PLAINTEXT_CACHE, keyPath: "id" },
+];
+
+function upgradeSchema(request) {
+    const db = request.result;
+
+    for (const spec of STORE_DEFS) {
+        if (!db.objectStoreNames.contains(spec.name)) {
+            db.createObjectStore(spec.name, { keyPath: spec.keyPath });
+        }
+    }
+
+    // Legacy "sent_text" holds the same records under the same
+    // key scheme, so copying (id-keyed put = overwrite with the
+    // identical record) and dropping it is safe to run whenever
+    // the old store turns up, even twice.
+    if (db.objectStoreNames.contains(STORE_SENT_TEXT)) {
+        const t = request.transaction;
+        const read = t.objectStore(STORE_SENT_TEXT).getAll();
+        read.onsuccess = () => {
+            const target = t.objectStore(STORE_PLAINTEXT_CACHE);
+            for (const record of read.result) {
+                target.put(record);
             }
         };
+        db.deleteObjectStore(STORE_SENT_TEXT);
+    }
+}
+
+function openDb(dbName, version) {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(dbName, version);
+        request.onupgradeneeded = () => upgradeSchema(request);
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
     });
@@ -74,9 +102,30 @@ export class SignalKeyStore {
 
     async _db() {
         if (!this._dbPromise) {
-            this._dbPromise = openDb(this._dbName);
+            this._dbPromise = this._open();
         }
         return this._dbPromise;
+    }
+
+    async _open() {
+        let db = await openDb(this._dbName, DB_VERSION);
+
+        // Self-heal: if a store is missing (a partial upgrade can
+        // commit a version whose schema never materialised), drop
+        // the connection and reopen at one version higher so the
+        // upgrade handler re-runs and fills in the gaps.
+        if (!STORE_DEFS.every(spec =>
+            db.objectStoreNames.contains(spec.name)
+        )) {
+            console.warn(
+                "Signal store schema incomplete — repairing",
+                [...db.objectStoreNames],
+            );
+            db.close();
+            db = await openDb(this._dbName, DB_VERSION + 1);
+        }
+
+        return db;
     }
 
     // ------------------------------------------------------
@@ -239,18 +288,61 @@ export class SignalKeyStore {
     }
 
     // ------------------------------------------------------
+    // Plaintext cache (sent AND received)
+    //
+    // Double-ratchet messages are not internally replayable:
+    //  - own sent envelopes: the session is keyed (myDevice,
+    //    theirDevice), never (me, me) — cannot re-decrypt.
+    //  - the first received envelope decrypts against a one-time
+    //    prekey that is consumed and DELETED on first use — the
+    //    handshake message itself can never be decrypted again.
+    // To let history survive a page reload we cache what the
+    // user has actually seen/typed, keyed per message id.
+    // ------------------------------------------------------
+
+    async savePlaintext(
+        conversationId,
+        messageId,
+        plaintext,
+    ) {
+        const db = await this._db();
+        await promisify(tx(db, STORE_PLAINTEXT_CACHE, "readwrite").put({
+            id: `${conversationId}:${messageId}`,
+            conversationId,
+            messageId,
+            plaintext,
+        }));
+    }
+
+    async getPlaintext(
+        conversationId,
+        messageId,
+    ) {
+        const db = await this._db();
+        const record = await promisify(
+            tx(db, STORE_PLAINTEXT_CACHE, "readonly")
+                .get(`${conversationId}:${messageId}`),
+        );
+        return record ? record.plaintext : null;
+    }
+
+    // ------------------------------------------------------
     // Wipe everything (logout / re-registration)
     // ------------------------------------------------------
 
     async clearAll() {
         const db = await this._db();
-        const t = db.transaction(
-            [STORE_IDENTITY, STORE_ONE_TIME_PREKEYS, STORE_SESSIONS, STORE_SIGNED_PREKEY, STORE_META],
-            "readwrite",
-        );
+        const stores = [
+            STORE_IDENTITY,
+            STORE_ONE_TIME_PREKEYS,
+            STORE_SESSIONS,
+            STORE_SIGNED_PREKEY,
+            STORE_META,
+            STORE_PLAINTEXT_CACHE,
+        ];
+        const t = db.transaction(stores, "readwrite");
         await Promise.all(
-            [STORE_IDENTITY, STORE_ONE_TIME_PREKEYS, STORE_SESSIONS, STORE_SIGNED_PREKEY, STORE_META]
-                .map((name) => promisify(t.objectStore(name).clear())),
+            stores.map((name) => promisify(t.objectStore(name).clear())),
         );
     }
 }

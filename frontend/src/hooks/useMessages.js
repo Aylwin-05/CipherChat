@@ -19,12 +19,23 @@ import {
     encryptForConversation,
     decryptMessage as signalDecryptMessage,
 } from "../services/signalChatService";
-import { encryptFile } from "../utils/fileEncryption";
+import {
+    signalKeyStore,
+} from "../crypto/signal/keyStore";
+import {
+    encryptFile,
+    wrapFileKey,
+} from "../utils/fileEncryption";
+import keyService from "../services/keyService";
+import {
+    arrayBufferToBase64,
+} from "../crypto/base64";
 import {
     decryptMessage,
 } from "../crypto/cryptoService";
 import {
     getPrivateKey,
+    getPublicKey,
 } from "../crypto/keyStorage";
 
 export default function useMessages(
@@ -61,10 +72,34 @@ export default function useMessages(
         const conversationId =
             message.conversation_id || conversation.id;
 
+        // -------------------------------------------------
+        // Plaintext cache first. Some envelopes are
+        // fundamentally NOT replayable after a reload:
+        //  - our own sends (no (me, me) ratchet session)
+        //  - the first received handshake, whose one-time
+        //    prekey was consumed and deleted on first use
+        // So whatever we sent or actually decrypted is kept
+        // in the local cache and served from there.
+        // -------------------------------------------------
+
+        const cached =
+            await signalKeyStore.getPlaintext(
+                conversationId,
+                message.id,
+            );
+
+        if (cached != null) {
+
+            return cached;
+
+        }
+
+        let plaintext;
+
         try {
 
             // Signal envelope JSON?
-            return await signalDecryptMessage({
+            plaintext = await signalDecryptMessage({
                 conversationId,
                 senderId: message.sender_id,
                 ciphertext: message.ciphertext,
@@ -81,7 +116,7 @@ export default function useMessages(
                         ? message.encrypted_key_sender
                         : message.encrypted_key_receiver;
 
-                return await decryptMessage(
+                plaintext = await decryptMessage(
                     message.ciphertext,
                     encryptedKey,
                     message.nonce,
@@ -96,6 +131,29 @@ export default function useMessages(
             }
 
         }
+
+        // Decrypted live — remember it so a page reload can
+        // show it again (the handshake envelope can never be
+        // decrypted twice).
+        try {
+
+            await signalKeyStore.savePlaintext(
+                conversationId,
+                message.id,
+                plaintext,
+            );
+
+        }
+        catch (error) {
+
+            console.error(
+                "Failed to cache received message:",
+                error
+            );
+
+        }
+
+        return plaintext;
 
     }
 
@@ -245,7 +303,16 @@ export default function useMessages(
 
                             const imageUrl =
                                 await attachmentService.getAttachment(
-                                    attachment.id
+                                    attachment.id,
+                                    {
+                                        wrappedKey:
+                                            message.sender_id === user?.id
+                                                ? attachment.encrypted_key_sender
+                                                : attachment.encrypted_key_receiver,
+
+                                        nonce:
+                                            attachment.nonce,
+                                    }
                                 );
 
                             setImageUrls(previous => ({
@@ -615,7 +682,16 @@ export default function useMessages(
 
                                     const imageUrl =
                                         await attachmentService.getAttachment(
-                                            event.attachment.id
+                                            event.attachment.id,
+                                            {
+                                                wrappedKey:
+                                                    event.sender_id === user?.id
+                                                        ? event.attachment.encrypted_key_sender
+                                                        : event.attachment.encrypted_key_receiver,
+
+                                                nonce:
+                                                    event.attachment.nonce,
+                                            }
                                         );
 
                                     setImageUrls(previous => ({
@@ -650,7 +726,11 @@ export default function useMessages(
 
                                             attachments: [
 
-                                                ...(message.attachments || []),
+                                                ...(message.attachments || []).filter(
+                                                    attachment =>
+                                                        attachment.id !==
+                                                        event.attachment.id
+                                                ),
 
                                                 event.attachment,
 
@@ -783,6 +863,16 @@ export default function useMessages(
                 const encryptedAttachment =
                     await encryptFile(file);
 
+                // -----------------------------------------------
+                // Upload the CIPHERTEXT under the original
+                // filename: the backend derives the attachment
+                // type from the extension (it never inspects
+                // content), so an image must keep its .jpg to
+                // be stored/typed as an image. The bytes on
+                // disk are still AES ciphertext under a UUID
+                // name.
+                // -----------------------------------------------
+
                 const encryptedFile =
                     new File(
 
@@ -790,13 +880,58 @@ export default function useMessages(
                             encryptedAttachment.encryptedFile,
                         ],
 
-                        file.name + ".bin",
+                        file.name,
 
                         {
-                            type: "application/octet-stream",
+                            type:
+                                file.type ||
+                                "application/octet-stream",
                         }
 
                     );
+
+                // -----------------------------------------------
+                // Wrap the file's AES key for both participants
+                // (RSA-OAEP). The backend only ever stores the
+                // wraps + IV, never the raw key or plaintext.
+                // -----------------------------------------------
+
+                const senderPublicKey =
+                    getPublicKey();
+
+                const recipientKeyResponse =
+                    await keyService.getPublicKey(
+                        conversation.other_user.id
+                    );
+
+                const recipientPublicKey =
+                    recipientKeyResponse?.public_key;
+
+                if (
+                    !senderPublicKey ||
+                    !recipientPublicKey
+                ) {
+
+                    throw new Error(
+                        "End-to-end encryption keys are not set up."
+                    );
+
+                }
+
+                const [encryptedKeySender, encryptedKeyReceiver] =
+                    await Promise.all([
+
+                        wrapFileKey(
+                            encryptedAttachment.rawKey,
+                            senderPublicKey,
+                        ),
+
+                        wrapFileKey(
+                            encryptedAttachment.rawKey,
+                            recipientPublicKey,
+                        ),
+
+                    ]);
 
                 upload =
                     await messageService.uploadAttachment(
@@ -805,24 +940,26 @@ export default function useMessages(
 
                         encryptedFile,
 
+                        {
+                            encrypted_key_sender:
+                                encryptedKeySender,
+
+                            encrypted_key_receiver:
+                                encryptedKeyReceiver,
+
+                            nonce:
+                                arrayBufferToBase64(
+                                    encryptedAttachment.iv
+                                ),
+
+                        }
+
                     );
 
                 console.log(
                     "Encrypted attachment uploaded:",
                     upload
                 );
-
-                // Save for next step (RSA encryption)
-
-                upload.encryption = {
-
-                    rawKey:
-                        encryptedAttachment.rawKey,
-
-                    iv:
-                        encryptedAttachment.iv,
-
-                };
 
             }
 
@@ -859,6 +996,34 @@ export default function useMessages(
             onNewMessage?.(
                 localMessage
             );
+
+            //------------------------------------------
+            // Cache our own plaintext so history shows it
+            // after a refresh (senders cannot re-decrypt
+            // their own ratchet envelopes). Must happen
+            // before the broadcast — the WebSocket echoes
+            // our own message back and the decrypt path
+            // reads from this cache.
+            //------------------------------------------
+
+            try {
+
+                await signalKeyStore.savePlaintext(
+                    conversation.id,
+                    saved.id,
+                    plaintext,
+                );
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    "Failed to cache sent message:",
+                    error
+                );
+
+            }
 
             //------------------------------------------
             // Broadcast encrypted payload
