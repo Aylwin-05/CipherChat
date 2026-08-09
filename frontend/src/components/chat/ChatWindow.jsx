@@ -3,6 +3,8 @@ import useMessages from "../../hooks/useMessages";
 import ChatInput from "./ChatInput";
 import MessageList from "./MessageList";
 
+import { avatarGradient, initials } from "../../utils/avatar";
+
 import "./Chat.css";
 
 export default function ChatWindow({
@@ -80,10 +82,39 @@ export default function ChatWindow({
 
             <div className="chat-empty">
 
+                <div className="chat-empty-logo">
+
+                    <svg
+                        width="56"
+                        height="56"
+                        viewBox="0 0 32 32"
+                        fill="none"
+                    >
+                        <defs>
+                            <linearGradient
+                                id="emptyGrad"
+                                x1="0"
+                                y1="0"
+                                x2="1"
+                                y2="1"
+                            >
+                                <stop offset="0" stopColor="#7c5cff" />
+                                <stop offset="1" stopColor="#22d3ee" />
+                            </linearGradient>
+                        </defs>
+                        <path
+                            d="M16 2l12 4v8c0 8-5 14-12 16C9 28 4 22 4 14V6z"
+                            fill="url(#emptyGrad)"
+                        />
+                    </svg>
+
+                </div>
+
                 <h2>Select a conversation</h2>
 
                 <p>
-                    Choose a conversation from the left.
+                    Your messages are encrypted end-to-end.
+                    Pick a chat to start talking.
                 </p>
 
             </div>
@@ -119,27 +150,92 @@ export default function ChatWindow({
 
             <div className="chat-header">
 
-                <h3>
-                    {otherUser.display_name}
-                </h3>
+                <div className="chat-identity">
 
-                {typingUsers.length > 0 ? (
+                    <div
+                        className="chat-avatar"
+                        style={{
+                            background: avatarGradient(
+                                otherUser.display_name
+                            ),
+                        }}
+                    >
 
-                    <span className="typing-indicator">
-                        Typing...
+                        {initials(
+                            otherUser.display_name
+                        )}
+
+                        <span
+                            className={`chat-presence ${
+                                liveOnline ? "online" : ""
+                            }`}
+                        />
+
+                    </div>
+
+                    <div className="chat-heading">
+
+                        <h3 className="chat-name">
+
+                            {otherUser.display_name}
+
+                        </h3>
+
+                        {typingUsers.length > 0 ? (
+
+                            <div className="chat-status typing">
+
+                                <span className="typing-dots">
+
+                                    <span />
+                                    <span />
+                                    <span />
+
+                                </span>
+
+                                Typing…
+
+                            </div>
+
+                        ) : (
+
+                            <div className="chat-status">
+
+                                {liveOnline
+                                    ? "Online"
+                                    : "Offline"}
+
+                            </div>
+
+                        )}
+
+                    </div>
+
+                </div>
+
+                <div className="chat-header-actions">
+
+                    <span className="e2e-chip" title="Signal protocol, end-to-end encrypted">
+
+                        <svg
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        >
+                            <rect x="3" y="11" width="18" height="11" rx="2" />
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                        </svg>
+
+                        E2E
+
                     </span>
 
-                ) : (
-
-                    <span className="online-status">
-
-                        {liveOnline
-                            ? "🟢 Online"
-                            : "⚫ Offline"}
-
-                    </span>
-
-                )}
+                </div>
 
             </div>
 
@@ -151,6 +247,19 @@ export default function ChatWindow({
             {errorMessage ? (
 
                 <div className="chat-error-banner">
+
+                    <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                    >
+                        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                        <path d="M12 9v4M12 17h.01" />
+                    </svg>
 
                     {errorMessage}
 

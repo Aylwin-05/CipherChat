@@ -1,5 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 
+import "./Chat.css";
+
+function MicIcon() {
+    return (
+        <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <path d="M12 19v3" />
+        </svg>
+    );
+}
+
 export default function VoiceRecorder({
     onRecorded,
 }) {
@@ -233,9 +254,13 @@ export default function VoiceRecorder({
 
             <button
                 type="button"
+                className="icon-btn"
+                aria-label="Record voice message"
                 onClick={startRecording}
             >
-                🎤
+
+                <MicIcon />
+
             </button>
 
         );
@@ -248,24 +273,51 @@ export default function VoiceRecorder({
             className="voice-recorder"
         >
 
-            <span>
+            <span className="rec-dot" />
 
-                🔴 {minutes}:{secs}
+            <span className="rec-time">
+
+                {minutes}:{secs}
 
             </span>
 
             <button
                 type="button"
+                className="rec-stop"
+                aria-label="Send recording"
                 onClick={stopRecording}
             >
-                ■
+
+                <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                >
+                    <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+
             </button>
 
             <button
                 type="button"
+                className="rec-cancel"
+                aria-label="Cancel recording"
                 onClick={cancelRecording}
             >
-                ✕
+
+                <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                >
+                    <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+
             </button>
 
         </div>

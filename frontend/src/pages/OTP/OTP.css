@@ -1,92 +1,66 @@
-.otp-container{
-    width:100vw;
-    height:100vh;
-
-    display:flex;
-    justify-content:center;
-    align-items:center;
-
-    background:#eef2f7;
+.otp-wrap {
+    max-width: 420px;
 }
 
-.otp-card{
-
-    width:420px;
-
-    background:white;
-
-    padding:40px;
-
-    border-radius:16px;
-
-    box-shadow:0 15px 40px rgba(0,0,0,.12);
-
+.otp-field input {
+    text-align: center;
+    font-size: 26px;
+    letter-spacing: 14px;
+    font-weight: 600;
+    padding-left: 16px;
+    padding-right: 16px;
 }
 
-.otp-card h1{
-    text-align:center;
-    margin-bottom:10px;
+.otp-field svg {
+    display: none;
 }
 
-.otp-card p{
-    text-align:center;
-    color:gray;
+/* ---------- resend OTP (cooldown) ---------- */
+
+.otp-resend {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    margin-top: 6px;
 }
 
-.otp-card strong{
-    display:block;
-    text-align:center;
-    margin:15px 0 30px;
+.otp-resend-timer {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-3);
+    font-size: 13px;
+    padding: 8px 16px;
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    border: 1px solid var(--border);
 }
 
-.otp-card input{
+/* circular countdown ring */
 
-    width:100%;
-
-    padding:14px;
-
-    border-radius:8px;
-
-    border:1px solid #ccc;
-
-    margin-bottom:20px;
-
-    font-size:16px;
+.otp-ring {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    transition: background 1s linear;
 }
 
-.otp-card button{
-
-    width:100%;
-
-    padding:14px;
-
-    border:none;
-
-    border-radius:8px;
-
-    background:#2563eb;
-
-    color:white;
-
-    cursor:pointer;
-
-    font-size:16px;
+.otp-ring-inner {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #0e1530;
+    display: grid;
+    place-items: center;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text-1);
+    font-variant-numeric: tabular-nums;
 }
 
-.otp-card button:hover{
-    background:#1d4ed8;
-}
-
-.otp-card button:disabled{
-    opacity:.6;
-    cursor:not-allowed;
-}
-
-.error{
-
-    color:red;
-
-    margin-bottom:15px;
-
-    text-align:center;
+.otp-resend-btn {
+    min-width: 180px;
 }

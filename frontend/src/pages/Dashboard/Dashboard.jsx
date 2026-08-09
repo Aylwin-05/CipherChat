@@ -207,7 +207,7 @@ export default function Dashboard() {
 
     return (
 
-        <div className="dashboard">
+        <div className="app-shell">
 
             <Sidebar
 
@@ -217,23 +217,13 @@ export default function Dashboard() {
 
             />
 
-            <div className="dashboard-main">
+            {
 
-                <header className="dashboard-header">
+                currentPage === "friends"
 
-                    <h2>
+                    ? (
 
-                        CipherChat
-
-                    </h2>
-
-                </header>
-
-                {
-
-                    currentPage === "friends"
-
-                        ? (
+                        <div className="app-stage friends-stage">
 
                             <FriendsPage
 
@@ -243,69 +233,63 @@ export default function Dashboard() {
 
                             />
 
-                        )
+                        </div>
 
-                        : (
+                    )
 
-                            <div className="dashboard-content">
+                    : (
 
-                                <div className="conversation-panel">
+                        <div className="app-stage">
 
-                                    <h3>
+                            <div className="conv-panel">
 
-                                        Conversations
+                                <ConversationList
 
-                                    </h3>
+                                    conversations={
+                                        conversations
+                                    }
 
-                                    <ConversationList
+                                    loading={
+                                        loading
+                                    }
 
-                                        conversations={
-                                            conversations
-                                        }
+                                    selectedConversation={
+                                        selectedConversation
+                                    }
 
-                                        loading={
-                                            loading
-                                        }
+                                    onSelectConversation={
+                                        handleSelectConversation
+                                    }
 
-                                        selectedConversation={
-                                            selectedConversation
-                                        }
-
-                                        onSelectConversation={
-                                            handleSelectConversation
-                                        }
-
-                                    />
-
-                                </div>
-
-                                <div className="chat-panel">
-
-                                    <ChatWindow
-
-                                        conversation={
-                                            selectedConversation
-                                        }
-
-                                        conversations={
-                                            conversations
-                                        }
-
-                                        setConversations={
-                                            setConversations
-                                        }
-
-                                    />
-
-                                </div>
+                                />
 
                             </div>
 
-                        )
+                            <div className="chat-panel">
 
-                }
+                                <ChatWindow
 
-            </div>
+                                    conversation={
+                                        selectedConversation
+                                    }
+
+                                    conversations={
+                                        conversations
+                                    }
+
+                                    setConversations={
+                                        setConversations
+                                    }
+
+                                />
+
+                            </div>
+
+                        </div>
+
+                    )
+
+            }
 
         </div>
 

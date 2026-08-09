@@ -2,7 +2,26 @@ import { useState } from "react";
 
 import useFriends from "../../hooks/useFriends";
 
+import { avatarGradient, initials } from "../../utils/avatar";
+
 import "./FriendsPage.css";
+
+function SearchIcon() {
+    return (
+        <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+        >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m21 21-4.3-4.3" />
+        </svg>
+    );
+}
 
 export default function FriendsPage({
 
@@ -108,53 +127,78 @@ export default function FriendsPage({
 
     //--------------------------------------------------
 
+    function friendDisplayName(friend) {
+
+        return friend.sender?.id === friend.receiver_id
+
+            ? (friend.receiver?.display_name ?? "Unknown User")
+
+            : (friend.sender?.display_name ?? "Unknown User");
+
+    }
+
     return (
 
         <>
 
             <div className="friends-page">
 
-                <h2>
+                <div className="friends-header">
 
-                    Friends
+                    <h2>Friends</h2>
 
-                </h2>
+                    <p>
+                        Find people, send friend requests and
+                        start encrypted chats.
+                    </p>
 
-                <input
+                </div>
 
-                    type="text"
+                <div className="field friends-search">
 
-                    placeholder="Search email..."
+                    <SearchIcon />
 
-                    value={query}
+                    <input
 
-                    onChange={(e) =>
+                        type="text"
 
-                        handleSearch(
+                        placeholder="Search by email..."
 
-                            e.target.value
+                        value={query}
+
+                        onChange={(e) =>
+
+                            handleSearch(
+
+                                e.target.value
+
+                            )
+
+                        }
+
+                    />
+
+                </div>
+
+                {/* ------- search results ------- */}
+
+                <div className="friends-search-results">
+
+                    {
+
+                        searching && (
+
+                            <div className="friends-hint">
+
+                                <span className="spinner spinner-sm" />
+
+                                Searching…
+
+                            </div>
 
                         )
 
                     }
-
-                />
-
-                {
-
-                    searching && (
-
-                        <p>
-
-                            Searching...
-
-                        </p>
-
-                    )
-
-                }
-
-                <div className="friends-search-results">
 
                     {
 
@@ -164,11 +208,12 @@ export default function FriendsPage({
 
                         !searching && (
 
-                            <p>
+                            <div className="friends-hint">
 
-                                No users found.
+                                No users found for{" "}
+                                <strong>"{query}"</strong>.
 
-                            </p>
+                            </div>
 
                         )
 
@@ -182,19 +227,35 @@ export default function FriendsPage({
 
                                 key={user.id}
 
-                                className="friend-search-card"
+                                className="f-card search"
 
                             >
 
-                                <div>
+                                <div
+
+                                    className="f-avatar"
+
+                                    style={{
+                                        background: avatarGradient(
+                                            user.display_name
+                                        ),
+                                    }}
+
+                                >
+
+                                    {initials(
+                                        user.display_name
+                                    )}
+
+                                </div>
+
+                                <div className="f-meta">
 
                                     <strong>
 
                                         {user.display_name}
 
                                     </strong>
-
-                                    <br />
 
                                     <small>
 
@@ -205,6 +266,10 @@ export default function FriendsPage({
                                 </div>
 
                                 <button
+
+                                    type="button"
+
+                                    className="btn-primary btn-sm"
 
                                     onClick={() =>
 
@@ -230,227 +295,137 @@ export default function FriendsPage({
 
                 </div>
 
-                <hr />
+                {/* ------- pending requests ------- */}
 
-                <h3>
+                <section className="friends-section">
 
-                    Pending Requests
+                    <div className="friends-section-head">
 
-                </h3>
+                        <h3>Pending Requests</h3>
 
-                {
+                        {pendingRequests.length > 0 && (
 
-                    pendingRequests.length === 0 && (
+                            <span className="section-count">
 
-                        <p>
+                                {pendingRequests.length}
 
-                            No pending requests.
+                            </span>
 
-                        </p>
+                        )}
 
-                    )
-
-                }
-
-                <div className="pending-list">
+                    </div>
 
                     {
 
-                        pendingRequests.map((request) => (
+                        pendingRequests.length === 0 && (
 
-                            <div
+                            <p className="friends-hint">
 
-                                key={request.id}
+                                No pending requests.
 
-                                className="pending-card"
+                            </p>
 
-                            >
-
-                                <div>
-
-                                    <strong>
-
-                                        {
-
-                                            request.sender?.display_name ??
-
-                                            request.sender_id
-
-                                        }
-
-                                    </strong>
-
-                                </div>
-
-                                <div className="pending-actions">
-
-                                    <button
-
-                                        onClick={() =>
-
-                                            acceptRequest(
-
-                                                request.id
-
-                                            )
-
-                                        }
-
-                                    >
-
-                                        Accept
-
-                                    </button>
-
-                                    <button
-
-                                        onClick={() =>
-
-                                            rejectRequest(
-
-                                                request.id
-
-                                            )
-
-                                        }
-
-                                    >
-
-                                        Reject
-
-                                    </button>
-
-                                </div>
-
-                            </div>
-
-                        ))
+                        )
 
                     }
 
-                </div>
+                    <div className="pending-list">
 
-                <hr />
+                        {
 
-                <h3>
-
-                    Friends
-
-                </h3>
-
-                {
-
-                    loading && (
-
-                        <p>
-
-                            Loading friends...
-
-                        </p>
-
-                    )
-
-                }
-
-                {
-
-                    !loading &&
-
-                    friends.length === 0 && (
-
-                        <p>
-
-                            You don't have any friends yet.
-
-                        </p>
-
-                    )
-
-                }
-
-                <div className="friends-list">
-
-                    {
-
-                        friends.map((friend) => {
-
-                            const otherUser =
-
-                                friend.sender?.id === friend.receiver_id
-
-                                    ? friend.receiver
-
-                                    : friend.sender;
-
-                            return (
+                            pendingRequests.map((request) => (
 
                                 <div
 
-                                    key={friend.id}
+                                    key={request.id}
 
-                                    className="friend-card"
+                                    className="f-card"
 
                                 >
 
-                                    <div>
+                                    <div
+
+                                        className="f-avatar"
+
+                                        style={{
+                                            background: avatarGradient(
+                                                request.sender?.display_name
+                                            ),
+                                        }}
+
+                                    >
+
+                                        {initials(
+                                            request.sender?.display_name ?? "?"
+                                        )}
+
+                                    </div>
+
+                                    <div className="f-meta">
 
                                         <strong>
 
                                             {
 
-                                                otherUser?.display_name ??
+                                                request.sender?.display_name ??
 
-                                                "Unknown User"
+                                                request.sender_id
 
                                             }
 
                                         </strong>
 
-                                        <br />
-
                                         <small>
 
-                                            {
-
-                                                otherUser?.email ??
-
-                                                ""
-
-                                            }
+                                            Wants to chat with you
 
                                         </small>
 
                                     </div>
 
-                                    <div className="friend-actions">
+                                    <div className="f-actions">
 
                                         <button
 
+                                            type="button"
+
+                                            className="btn-primary btn-sm"
+
                                             onClick={() =>
 
-                                                onStartChat(friend)
+                                                acceptRequest(
+
+                                                    request.id
+
+                                                )
 
                                             }
 
                                         >
 
-                                            💬 Message
+                                            Accept
 
                                         </button>
 
                                         <button
 
-                                            className="delete-btn"
+                                            type="button"
+
+                                            className="btn-ghost btn-sm"
 
                                             onClick={() =>
 
-                                                handleRemove(friend)
+                                                rejectRequest(
+
+                                                    request.id
+
+                                                )
 
                                             }
 
                                         >
 
-                                            🗑 Remove
+                                            Reject
 
                                         </button>
 
@@ -458,13 +433,196 @@ export default function FriendsPage({
 
                                 </div>
 
-                            );
+                            ))
 
-                        })
+                        }
+
+                    </div>
+
+                </section>
+
+                {/* ------- friends list ------- */}
+
+                <section className="friends-section">
+
+                    <div className="friends-section-head">
+
+                        <h3>Friends</h3>
+
+                        <span className="section-count">
+
+                            {friends.length}
+
+                        </span>
+
+                    </div>
+
+                    {
+
+                        loading && (
+
+                            <div className="friends-hint">
+
+                                Loading friends…
+
+                            </div>
+
+                        )
 
                     }
 
-                </div>
+                    {
+
+                        !loading &&
+
+                        friends.length === 0 && (
+
+                            <p className="friends-hint">
+
+                                You don't have any friends yet.
+                                Search by email above to add
+                                your first one.
+
+                            </p>
+
+                        )
+
+                    }
+
+                    <div className="friends-list">
+
+                        {
+
+                            friends.map((friend) => {
+
+                                const otherUser =
+
+                                    friend.sender?.id === friend.receiver_id
+
+                                        ? friend.receiver
+
+                                        : friend.sender;
+
+                                return (
+
+                                    <div
+
+                                        key={friend.id}
+
+                                        className="f-card"
+
+                                    >
+
+                                        <div
+
+                                            className="f-avatar"
+
+                                            style={{
+                                                background: avatarGradient(
+                                                    otherUser?.display_name
+                                                ),
+                                            }}
+
+                                        >
+
+                                            {initials(
+                                                otherUser?.display_name ?? "?"
+                                            )}
+
+                                        </div>
+
+                                        <div className="f-meta">
+
+                                            <strong>
+
+                                                {
+
+                                                    otherUser?.display_name ??
+
+                                                    "Unknown User"
+
+                                                }
+
+                                            </strong>
+
+                                            <small>
+
+                                                {
+
+                                                    otherUser?.email ??
+
+                                                    ""
+
+                                                }
+
+                                            </small>
+
+                                        </div>
+
+                                        <div className="f-actions">
+
+                                            <button
+
+                                                type="button"
+
+                                                className="btn-ghost btn-sm"
+
+                                                onClick={() =>
+
+                                                    onStartChat(friend)
+
+                                                }
+
+                                            >
+
+                                                <svg
+                                                    width="15"
+                                                    height="15"
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    strokeWidth="2"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                >
+                                                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                                                </svg>
+
+                                                Message
+
+                                            </button>
+
+                                            <button
+
+                                                type="button"
+
+                                                className="btn-danger btn-sm"
+
+                                                onClick={() =>
+
+                                                    handleRemove(friend)
+
+                                                }
+
+                                            >
+
+                                                Remove
+
+                                            </button>
+
+                                        </div>
+
+                                    </div>
+
+                                );
+
+                            })
+
+                        }
+
+                    </div>
+
+                </section>
 
             </div>
 
@@ -474,13 +632,9 @@ export default function FriendsPage({
 
                     <div className="modal-overlay">
 
-                        <div className="modal">
+                        <div className="modal-card">
 
-                            <h3>
-
-                                Remove Friend
-
-                            </h3>
+                            <h3>Remove Friend</h3>
 
                             <p>
 
@@ -510,6 +664,10 @@ export default function FriendsPage({
 
                                 <button
 
+                                    type="button"
+
+                                    className="btn-ghost"
+
                                     onClick={cancelDelete}
 
                                 >
@@ -519,6 +677,10 @@ export default function FriendsPage({
                                 </button>
 
                                 <button
+
+                                    type="button"
+
+                                    className="btn-danger"
 
                                     onClick={confirmDelete}
 

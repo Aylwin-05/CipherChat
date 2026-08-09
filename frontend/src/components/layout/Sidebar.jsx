@@ -1,6 +1,65 @@
 import useUser from "../../hooks/useUser";
+import { avatarGradient, initials } from "../../utils/avatar";
 
 import "./Sidebar.css";
+
+function ChatIcon({ active }) {
+    return (
+        <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+            {active && (
+                <circle cx="9" cy="11.5" r="0.6" fill="currentColor" />
+            )}
+        </svg>
+    );
+}
+
+function UsersIcon() {
+    return (
+        <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+    );
+}
+
+function SettingsIcon() {
+    return (
+        <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+    );
+}
 
 export default function Sidebar({
 
@@ -20,161 +79,120 @@ export default function Sidebar({
 
     return (
 
-        <aside className="sidebar">
+        <aside className="rail">
 
-            <div className="sidebar-logo">
+            <div className="rail-logo" title="CipherChat">
 
-                CipherChat
-
-            </div>
-
-            <div className="sidebar-profile">
-
-                <div className="avatar">
-
-                    👤
-
-                </div>
-
-                {
-
-                    loading
-
-                        ?
-
-                        (
-
-                            <h3>
-
-                                Loading...
-
-                            </h3>
-
-                        )
-
-                        :
-
-                        (
-
-                            <>
-
-                                <h3>
-
-                                    {
-
-                                        user?.display_name ||
-
-                                        "Unknown User"
-
-                                    }
-
-                                </h3>
-
-                                <p>
-
-                                    {
-
-                                        user?.email
-
-                                    }
-
-                                </p>
-
-                            </>
-
-                        )
-
-                }
+                <svg
+                    width="34"
+                    height="34"
+                    viewBox="0 0 32 32"
+                    fill="none"
+                >
+                    <defs>
+                        <linearGradient
+                            id="railGrad"
+                            x1="0"
+                            y1="0"
+                            x2="1"
+                            y2="1"
+                        >
+                            <stop offset="0" stopColor="#7c5cff" />
+                            <stop offset="1" stopColor="#22d3ee" />
+                        </linearGradient>
+                    </defs>
+                    <path
+                        d="M16 2l12 4v8c0 8-5 14-12 16C9 28 4 22 4 14V6z"
+                        fill="url(#railGrad)"
+                    />
+                    <path
+                        d="M12 13.5h8M12 17.5h5M12 21.5h8"
+                        stroke="#fff"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                    />
+                </svg>
 
             </div>
 
-            <nav className="sidebar-menu">
+            <nav className="rail-nav">
 
                 <button
-
+                    type="button"
                     className={
-
                         currentPage === "chats"
-
-                            ? "active"
-
-                            : ""
-
+                            ? "rail-item active"
+                            : "rail-item"
                     }
-
                     onClick={() =>
-
-                        setCurrentPage(
-
-                            "chats"
-
-                        )
-
+                        setCurrentPage("chats")
                     }
-
+                    title="Chats"
                 >
-
-                    💬 Chats
-
+                    <ChatIcon active={currentPage === "chats"} />
+                    <span>Chats</span>
                 </button>
 
                 <button
-
+                    type="button"
                     className={
-
                         currentPage === "friends"
-
-                            ? "active"
-
-                            : ""
-
+                            ? "rail-item active"
+                            : "rail-item"
                     }
-
                     onClick={() =>
-
-                        setCurrentPage(
-
-                            "friends"
-
-                        )
-
+                        setCurrentPage("friends")
                     }
-
+                    title="Friends"
                 >
-
-                    👥 Friends
-
+                    <UsersIcon />
+                    <span>Friends</span>
                 </button>
 
                 <button
-
+                    type="button"
                     className={
-
                         currentPage === "settings"
-
-                            ? "active"
-
-                            : ""
-
+                            ? "rail-item active"
+                            : "rail-item"
                     }
-
                     onClick={() =>
-
-                        setCurrentPage(
-
-                            "settings"
-
-                        )
-
+                        setCurrentPage("settings")
                     }
-
+                    title="Settings"
                 >
-
-                    ⚙ Settings
-
+                    <SettingsIcon />
+                    <span>Settings</span>
                 </button>
 
             </nav>
+
+            <div className="rail-profile" title="Your profile">
+
+                {loading ? (
+
+                    <div className="skeleton rail-avatar-skeleton" />
+
+                ) : (
+
+                    <div
+                        className="rail-avatar"
+                        style={{
+                            background: avatarGradient(
+                                user?.display_name ?? user?.email
+                            ),
+                        }}
+                    >
+
+                        {initials(
+                            user?.display_name ?? "U"
+                        )}
+
+                    </div>
+
+                )}
+
+            </div>
 
         </aside>
 

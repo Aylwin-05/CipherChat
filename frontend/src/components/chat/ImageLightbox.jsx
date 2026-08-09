@@ -41,7 +41,7 @@ export default function ImageLightbox({
         >
 
             <div
-                className="lightbox-header"
+                className="lightbox-bar"
                 onClick={event =>
                     event.stopPropagation()
                 }
@@ -53,16 +53,55 @@ export default function ImageLightbox({
 
                 </span>
 
-                <button
-                    type="button"
-                    className="lightbox-close"
-                    onClick={onClose}
-                    aria-label="Close"
-                >
+                <div className="lightbox-actions">
 
-                    ✕
+                    <a
+                        className="lightbox-download"
+                        href={url}
+                        download={attachment.original_name || "image"}
+                    >
 
-                </button>
+                        <svg
+                            width="15"
+                            height="15"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        >
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <path d="m7 10 5 5 5-5" />
+                            <path d="M12 15V3" />
+                        </svg>
+
+                        Download
+
+                    </a>
+
+                    <button
+                        type="button"
+                        className="lightbox-close"
+                        onClick={onClose}
+                        aria-label="Close"
+                    >
+
+                        <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                        >
+                            <path d="M18 6 6 18M6 6l12 12" />
+                        </svg>
+
+                    </button>
+
+                </div>
 
             </div>
 
@@ -74,25 +113,6 @@ export default function ImageLightbox({
                     event.stopPropagation()
                 }
             />
-
-            <div
-                className="lightbox-footer"
-                onClick={event =>
-                    event.stopPropagation()
-                }
-            >
-
-                <a
-                    className="lightbox-download"
-                    href={url}
-                    download={attachment.original_name || "image"}
-                >
-
-                    ⬇ Download
-
-                </a>
-
-            </div>
 
         </div>
 

@@ -12,16 +12,10 @@ export default function ProtectedRoute({
 
     if (loading) {
         return (
-            <h2
-                style={{
-                    textAlign:
-                        "center",
-                    marginTop:
-                        "100px",
-                }}
-            >
-                Loading...
-            </h2>
+            <div className="app-loading">
+                <div className="spinner" />
+                Loading your secure workspace…
+            </div>
         );
     }
 

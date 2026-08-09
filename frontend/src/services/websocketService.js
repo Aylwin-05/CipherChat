@@ -53,7 +53,7 @@ class WebSocketService {
 
     _openSocket() {
 
-        this.disconnect();
+        this._closeSocket();
 
         this.shouldReconnect = true;
 
@@ -67,15 +67,27 @@ class WebSocketService {
                 : "ws"
             }://${window.location.host}/ws/${this.conversationId}`;
 
-        this.socket =
+        const socket =
             new WebSocket(
                 url,
                 ["cipherchat." + this.token]
             );
 
+        // Supersede guard: any socket no longer owned by the
+        // service (a newer connect replaced it, or an explicit
+        // disconnect happened) must not schedule reconnects,
+        // start heartbeats or dispatch events.
+        this.socket = socket;
+
         this.lastAliveAt = Date.now();
 
-        this.socket.onopen = () => {
+        socket.onopen = () => {
+
+            if (this.socket !== socket) {
+
+                return;
+
+            }
 
             console.log(
                 "WebSocket connected"
@@ -87,7 +99,13 @@ class WebSocketService {
 
         };
 
-        this.socket.onmessage = (event) => {
+        socket.onmessage = (event) => {
+
+            if (this.socket !== socket) {
+
+                return;
+
+            }
 
             this.lastAliveAt = Date.now();
 
@@ -125,11 +143,19 @@ class WebSocketService {
 
         };
 
-        this.socket.onclose = () => {
+        socket.onclose = () => {
 
-            this._stopHeartbeat();
+            if (this.socket !== socket) {
+
+                // Superseded — a newer socket owns the slot
+                // (or an explicit disconnect happened).
+                return;
+
+            }
 
             this.socket = null;
+
+            this._stopHeartbeat();
 
             if (this.shouldReconnect) {
 
@@ -139,7 +165,13 @@ class WebSocketService {
 
         };
 
-        this.socket.onerror = (error) => {
+        socket.onerror = (error) => {
+
+            if (this.socket !== socket) {
+
+                return;
+
+            }
 
             console.error(
                 "WebSocket error",
@@ -147,6 +179,45 @@ class WebSocketService {
             );
 
         };
+
+    }
+
+    // ======================================================
+    // Close the current socket WITHOUT touching listeners.
+    //
+    // Listeners survive reconnects on purpose: wiping them
+    // here used to silently kill real-time updates — the
+    // socket came back, but nothing was left to dispatch
+    // the broadcast to the UI.
+    // ======================================================
+
+    _closeSocket() {
+
+        const socket = this.socket;
+
+        if (!socket) return;
+
+        if (socket.readyState === WebSocket.CONNECTING) {
+
+            // Closing a connecting socket makes the browser
+            // log "WebSocket is closed before the connection
+            // is established". Drop the handlers instead; the
+            // connection resolves (or fails) without callbacks.
+            this.socket = null;
+
+            socket.onopen = null;
+            socket.onmessage = null;
+            socket.onerror = null;
+            socket.onclose = null;
+
+            return;
+
+        }
+
+        // Keep the slot owned by this socket: its own onclose
+        // handler will null it, stop the heartbeat, and (when
+        // shouldReconnect is still set) schedule the reconnect.
+        socket.close();
 
     }
 
@@ -220,17 +291,32 @@ class WebSocketService {
             );
 
             // Closing triggers onclose -> reconnect
-            this.socket.close();
+            this._closeSocket();
 
             return;
 
         }
 
-        this.socket.send(
-            JSON.stringify({
-                event: "ping",
-            })
-        );
+        try {
+
+            this.socket.send(
+                JSON.stringify({
+                    event: "ping",
+                })
+            );
+
+        }
+
+        catch (error) {
+
+            console.warn(
+                "WebSocket send failed, reconnecting",
+                error,
+            );
+
+            this._closeSocket();
+
+        }
 
     }
 
@@ -486,13 +572,7 @@ class WebSocketService {
 
         }
 
-        if (this.socket) {
-
-            this.socket.close();
-
-            this.socket = null;
-
-        }
+        this._closeSocket();
 
         this.removeListeners();
 

@@ -18,9 +18,35 @@ export default function ConversationList({
 
         return (
 
-            <div className="conversation-list">
+            <div className="conv-list">
 
-                Loading conversations...
+                <div className="conv-panel-header">
+
+                    <h2 className="conv-title">Chats</h2>
+
+                </div>
+
+                <div className="conv-list-body">
+
+                    {[0, 1, 2, 3, 4, 5].map((index) => (
+
+                        <div key={index} className="conv-skeleton">
+
+                            <div className="skeleton conv-skeleton-avatar" />
+
+                            <div className="conv-skeleton-lines">
+
+                                <div className="skeleton" style={{ height: 12, width: "55%" }} />
+
+                                <div className="skeleton" style={{ height: 10, width: "80%" }} />
+
+                            </div>
+
+                        </div>
+
+                    ))}
+
+                </div>
 
             </div>
 
@@ -30,50 +56,88 @@ export default function ConversationList({
 
     return (
 
-        <div className="conversation-list">
+        <div className="conv-list">
 
-            {
+            <div className="conv-panel-header">
 
-                conversations.length === 0 && (
+                <h2 className="conv-title">Chats</h2>
 
-                    <div className="empty">
+                <span className="conv-count">
 
-                        No conversations
+                    {conversations.length}
 
-                    </div>
+                </span>
 
-                )
+            </div>
 
-            }
+            <div className="conv-list-body">
 
-            {
+                {
 
-                conversations.map(
+                    conversations.length === 0 && (
 
-                    (conversation) => (
+                        <div className="empty-state">
 
-                        <ConversationItem
+                            <div className="empty-icon">
 
-                            key={conversation.id}
+                                <svg
+                                    width="28"
+                                    height="28"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.8"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                >
+                                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                                </svg>
 
-                            conversation={conversation}
+                            </div>
 
-                            selected={
-                                selectedConversation?.id ===
-                                conversation.id
-                            }
+                            <h3>No conversations yet</h3>
 
-                            onSelect={
-                                onSelectConversation
-                            }
+                            <p>
+                                Open your Friends tab and
+                                start chatting with someone.
+                            </p>
 
-                        />
+                        </div>
 
                     )
 
-                )
+                }
 
-            }
+                {
+
+                    conversations.map(
+
+                        (conversation) => (
+
+                            <ConversationItem
+
+                                key={conversation.id}
+
+                                conversation={conversation}
+
+                                selected={
+                                    selectedConversation?.id ===
+                                    conversation.id
+                                }
+
+                                onSelect={
+                                    onSelectConversation
+                                }
+
+                            />
+
+                        )
+
+                    )
+
+                }
+
+            </div>
 
         </div>
 

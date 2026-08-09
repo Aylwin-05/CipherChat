@@ -1,91 +1,183 @@
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+/* Shared auth backdrop (Login + OTP) */
+
+.auth-bg {
+    min-height: 100vh;
+    position: relative;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background:
+        radial-gradient(
+            1200px 600px at 50% -10%,
+            rgba(124, 92, 255, 0.14),
+            transparent 60%
+        ),
+        radial-gradient(
+            900px 500px at 85% 110%,
+            rgba(34, 211, 238, 0.1),
+            transparent 60%
+        ),
+        var(--bg-0);
 }
 
-body {
-    background: #eef2f7;
-    font-family: Arial, Helvetica, sans-serif;
+/* floating aurora orbs */
+
+.auth-orbs {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
 }
 
-.login-container {
-    width: 100vw;
-    height: 100vh;
-
-    display: flex;
-    justify-content: center;
-    align-items: center;
+.orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(70px);
+    opacity: 0.5;
+    animation: orbFloat 16s ease-in-out infinite alternate;
 }
 
-.login-card {
+.orb-a {
     width: 420px;
-
-    background: white;
-
-    padding: 40px;
-
-    border-radius: 16px;
-
-    box-shadow: 0 15px 40px rgba(0, 0, 0, .12);
+    height: 420px;
+    left: -120px;
+    top: -80px;
+    background: rgba(124, 92, 255, 0.4);
 }
 
-.login-card h1 {
-    text-align: center;
+.orb-b {
+    width: 380px;
+    height: 380px;
+    right: -100px;
+    bottom: -120px;
+    background: rgba(34, 211, 238, 0.32);
+    animation-delay: -5s;
+}
+
+.orb-c {
+    width: 260px;
+    height: 260px;
+    left: 55%;
+    top: 60%;
+    background: rgba(244, 114, 182, 0.24);
+    animation-delay: -10s;
+}
+
+@keyframes orbFloat {
+    from {
+        transform: translate(0, 0) scale(1);
+    }
+    to {
+        transform: translate(40px, -30px) scale(1.12);
+    }
+}
+
+/* card */
+
+.auth-card-wrap {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 430px;
+    padding: 20px;
+    animation: riseIn 0.5s var(--ease);
+}
+
+.auth-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 44px 38px 36px;
+    background: linear-gradient(
+        165deg,
+        rgba(28, 36, 66, 0.72),
+        rgba(13, 18, 38, 0.85)
+    );
+    border: 1px solid var(--border-strong);
+    border-radius: 26px;
+    backdrop-filter: blur(22px);
+    box-shadow: var(--shadow);
+}
+
+.auth-logo-mark {
     margin-bottom: 10px;
 }
 
-.login-card p {
+.auth-card h1 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 30px;
+    letter-spacing: -0.5px;
+    background: var(--grad);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.auth-tagline {
+    margin: 0 0 26px;
     text-align: center;
-    color: gray;
-    margin-bottom: 35px;
+    color: var(--text-2);
+    font-size: 13.5px;
+    line-height: 1.6;
 }
 
-.login-card input {
+.auth-card form {
     width: 100%;
-
-    padding: 14px;
-
-    margin-bottom: 20px;
-
-    border-radius: 8px;
-
-    border: 1px solid #ccc;
-
-    font-size: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
 }
 
-.login-card button {
+.auth-submit {
     width: 100%;
-
-    padding: 14px;
-
-    border: none;
-
-    border-radius: 8px;
-
-    background: #2563eb;
-
-    color: white;
-
-    font-size: 16px;
-
-    cursor: pointer;
+    margin-top: 4px;
 }
 
-.login-card button:hover {
-    background: #1d4ed8;
+.auth-features {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 26px;
 }
 
-.login-card button:disabled {
-    opacity: .6;
-    cursor: not-allowed;
+.auth-features span {
+    font-size: 12px;
+    color: var(--text-3);
+    padding: 6px 12px;
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    border: 1px solid var(--border);
 }
 
-.error {
-    color: red;
+/* OTP card variant */
 
-    margin-bottom: 15px;
+.otp-back {
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: var(--text-3);
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
 
-    text-align: center;
+.otp-back:hover {
+    color: var(--text-1);
+}
+
+.otp-email {
+    margin: 2px 0 22px;
+    padding: 9px 18px;
+    border-radius: var(--radius-pill);
+    background: var(--accent-soft);
+    border: 1px solid rgba(124, 92, 255, 0.35);
+    color: var(--accent-2);
+    font-weight: 600;
+    font-size: 13.5px;
+}
+
+@media (max-width: 480px) {
+    .auth-card {
+        padding: 34px 24px 30px;
+    }
 }

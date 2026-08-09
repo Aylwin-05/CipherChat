@@ -1,4 +1,16 @@
+import { avatarGradient, initials } from "../../utils/avatar";
+
 import "./ConversationList.css";
+
+function formatTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
 
 export default function ConversationItem({
 
@@ -20,51 +32,78 @@ export default function ConversationItem({
         <div
             className={
                 selected
-                    ? "conversation-item active"
-                    : "conversation-item"
+                    ? "conv-item active"
+                    : "conv-item"
             }
             onClick={() => onSelect(conversation)}
         >
 
-            <div className="conversation-avatar">
+            <div className="conv-avatar">
 
-                {
-                    user.display_name
-                        ?.charAt(0)
-                        .toUpperCase()
-                }
+                <div
+                    className="conv-avatar-badge"
+                    style={{
+                        background: avatarGradient(
+                            user?.display_name
+                        ),
+                    }}
+                >
 
-            </div>
+                    {initials(
+                        user?.display_name ?? "?"
+                    )}
 
-            <div className="conversation-info">
+                </div>
 
-                <h4>
-
-                    {user.display_name}
-
-                </h4>
-
-                <p>
-
-                    {
-                        conversation.last_message
-                            ? "🔒 Encrypted message"
-                            : "No messages yet"
-                    }
-
-                </p>
+                <span className="presence-dot" />
 
             </div>
 
-            {unread > 0 ? (
+            <div className="conv-meta">
 
-                <span className="unread-badge">
+                <div className="conv-top">
 
-                    {unread}
+                    <h4 className="conv-name">
 
-                </span>
+                        {user?.display_name || "Unknown"}
 
-            ) : null}
+                    </h4>
+
+                    <span className="conv-time">
+
+                        {formatTime(
+                            conversation.last_message
+                                ?.created_at ??
+                            conversation.updated_at
+                        )}
+
+                    </span>
+
+                </div>
+
+                <div className="conv-bottom">
+
+                    <p className="conv-preview">
+
+                        {conversation.last_message
+                            ? "Encrypted message"
+                            : "No messages yet"}
+
+                    </p>
+
+                    {unread > 0 ? (
+
+                        <span className="unread-pill">
+
+                            {unread}
+
+                        </span>
+
+                    ) : null}
+
+                </div>
+
+            </div>
 
         </div>
 
