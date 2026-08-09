@@ -8,6 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import messageService from "../services/messageService";
 import websocketService from "../services/websocketService";
 import attachmentService from "../services/attachmentService";
+<<<<<<< HEAD
 import deviceService from "../services/deviceService";
 import {
     replenishPreKeys,
@@ -16,6 +17,8 @@ import {
     encryptForConversation,
     decryptMessage as signalDecryptMessage,
 } from "../services/signalChatService";
+=======
+>>>>>>> b1fe404574da5b5ac3ebc7bc51357101824c53c6
 import { encryptFile } from "../utils/fileEncryption";
 import {
     decryptMessage,

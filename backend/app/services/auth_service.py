@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-
+from app.models.user_key import UserKey
 from app.models.otp import OTPCode
 from app.models.user import User
 from app.repositories.auth_repository import AuthRepository
@@ -174,3 +174,54 @@ class AuthService:
         return {
             "user": user,
         }
+    # =====================================================
+    # REGISTER USER PUBLIC KEYS
+    # =====================================================
+
+    async def register_public_keys(
+        self,
+        user: User,
+        public_key: str,
+        signed_prekey: str,
+        signed_prekey_signature: str,
+    ):
+        """
+        Stores only the user's public cryptographic keys.
+
+        Private keys NEVER reach the server.
+        """
+
+        existing = await self.repository.get_user_key(
+            user.id
+        )
+
+        if existing:
+
+            existing.public_key = public_key
+            existing.signed_prekey = signed_prekey
+            existing.signed_prekey_signature = (
+                signed_prekey_signature
+            )
+
+            await self.repository.update_user_key(
+                existing
+            )
+
+            await self.repository.commit()
+
+            return existing
+
+        key = UserKey(
+            user_id=user.id,
+            public_key=public_key,
+            signed_prekey=signed_prekey,
+            signed_prekey_signature=signed_prekey_signature,
+        )
+
+        await self.repository.create_user_key(
+            key
+        )
+
+        await self.repository.commit()
+
+        return key
