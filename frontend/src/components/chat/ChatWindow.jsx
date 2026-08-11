@@ -1,26 +1,38 @@
+import { useState } from "react";
+
 import useMessages from "../../hooks/useMessages";
 
 import ChatInput from "./ChatInput";
 import MessageList from "./MessageList";
+import ForwardModal from "./ForwardModal";
 
 import UserAvatar from "../UserAvatar";
+import { useAuth } from "../../context/AuthContext";
+import { useChatSocket } from "../../context/ChatSocketContext";
 
 import "./Chat.css";
 
 export default function ChatWindow({
     conversation,
-    conversations,
-    setConversations,
 }) {
+
+    const { user } = useAuth();
+
+    const {
+        presence,
+        bumpConversation,
+    } = useChatSocket();
 
     // Always call hooks first
     const {
         messages,
         typingUsers,
-        presence,
         loading,
         error,
         sendMessage,
+        editMessage,
+        toggleReaction,
+        forwardMessage,
         deleteMessage,
         typing,
         stopTyping,
@@ -30,51 +42,108 @@ export default function ChatWindow({
 
             if (!conversation) return;
 
-            setConversations((previous) => {
-
-                const updated = previous.map((conv) => {
-
-                    if (conv.id !== conversation.id) {
-                        return conv;
-                    }
-
-                    return {
-                        ...conv,
-                        updated_at: newMessage.created_at,
-                        last_message: {
-                            content: newMessage.content,
-                            created_at: newMessage.created_at,
-                        },
-                    };
-
-                });
-
-                    updated.sort((a, b) => {
-
-                        const dateA =
-                            new Date(
-                                a.updated_at ??
-                                a.created_at ??
-                                0
-                            );
-
-                        const dateB =
-                            new Date(
-                                b.updated_at ??
-                                b.created_at ??
-                                0
-                            );
-
-                        return dateB - dateA;
-
-                    });
-
-                return updated;
-
-            });
+            bumpConversation(
+                conversation.id,
+                newMessage,
+            );
 
         }
     );
+
+    // ==========================================================
+    // Bump a conversation to the top with the latest message
+    // (delegated to the ChatSocket provider, which owns the
+    // sidebar list)
+    // ==========================================================
+
+    // ==========================================================
+    // Reply / edit / forward / reactions state
+    // ==========================================================
+
+    const [replyTo, setReplyTo] =
+        useState(null);
+
+    const [editTarget, setEditTarget] =
+        useState(null);
+
+    const [forwardTarget, setForwardTarget] =
+        useState(null);
+
+    function handleReply(message) {
+
+        setReplyTo({
+
+            ...message,
+
+            sender_display_name:
+                message.sender_id === user?.id
+                    ? user?.display_name
+                    : otherUser.display_name,
+
+        });
+
+    }
+
+    function handleEdit(message) {
+
+        setReplyTo(null);
+
+        setEditTarget(message);
+
+    }
+
+    function handleCancelEdit() {
+
+        setEditTarget(null);
+
+    }
+
+    async function handleEditSubmit(messageId, text) {
+
+        await editMessage(messageId, text);
+
+        setEditTarget(null);
+
+    }
+
+    async function handleSend(text, file) {
+
+        await sendMessage(
+            text,
+            file,
+            {
+                replyToId: replyTo?.id,
+            },
+        );
+
+        setReplyTo(null);
+
+    }
+
+    async function handleForwardSubmit(plaintext, recipients) {
+
+        const results =
+            await forwardMessage(
+                plaintext,
+                recipients,
+            );
+
+        // Surface forwarded copies in the sidebar
+        for (const result of results) {
+
+            bumpConversation(
+                result.conversation.id,
+                {
+                    content: plaintext,
+                    created_at:
+                        result.message.created_at,
+                },
+                result.conversation,
+            );
+
+        }
+
+    }
 
     // Safe to return AFTER hooks
     if (!conversation) {
@@ -234,6 +303,11 @@ export default function ChatWindow({
                 messages={messages}
                 loading={loading}
                 onDelete={deleteMessage}
+                onReply={handleReply}
+                onEdit={handleEdit}
+                onForward={setForwardTarget}
+                onToggleReaction={toggleReaction}
+                otherUser={otherUser}
                 conversationId={conversation.id}
             />
 
@@ -261,10 +335,30 @@ export default function ChatWindow({
             ) : null}
 
             <ChatInput
-                onSend={sendMessage}
+                onSend={handleSend}
                 typing={typing}
                 stopTyping={stopTyping}
+                replyTo={replyTo}
+                onCancelReply={() =>
+                    setReplyTo(null)
+                }
+                editTarget={editTarget}
+                onEdit={handleEditSubmit}
+                onCancelEdit={handleCancelEdit}
             />
+
+            {forwardTarget && (
+
+                <ForwardModal
+                    message={forwardTarget}
+                    excludeUserId={otherUser.id}
+                    onClose={() =>
+                        setForwardTarget(null)
+                    }
+                    onForward={handleForwardSubmit}
+                />
+
+            )}
 
         </div>
 

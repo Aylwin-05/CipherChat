@@ -9,10 +9,66 @@ import { useAuth } from "../../context/AuthContext";
 
 const PIN_THRESHOLD = 80;
 
+// 5 minutes without a message from the same sender ends a group
+const GROUP_GAP_MS = 5 * 60 * 1000;
+
+// ==========================================================
+// Date divider label: Today / Yesterday / full date
+// ==========================================================
+
+function formatDivider(date) {
+
+    const now = new Date();
+
+    const startOfToday = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+    );
+
+    const startOfMessage = new Date(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate(),
+    );
+
+    const dayDiff = Math.round(
+        (startOfToday - startOfMessage) / 86400000
+    );
+
+    if (dayDiff === 0) return "Today";
+
+    if (dayDiff === 1) return "Yesterday";
+
+    return date.toLocaleDateString([], {
+        day: "numeric",
+        month: "short",
+        year: date.getFullYear() !== now.getFullYear()
+            ? "numeric"
+            : undefined,
+    });
+
+}
+
+function isSameDay(a, b) {
+
+    return (
+        a.getFullYear() === b.getFullYear() &&
+        a.getMonth() === b.getMonth() &&
+        a.getDate() === b.getDate()
+    );
+
+}
+
 export default function MessageList({
     messages,
     loading,
     onDelete,
+    onReply,
+    onEdit,
+    onForward,
+    onToggleReaction,
+    otherUser,
     conversationId,
 }) {
 
@@ -230,6 +286,96 @@ export default function MessageList({
 
     }
 
+    // ==========================================================
+    // Date separators + grouping metadata
+    // ==========================================================
+
+    const rows = [];
+
+    messages.forEach((message, index) => {
+
+        const currentDate =
+            new Date(message.created_at);
+
+        const previous =
+            messages[index - 1];
+
+        const previousDate =
+            previous
+                ? new Date(previous.created_at)
+                : null;
+
+        // Date divider between days
+        if (
+            !previousDate ||
+            !isSameDay(currentDate, previousDate)
+        ) {
+
+            rows.push({
+                kind: "divider",
+                label: formatDivider(currentDate),
+            });
+
+        }
+
+        // Grouping: same sender, close in time, no deletes
+        // between them.
+        const previousSender =
+            previous?.sender_id;
+
+        const gapOk =
+            previous &&
+            previousDate &&
+            currentDate - previousDate <
+                GROUP_GAP_MS;
+
+        const sameSender =
+            message.sender_id === previousSender;
+
+        const groupStart =
+            !sameSender || !gapOk;
+
+        const next =
+            messages[index + 1];
+
+        const nextSender =
+            next?.sender_id;
+
+        const nextGap =
+            next
+                ? new Date(next.created_at) -
+                    currentDate
+                : Number.MAX_SAFE_INTEGER;
+
+        const groupEnd =
+            message.sender_id !== nextSender ||
+            nextGap >= GROUP_GAP_MS;
+
+        const showName =
+            !groupStart &&
+            message.sender_id !== user?.id;
+
+        const displayName =
+            message.sender_id === user?.id
+                ? user?.display_name ||
+                    "You"
+                : otherUser?.display_name ||
+                    "Unknown";
+
+        rows.push({
+            kind: "message",
+            message,
+            index,
+            groupInfo: {
+                firstInGroup: groupStart,
+                lastInGroup: groupEnd,
+                showName,
+                displayName,
+            },
+        });
+
+    });
+
     return (
 
         <div
@@ -242,15 +388,71 @@ export default function MessageList({
 
                 {
 
-                    messages.map((message) => (
+                    rows.map(row => {
 
-                        <MessageBubble
-                            key={message.id}
-                            message={message}
-                            onDelete={onDelete}
-                        />
+                        if (row.kind === "divider") {
 
-                    ))
+                            return (
+
+                                <div
+                                    key={`divider-${row.label}-${row.message?.id ?? row.index}`}
+                                    className="date-divider"
+                                >
+
+                                    <span className="date-divider-pill">
+
+                                        {row.label}
+
+                                    </span>
+
+                                </div>
+
+                            );
+
+                        }
+
+                        const { message, groupInfo } = row;
+
+                        const repliedMessage =
+                            message.reply_to_id
+                                ? messages.find(
+                                    candidate =>
+                                        candidate.id ===
+                                        message.reply_to_id
+                                )
+                                : null;
+
+                        const repliedDisplayName =
+                            repliedMessage?.sender_id ===
+                            user?.id
+                                ? "You"
+                                : otherUser?.display_name ||
+                                    "Unknown";
+
+                        return (
+
+                            <MessageBubble
+                                key={message.id}
+                                message={message}
+                                onDelete={onDelete}
+                                onReply={onReply}
+                                onEdit={onEdit}
+                                onForward={onForward}
+                                onToggleReaction={
+                                    onToggleReaction
+                                }
+                                repliedMessage={
+                                    repliedMessage
+                                }
+                                repliedDisplayName={
+                                    repliedDisplayName
+                                }
+                                groupInfo={groupInfo}
+                            />
+
+                        );
+
+                    })
 
                 }
 

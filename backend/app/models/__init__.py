@@ -5,6 +5,7 @@ from .signal_session import SignalSession, SessionState
 from .conversation import Conversation
 from .conversation_participant import ConversationParticipant
 from .message import Message
+from .message_reaction import MessageReaction
 from .attachment import Attachment
 from .friendship import Friendship
 from .otp import OTPCode
@@ -22,6 +23,7 @@ __all__ = [
     "Conversation",
     "ConversationParticipant",
     "Message",
+    "MessageReaction",
     "Attachment",
     "Friendship",
     "OTPCode",

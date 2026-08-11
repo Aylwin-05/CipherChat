@@ -101,6 +101,11 @@
     height: 13px;
     border-radius: 50%;
     border: 3px solid var(--ring);
+    background: var(--text-3);
+    box-shadow: none;
+}
+
+.presence-dot.online {
     background: var(--success);
     box-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
 }

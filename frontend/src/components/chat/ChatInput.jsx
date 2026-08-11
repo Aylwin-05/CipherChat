@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import {
+    useEffect,
+    useRef,
+    useState,
+} from "react";
 
 import VoiceRecorder from "./VoiceRecorder";
 
-import "./Chat.css";
+import { useAuth } from "../../context/AuthContext";
 
 import "./Chat.css";
 
@@ -41,11 +45,51 @@ function SendIcon() {
     );
 }
 
+// ==========================================================
+// Quote / Edit preview snippet for a message
+// ==========================================================
+
+function messageSnippet(message) {
+
+    if (!message) return "";
+
+    if (message.deleted_for_everyone) {
+        return "Message deleted";
+    }
+
+    if (message.content) {
+        return message.content;
+    }
+
+    if (message.attachments?.length) {
+        const attachment = message.attachments[0];
+        const kinds = {
+            image: "Photo",
+            voice: "Voice message",
+            audio: "Audio message",
+            video: "Video message",
+        };
+        return kinds[attachment.attachment_type] ||
+            attachment.original_name ||
+            "Attachment";
+    }
+
+    return "";
+
+}
+
 export default function ChatInput({
     onSend,
     typing,
     stopTyping,
+    replyTo = null,
+    onCancelReply,
+    editTarget = null,
+    onEdit,
+    onCancelEdit,
 }) {
+
+    const { user } = useAuth();
 
     const [text, setText] =
         useState("");
@@ -58,6 +102,17 @@ export default function ChatInput({
 
     const fileInputRef =
         useRef(null);
+
+    // Prefill the input when entering edit mode
+    useEffect(() => {
+
+        if (editTarget) {
+
+            setText(editTarget.content ?? "");
+
+        }
+
+    }, [editTarget?.id]);
 
     // ==========================================================
     // Typing
@@ -113,7 +168,7 @@ export default function ChatInput({
     }
 
     // ==========================================================
-    // Send
+    // Send / Edit
     // ==========================================================
 
     async function handleSend() {
@@ -125,12 +180,24 @@ export default function ChatInput({
             return;
         }
 
+        if (editTarget) {
+
+            if (!text.trim()) return;
+
+            await onEdit?.(
+                editTarget.id,
+                text.trim(),
+            );
+
+            setText("");
+
+            return;
+
+        }
+
         await onSend(
-
             text,
-
             selectedFile,
-
         );
 
         setText("");
@@ -157,6 +224,12 @@ export default function ChatInput({
 
     }, []);
 
+    const replySenderName =
+        replyTo?.sender_id === user?.id
+            ? "You"
+            : replyTo?.sender_display_name ||
+                "Unknown";
+
     return (
 
         <div className="chat-input">
@@ -177,7 +250,109 @@ export default function ChatInput({
 
             />
 
-            {selectedFile && (
+            {/* REPLY QUOTE BAR */}
+
+            {replyTo && !editTarget && (
+
+                <div className="input-quote-bar">
+
+                    <div className="input-quote-accent" />
+
+                    <div className="input-quote-body">
+
+                        <span className="input-quote-name">
+
+                            {replySenderName}
+
+                        </span>
+
+                        <span className="input-quote-text">
+
+                            {messageSnippet(replyTo)}
+
+                        </span>
+
+                    </div>
+
+                    <button
+
+                        type="button"
+
+                        className="input-quote-cancel"
+
+                        aria-label="Cancel reply"
+
+                        onClick={onCancelReply}
+
+                    >
+
+                        <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.4"
+                            strokeLinecap="round"
+                        >
+                            <path d="M18 6 6 18M6 6l12 12" />
+                        </svg>
+
+                    </button>
+
+                </div>
+
+            )}
+
+            {/* EDIT BAR */}
+
+            {editTarget && (
+
+                <div className="input-quote-bar editing">
+
+                    <div className="input-quote-accent" />
+
+                    <div className="input-quote-body">
+
+                        <span className="input-quote-name">
+
+                            Editing message
+
+                        </span>
+
+                    </div>
+
+                    <button
+
+                        type="button"
+
+                        className="input-quote-cancel"
+
+                        aria-label="Cancel editing"
+
+                        onClick={onCancelEdit}
+
+                    >
+
+                        <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.4"
+                            strokeLinecap="round"
+                        >
+                            <path d="M18 6 6 18M6 6l12 12" />
+                        </svg>
+
+                    </button>
+
+                </div>
+
+            )}
+
+            {selectedFile && !editTarget && (
 
                 <div className="selected-file">
 
@@ -236,33 +411,41 @@ export default function ChatInput({
 
                 {/* Voice Recorder */}
 
-                <VoiceRecorder
+                {!editTarget && (
 
-                    onRecorded={
-                        handleVoiceRecorded
-                    }
+                    <VoiceRecorder
 
-                />
+                        onRecorded={
+                            handleVoiceRecorded
+                        }
+
+                    />
+
+                )}
 
                 {/* File Picker */}
 
-                <button
+                {!editTarget && (
 
-                    type="button"
+                    <button
 
-                    className="icon-btn"
+                        type="button"
 
-                    aria-label="Attach file"
+                        className="icon-btn"
 
-                    onClick={() =>
-                        fileInputRef.current.click()
-                    }
+                        aria-label="Attach file"
 
-                >
+                        onClick={() =>
+                            fileInputRef.current.click()
+                        }
 
-                    <PaperclipIcon />
+                    >
 
-                </button>
+                        <PaperclipIcon />
+
+                    </button>
+
+                )}
 
                 {/* Text */}
 
@@ -274,7 +457,9 @@ export default function ChatInput({
 
                     value={text}
 
-                    placeholder="Type a message..."
+                    placeholder={editTarget
+                        ? "Edit message..."
+                        : "Type a message..."}
 
                     onChange={handleChange}
 
@@ -292,7 +477,7 @@ export default function ChatInput({
 
                 />
 
-                {/* Send */}
+                {/* Send / Save */}
 
                 <button
 
@@ -300,10 +485,14 @@ export default function ChatInput({
 
                     className="send-btn"
 
-                    aria-label="Send message"
+                    aria-label={editTarget
+                        ? "Save edited message"
+                        : "Send message"}
 
                     disabled={
-                        !text.trim() && !selectedFile
+                        editTarget
+                            ? !text.trim()
+                            : !text.trim() && !selectedFile
                     }
 
                     onClick={handleSend}

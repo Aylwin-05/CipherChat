@@ -6,12 +6,13 @@ import {
 import { useAuth } from "../context/AuthContext";
 
 import messageService from "../services/messageService";
+import conversationService from "../services/conversationService";
 import websocketService from "../services/websocketService";
+import {
+    useChatSocket,
+} from "../context/ChatSocketContext";
 import attachmentService from "../services/attachmentService";
 import deviceService from "../services/deviceService";
-import {
-    getAccessToken,
-} from "../api/api";
 import {
     replenishPreKeys,
 } from "../services/signalService";
@@ -38,12 +39,48 @@ import {
     getPublicKey,
 } from "../crypto/keyStorage";
 
+// ==========================================================
+// Reaction list updater
+//
+// One reaction per user per message (WhatsApp-style): a new
+// emoji replaces the previous one; toggling the same emoji
+// removes it.
+// ==========================================================
+
+function applyReaction(message, event) {
+
+    const reactions =
+        (message.reactions || []).filter(
+            reaction =>
+                reaction.user_id !==
+                String(event.user_id)
+        );
+
+    if (event.action === "add") {
+
+        reactions.push({
+            user_id: String(event.user_id),
+            emoji: event.emoji,
+            created_at: event.created_at ?? null,
+        });
+
+    }
+
+    return {
+        ...message,
+        reactions,
+    };
+
+}
+
 export default function useMessages(
     conversation,
     onNewMessage,
 ) {
 
     const { user } = useAuth();
+
+    const { subscribe } = useChatSocket();
 
     const [messages, setMessages] =
         useState([]);
@@ -53,9 +90,6 @@ export default function useMessages(
 
     const [typingUsers, setTypingUsers] =
         useState([]);
-
-    const [presence, setPresence] =
-        useState({});
 
     const [loading, setLoading] =
         useState(false);
@@ -82,15 +116,27 @@ export default function useMessages(
         // in the local cache and served from there.
         // -------------------------------------------------
 
-        const cached =
-            await signalKeyStore.getPlaintext(
+        const cachedRecord =
+            await signalKeyStore.getCachedRecord(
                 conversationId,
                 message.id,
             );
 
-        if (cached != null) {
+        // The cache is keyed per message id. An EDITED message
+        // carries a fresh envelope, so a record whose ciphertext
+        // differs from the message's current ciphertext is stale
+        // and must be re-decrypted instead of served from cache.
+        // Records saved before ciphertext tracking (null) keep
+        // matching so old cached history keeps its plaintext.
+        if (
+            cachedRecord &&
+            (
+                cachedRecord.ciphertext == null ||
+                cachedRecord.ciphertext === message.ciphertext
+            )
+        ) {
 
-            return cached;
+            return cachedRecord.plaintext;
 
         }
 
@@ -132,7 +178,7 @@ export default function useMessages(
 
         }
 
-        // Decrypted live — remember it so a page reload can
+        // Decrypted live ΓÇö remember it so a page reload can
         // show it again (the handshake envelope can never be
         // decrypted twice).
         try {
@@ -141,6 +187,7 @@ export default function useMessages(
                 conversationId,
                 message.id,
                 plaintext,
+                message.ciphertext,
             );
 
         }
@@ -163,19 +210,11 @@ export default function useMessages(
 
             setMessages([]);
 
-            websocketService.disconnect();
-
             return;
 
         }
 
         void initialize();
-
-        return () => {
-
-            websocketService.disconnect();
-
-        };
 
     }, [conversation?.id]);
     useEffect(() => {
@@ -191,208 +230,28 @@ export default function useMessages(
     };
 
     }, [imageUrls]);
+    //------------------------------------------------------
+    // Real-time events: the user-scoped socket (ChatSocket
+    // provider) delivers every conversation; filter to this
+    // one and apply updates without any page refresh.
+    //------------------------------------------------------
 
-    async function initialize() {
+    useEffect(() => {
 
-        try {
+        if (!conversation) return;
 
-            setLoading(true);
+        const unsubscribe = subscribe(
 
-            //--------------------------------------------------
-            // Load encrypted history
-            //--------------------------------------------------
+            async (event) => {
 
-            const history =
-                await messageService.getMessages(
-                    conversation.id
-                );
-
-            //--------------------------------------------------
-            // Decrypt every message
-            //--------------------------------------------------
-
-            const decrypted =
-                await Promise.all(
-
-                    history.map(
-                        async (message) => {
-
-                            try {
-
-                                const plaintext =
-                                    await decryptIncoming(message);
-
-                                return {
-
-                                    ...message,
-
-                                    content:
-                                        plaintext,
-
-                                };
-
-                            }
-
-                            catch {
-
-                                return {
-
-                                    ...message,
-
-                                    content:
-                                        "[Unable to decrypt]",
-
-                                };
-
-                            }
-
-                        }
-
-                    )
-
-                );
-
-            setMessages(decrypted);
-
-            //--------------------------------------------------
-            // Read receipts: opening a chat reads its history
-            //--------------------------------------------------
-
-            const latestIncoming =
-                decrypted
-                    .filter(
-                        message =>
-                            message.sender_id !== user?.id &&
-                            !message.is_read
-                    )
-                    .sort(
-                        (a, b) =>
-                            new Date(a.created_at) -
-                            new Date(b.created_at)
-                    )
-                    .pop();
-
-            if (latestIncoming) {
-
-                websocketService.sendRead(
-                    latestIncoming.id
-                );
-
-            }
-
-            //--------------------------------------------------
-            // Download all image attachments
-            //--------------------------------------------------
-
-            for (const message of decrypted) {
-
-                if (!message.attachments?.length) {
-
-                    continue;
-
+                if (
+                    event.conversation_id &&
+                    event.conversation_id !== conversation.id
+                ) {
+                    return;
                 }
 
-                for (const attachment of message.attachments) {
-
-                    if (
-                        attachment.attachment_type ===
-                        "image"
-                    ) {
-
-                        try {
-
-                            const imageUrl =
-                                await attachmentService.getAttachment(
-                                    attachment.id,
-                                    {
-                                        wrappedKey:
-                                            message.sender_id === user?.id
-                                                ? attachment.encrypted_key_sender
-                                                : attachment.encrypted_key_receiver,
-
-                                        nonce:
-                                            attachment.nonce,
-                                    }
-                                );
-
-                            setImageUrls(previous => ({
-
-                                ...previous,
-
-                                [attachment.id]:
-                                    imageUrl,
-
-                            }));
-
-                        }
-
-                        catch (error) {
-
-                            console.error(
-                                "Image download failed",
-                                error
-                            );
-
-                        }
-
-                    }
-
-                }
-
-            }
-
-            //--------------------------------------------------
-            // Connect websocket
-            //--------------------------------------------------
-
-            const token =
-                getAccessToken();
-
-            websocketService.connect(
-                conversation.id,
-                token,
-            );
-
-            //--------------------------------------------------
-            // Listen websocket
-            //--------------------------------------------------
-
-            websocketService.onMessage(
-
-                async (event) => {
                                         switch (event.event) {
-
-                        //--------------------------------------------------
-                        // Connected
-                        //--------------------------------------------------
-
-                        case "connected":
-
-                            break;
-
-                        //--------------------------------------------------
-                        // Presence (live online/offline)
-                        //--------------------------------------------------
-
-                        case "presence":
-
-                            if (
-                                event.user_id &&
-                                event.user_id !== user?.id
-                            ) {
-
-                                setPresence(previous => ({
-
-                                    ...previous,
-
-                                    [event.user_id]:
-                                        event.online,
-
-                                }));
-
-                            }
-
-                            break;
 
                         //--------------------------------------------------
                         // Incoming encrypted message
@@ -413,6 +272,9 @@ export default function useMessages(
 
                                     attachments:
                                         event.attachments || [],
+
+                                    reactions:
+                                        event.reactions || [],
 
                                 };
 
@@ -457,10 +319,12 @@ export default function useMessages(
                                 ) {
 
                                     websocketService.sendDelivered(
+                                        conversation.id,
                                         message.id
                                     );
 
                                     websocketService.sendRead(
+                                        conversation.id,
                                         message.id
                                     );
 
@@ -561,9 +425,134 @@ export default function useMessages(
                                                     updated_at:
                                                         event.updated_at,
 
+                                                    ciphertext:
+                                                        event.ciphertext ??
+                                                        message.ciphertext,
+
+                                                    encrypted_key_sender:
+                                                        event.encrypted_key_sender ??
+                                                        message.encrypted_key_sender,
+
+                                                    encrypted_key_receiver:
+                                                        event.encrypted_key_receiver ??
+                                                        message.encrypted_key_receiver,
+
+                                                    nonce:
+                                                        event.nonce ??
+                                                        message.nonce,
+
                                                 }
 
                                                 : message
+
+                                    )
+
+                            );
+
+                            //-----------------------------------------------
+                            // The edited content is a fresh ratchet
+                            // envelope: try to decrypt it (receivers can,
+                            // senders hit the plaintext cache).
+                            //-----------------------------------------------
+
+                            if (event.ciphertext) {
+
+                                try {
+
+                                    const updatedPlaintext =
+                                        await decryptIncoming({
+
+                                            id:
+                                                event.message_id,
+
+                                            conversation_id:
+                                                conversation.id,
+
+                                            sender_id:
+                                                event.sender_id,
+
+                                            ciphertext:
+                                                event.ciphertext,
+
+                                            encrypted_key_sender:
+                                                event.encrypted_key_sender,
+
+                                            encrypted_key_receiver:
+                                                event.encrypted_key_receiver,
+
+                                            nonce:
+                                                event.nonce,
+
+                                        });
+
+                                    if (
+                                        updatedPlaintext &&
+                                        updatedPlaintext !==
+                                            "[Unable to decrypt]"
+                                    ) {
+
+                                        setMessages(
+                                            previous =>
+
+                                                previous.map(
+                                                    message =>
+
+                                                        message.id ===
+                                                        event.message_id
+
+                                                            ? {
+
+                                                                ...message,
+
+                                                                content:
+                                                                    updatedPlaintext,
+
+                                                            }
+
+                                                            : message
+
+                                                )
+
+                                        );
+
+                                    }
+
+                                }
+
+                                catch (error) {
+
+                                    console.error(
+                                        "Edit decrypt failed",
+                                        error
+                                    );
+
+                                }
+
+                            }
+
+                            break;
+
+                        //--------------------------------------------------
+                        // Reaction
+                        //--------------------------------------------------
+
+                        case "reaction":
+
+                            setMessages(
+                                previous =>
+
+                                    previous.map(
+                                        message =>
+
+                                            message.id !==
+                                            event.message_id
+
+                                                ? message
+
+                                                : applyReaction(
+                                                    message,
+                                                    event
+                                                )
 
                                     )
 
@@ -593,7 +582,7 @@ export default function useMessages(
                                                     deleted_for_everyone: true,
 
                                                     content:
-                                                        "🚫 Message deleted",
+                                                        "≡ƒÜ½ Message deleted",
 
                                                 }
 
@@ -787,10 +776,164 @@ export default function useMessages(
                             break;
 
                     }
+            }
+
+        );
+
+        return unsubscribe;
+
+    }, [conversation?.id]);
+
+    async function initialize() {
+
+        try {
+
+            setLoading(true);
+
+            //--------------------------------------------------
+            // Load encrypted history
+            //--------------------------------------------------
+
+            const history =
+                await messageService.getMessages(
+                    conversation.id
+                );
+
+            //--------------------------------------------------
+            // Decrypt every message
+            //--------------------------------------------------
+
+            const decrypted =
+                await Promise.all(
+
+                    history.map(
+                        async (message) => {
+
+                            try {
+
+                                const plaintext =
+                                    await decryptIncoming(message);
+
+                                return {
+
+                                    ...message,
+
+                                    content:
+                                        plaintext,
+
+                                };
+
+                            }
+
+                            catch {
+
+                                return {
+
+                                    ...message,
+
+                                    content:
+                                        "[Unable to decrypt]",
+
+                                };
+
+                            }
+
+                        }
+
+                    )
+
+                );
+
+            setMessages(decrypted);
+
+            //--------------------------------------------------
+            // Read receipts: opening a chat reads its history
+            //--------------------------------------------------
+
+            const latestIncoming =
+                decrypted
+                    .filter(
+                        message =>
+                            message.sender_id !== user?.id &&
+                            !message.is_read
+                    )
+                    .sort(
+                        (a, b) =>
+                            new Date(a.created_at) -
+                            new Date(b.created_at)
+                    )
+                    .pop();
+
+            if (latestIncoming) {
+
+                websocketService.sendRead(
+                    conversation.id,
+                    latestIncoming.id
+                );
+
+            }
+
+            //--------------------------------------------------
+            // Download all image attachments
+            //--------------------------------------------------
+
+            for (const message of decrypted) {
+
+                if (!message.attachments?.length) {
+
+                    continue;
 
                 }
 
-            );
+                for (const attachment of message.attachments) {
+
+                    if (
+                        attachment.attachment_type ===
+                        "image"
+                    ) {
+
+                        try {
+
+                            const imageUrl =
+                                await attachmentService.getAttachment(
+                                    attachment.id,
+                                    {
+                                        wrappedKey:
+                                            message.sender_id === user?.id
+                                                ? attachment.encrypted_key_sender
+                                                : attachment.encrypted_key_receiver,
+
+                                        nonce:
+                                            attachment.nonce,
+                                    }
+                                );
+
+                            setImageUrls(previous => ({
+
+                                ...previous,
+
+                                [attachment.id]:
+                                    imageUrl,
+
+                            }));
+
+                        }
+
+                        catch (error) {
+
+                            console.error(
+                                "Image download failed",
+                                error
+                            );
+
+                        }
+
+                    }
+
+                }
+
+            }
+
 
         }
 
@@ -816,14 +959,21 @@ export default function useMessages(
     async function sendMessage(
         plaintext,
         file = null,
+        options = {},
     )
     {
 
+        const {
+            replyToId = null,
+            isForwarded = false,
+
+        } = options;
+
         try {
 
-            //------------------------------------------
-            // Signal-encrypt for the recipient
-            //------------------------------------------
+            //--------------------------------------------------
+            // Encrypt for the conversation (Signal ratchet)
+            //--------------------------------------------------
 
             const encrypted =
                 await encryptForConversation({
@@ -836,80 +986,65 @@ export default function useMessages(
                         ),
                 });
 
-            //------------------------------------------
-            // Save encrypted payload via REST
-            //------------------------------------------
-
-            console.log("3. Sending to backend...");
+            console.log(
+                "3. Sending to backend..."
+            );
 
             const saved =
                 await messageService.sendMessage(
                     conversation.id,
                     encrypted,
+                    replyToId,
+                    isForwarded,
                 );
 
-            console.log("Backend response:", saved);
+            console.log(
+                "Backend response:",
+                saved
+            );
 
-            // ==========================================
-            // Upload attachment (if selected)
-            // ==========================================
+            //--------------------------------------------------
+            // Encrypt + upload attachment (if any)
+            //--------------------------------------------------
 
-            let upload = null;
+            let uploaded = null;
 
             if (file) {
 
-                console.log("Encrypting attachment...");
+                console.log(
+                    "Encrypting attachment..."
+                );
 
-                const encryptedAttachment =
-                    await encryptFile(file);
+                const {
+                    encryptedFile,
+                    rawKey,
+                    iv,
+                } = await encryptFile(file);
 
-                // -----------------------------------------------
-                // Upload the CIPHERTEXT under the original
-                // filename: the backend derives the attachment
-                // type from the extension (it never inspects
-                // content), so an image must keep its .jpg to
-                // be stored/typed as an image. The bytes on
-                // disk are still AES ciphertext under a UUID
-                // name.
-                // -----------------------------------------------
-
-                const encryptedFile =
+                const encryptedFileBlob =
                     new File(
-
-                        [
-                            encryptedAttachment.encryptedFile,
-                        ],
-
+                        [encryptedFile],
                         file.name,
-
                         {
                             type:
                                 file.type ||
                                 "application/octet-stream",
                         }
-
                     );
 
-                // -----------------------------------------------
-                // Wrap the file's AES key for both participants
-                // (RSA-OAEP). The backend only ever stores the
-                // wraps + IV, never the raw key or plaintext.
-                // -----------------------------------------------
+                const myPublicKey =
+                    getPrivateKey();
 
-                const senderPublicKey =
-                    getPublicKey();
-
-                const recipientKeyResponse =
-                    await keyService.getPublicKey(
-                        conversation.other_user.id
-                    );
-
-                const recipientPublicKey =
-                    recipientKeyResponse?.public_key;
+                const theirPublicKey =
+                    (
+                        await keyService.getPublicKey(
+                            conversation.other_user.id
+                        )
+                    )?.public_key;
 
                 if (
-                    !senderPublicKey ||
-                    !recipientPublicKey
+                    !myPublicKey ||
+                    !theirPublicKey
                 ) {
 
                     throw new Error(
@@ -918,28 +1053,21 @@ export default function useMessages(
 
                 }
 
-                const [encryptedKeySender, encryptedKeyReceiver] =
-                    await Promise.all([
+                const [
+                    encryptedKeySender,
+                    encryptedKeyReceiver,
+                ] = await Promise.all([
+                    wrapFileKey(rawKey, myPublicKey),
+                    wrapFileKey(
+                        rawKey,
+                        theirPublicKey
+                    ),
+                ]);
 
-                        wrapFileKey(
-                            encryptedAttachment.rawKey,
-                            senderPublicKey,
-                        ),
-
-                        wrapFileKey(
-                            encryptedAttachment.rawKey,
-                            recipientPublicKey,
-                        ),
-
-                    ]);
-
-                upload =
+                uploaded =
                     await messageService.uploadAttachment(
-
                         saved.id,
-
-                        encryptedFile,
-
+                        encryptedFileBlob,
                         {
                             encrypted_key_sender:
                                 encryptedKeySender,
@@ -948,63 +1076,36 @@ export default function useMessages(
                                 encryptedKeyReceiver,
 
                             nonce:
-                                arrayBufferToBase64(
-                                    encryptedAttachment.iv
-                                ),
-
+                                arrayBufferToBase64(iv),
                         }
-
                     );
 
                 console.log(
                     "Encrypted attachment uploaded:",
-                    upload
+                    uploaded
                 );
 
             }
 
-            //------------------------------------------
-            // Show instantly for sender
-            //------------------------------------------
+            //--------------------------------------------------
+            // Optimistic UI + plaintext cache + realtime
+            //--------------------------------------------------
 
             const localMessage = {
-
                 ...saved,
-
                 content: plaintext,
-
-                attachments: file && upload
-                    ? [
-                        upload.attachment
-                    ]
-                    : [],
-
+                attachments:
+                    file && uploaded
+                        ? [uploaded.attachment]
+                        : [],
             };
 
-            setMessages(
+            setMessages(previous => [
+                ...previous,
+                localMessage,
+            ]);
 
-                previous => [
-
-                    ...previous,
-
-                    localMessage,
-
-                ]
-
-            );
-
-            onNewMessage?.(
-                localMessage
-            );
-
-            //------------------------------------------
-            // Cache our own plaintext so history shows it
-            // after a refresh (senders cannot re-decrypt
-            // their own ratchet envelopes). Must happen
-            // before the broadcast — the WebSocket echoes
-            // our own message back and the decrypt path
-            // reads from this cache.
-            //------------------------------------------
+            onNewMessage?.(localMessage);
 
             try {
 
@@ -1012,10 +1113,10 @@ export default function useMessages(
                     conversation.id,
                     saved.id,
                     plaintext,
+                    saved.ciphertext,
                 );
 
             }
-
             catch (error) {
 
                 console.error(
@@ -1025,70 +1126,31 @@ export default function useMessages(
 
             }
 
-            //------------------------------------------
-            // Broadcast encrypted payload
-            //------------------------------------------
+            websocketService.sendMessage({
+                id: saved.id,
+                conversation_id: saved.conversation_id,
+                sender_id: saved.sender_id,
+                ciphertext: saved.ciphertext,
+                encrypted_key_sender: saved.encrypted_key_sender,
+                encrypted_key_receiver: saved.encrypted_key_receiver,
+                nonce: saved.nonce,
+                crypto_version: saved.crypto_version,
+                message_type: saved.message_type,
+                reply_to_id: saved.reply_to_id,
+                is_forwarded: saved.is_forwarded,
+                created_at: saved.created_at,
+                attachments: localMessage.attachments,
+            });
 
-        websocketService.sendMessage({
+            if (error) setError(null);
 
-            id: saved.id,
-
-            conversation_id:
-                saved.conversation_id,
-
-            sender_id:
-                saved.sender_id,
-
-            ciphertext:
-                saved.ciphertext,
-
-            encrypted_key_sender:
-                saved.encrypted_key_sender,
-
-            encrypted_key_receiver:
-                saved.encrypted_key_receiver,
-
-            nonce:
-                saved.nonce,
-
-            crypto_version:
-                saved.crypto_version,
-
-            message_type:
-                saved.message_type,
-
-            reply_to_id:
-                saved.reply_to_id,
-
-            created_at:
-                saved.created_at,
-
-            attachments:
-                localMessage.attachments,
-
-        });
-
-            //------------------------------------------
-            // Clear any stale error from a previous send
-            //------------------------------------------
-
-            if (error) {
-
-                setError(null);
-
-            }
-
-            //------------------------------------------
-            // Keep the one-time prekey pool topped up
-            //------------------------------------------
-
-            replenishPreKeys()
-                .catch((error) =>
-                    console.error(
-                        "One-time prekey replenishment failed:",
-                        error
-                    )
-                );
+            // Replenish one-time prekeys in the background
+            replenishPreKeys().catch(
+                error => console.error(
+                    "One-time prekey replenishment failed:",
+                    error
+                )
+            );
 
         }
 
@@ -1111,7 +1173,9 @@ export default function useMessages(
 
     function typing() {
 
-        websocketService.sendTyping();
+        websocketService.sendTyping(
+            conversation.id
+        );
 
     }
 
@@ -1121,10 +1185,304 @@ export default function useMessages(
 
     function stopTyping() {
 
-        websocketService.stopTyping();
+        websocketService.stopTyping(
+            conversation.id
+        );
 
     }
         //--------------------------------------------------
+    // Edit Message (end-to-end encrypted)
+    //--------------------------------------------------
+
+    async function editMessage(
+        messageId,
+        newPlaintext,
+    ) {
+
+        try {
+
+            //--------------------------------------------------
+            // Fresh ratchet envelope (the server never sees
+            // the plaintext)
+            //--------------------------------------------------
+
+            const encrypted =
+                await encryptForConversation({
+                    conversationId: conversation.id,
+                    otherUserId: conversation.other_user.id,
+                    plaintext: newPlaintext,
+                    bundleProvider: async () =>
+                        deviceService.getBundle(
+                            conversation.other_user.id
+                        ),
+                });
+
+            await messageService.editMessage(
+                messageId,
+                encrypted,
+            );
+
+            // Optimistic UI update
+            setMessages(
+                previous => previous.map(
+                    message =>
+
+                        message.id === messageId
+
+                            ? {
+
+                                ...message,
+
+                                content: newPlaintext,
+
+                                edited: true,
+
+                                ciphertext:
+                                    encrypted.ciphertext,
+
+                                encrypted_key_sender:
+                                    encrypted.encrypted_key_sender,
+
+                                encrypted_key_receiver:
+                                    encrypted.encrypted_key_receiver,
+
+                                nonce:
+                                    encrypted.nonce,
+
+                            }
+
+                            : message
+                )
+            );
+
+            try {
+
+                await signalKeyStore.savePlaintext(
+                    conversation.id,
+                    messageId,
+                    newPlaintext,
+                    encrypted.ciphertext,
+                );
+
+            }
+            catch (error) {
+
+                console.error(
+                    "Failed to cache edited message:",
+                    error
+                );
+
+            }
+
+            return true;
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Failed to edit message",
+                error
+            );
+
+            setError(error);
+
+            throw error;
+
+        }
+
+    }
+
+    //--------------------------------------------------
+    // Toggle Reaction (optimistic + rollback)
+    //--------------------------------------------------
+
+    async function toggleReaction(
+        messageId,
+        emoji,
+    ) {
+
+        const message = messages.find(
+            message => message.id === messageId
+        );
+
+        const reaction = {
+            message_id: messageId,
+            user_id: user?.id,
+            emoji,
+            action:
+                message?.reactions?.some(
+                    reaction =>
+                        reaction.user_id ===
+                            String(user?.id) &&
+                        reaction.emoji === emoji
+                )
+                    ? "remove"
+                    : "add",
+        };
+
+        setMessages(
+            previous => previous.map(
+                message =>
+
+                    message.id === messageId
+
+                        ? applyReaction(
+                            message,
+                            reaction
+                        )
+
+                        : message
+            )
+        );
+
+        try {
+
+            await messageService.toggleReaction(
+                messageId,
+                emoji,
+            );
+
+        }
+        catch (error) {
+
+            console.error(
+                "Failed to toggle reaction",
+                error
+            );
+
+            setError(error);
+
+            // Roll back the optimistic update
+            setMessages(
+                previous => previous.map(
+                    message =>
+
+                        message.id === messageId
+
+                            ? applyReaction(
+                                message,
+                                {
+                                    ...reaction,
+                                    action:
+                                        reaction.action === "add"
+                                            ? "remove"
+                                            : "add",
+                                }
+                            )
+
+                            : message
+                )
+            );
+
+        }
+
+    }
+
+    //--------------------------------------------------
+    // Forward Message to multiple users
+    //--------------------------------------------------
+
+    async function forwardMessage(
+        plaintext,
+        targetUsers,
+    ) {
+
+        const results = [];
+
+        try {
+
+            for (const targetUser of targetUsers) {
+
+                const targetConversation =
+                    await conversationService.createPrivateConversation(
+                        targetUser.id
+                    );
+
+                const encrypted =
+                    await encryptForConversation({
+                        conversationId: targetConversation.id,
+                        otherUserId: targetUser.id,
+                        plaintext,
+                        bundleProvider: async () =>
+                            deviceService.getBundle(
+                                targetUser.id
+                            ),
+                    });
+
+                const saved =
+                    await messageService.sendMessage(
+                        targetConversation.id,
+                        encrypted,
+                        null,
+                        true,
+                    );
+
+                // The recipient's socket must see it in real
+                // time, exactly like a normal send.
+                websocketService.sendMessage({
+                    id: saved.id,
+                    conversation_id: saved.conversation_id,
+                    sender_id: saved.sender_id,
+                    ciphertext: saved.ciphertext,
+                    encrypted_key_sender: saved.encrypted_key_sender,
+                    encrypted_key_receiver: saved.encrypted_key_receiver,
+                    nonce: saved.nonce,
+                    crypto_version: saved.crypto_version,
+                    message_type: saved.message_type,
+                    reply_to_id: saved.reply_to_id,
+                    is_forwarded: saved.is_forwarded,
+                    created_at: saved.created_at,
+                    attachments: [],
+                });
+
+                try {
+
+                    await signalKeyStore.savePlaintext(
+                        targetConversation.id,
+                        saved.id,
+                        plaintext,
+                    );
+
+                }
+
+                catch (error) {
+
+                    console.error(
+                        "Failed to cache forwarded message:",
+                        error
+                    );
+
+                }
+
+                results.push({
+                    conversation:
+                        targetConversation,
+                    message: saved,
+                });
+
+            }
+
+            return results;
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Failed to forward message",
+                error
+            );
+
+            setError(error);
+
+            throw error;
+
+        }
+
+    }
+
+    //--------------------------------------------------
     // Delete Message
     //--------------------------------------------------
 
@@ -1171,7 +1529,10 @@ export default function useMessages(
                 //---------
 
                 websocketService
-                    .sendDelete(messageId);
+                    .sendDelete(
+                        conversation.id,
+                        messageId
+                    );
 
             }
             else {
@@ -1222,13 +1583,16 @@ export default function useMessages(
 
         typingUsers,
 
-        presence,
-
         loading,
 
         error,
-
         sendMessage,
+
+        editMessage,
+
+        toggleReaction,
+
+        forwardMessage,
 
         deleteMessage,
 
@@ -1237,5 +1601,4 @@ export default function useMessages(
         stopTyping,
 
     };
-
 }

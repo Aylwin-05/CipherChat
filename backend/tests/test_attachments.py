@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import StaticPool
 
 import app.services.email_service as email_module
+import app.websocket.connection_manager as conn_mgr
 from app.core.rate_limit import reset_limiter
 from app.database.base import Base
 from app.database.session import get_db
@@ -50,6 +51,11 @@ def api_client(monkeypatch):
         bind=engine,
         class_=AsyncSession,
         expire_on_commit=False,
+    )
+    monkeypatch.setattr(
+        conn_mgr,
+        "AsyncSessionLocal",
+        TestingSessionLocal,
     )
 
     async def override_get_db():

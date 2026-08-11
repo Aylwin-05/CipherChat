@@ -17,6 +17,7 @@ export default function ConversationItem({
     conversation,
     selected,
     onSelect,
+    online,
 
 }) {
 
@@ -44,7 +45,11 @@ export default function ConversationItem({
                     user={user}
                     className="conv-avatar-badge"
                 >
-                    <span className="presence-dot" />
+                    <span
+                        className={`presence-dot ${
+                            online ? "online" : ""
+                        }`}
+                    />
                 </UserAvatar>
 
             </div>

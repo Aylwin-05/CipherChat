@@ -79,6 +79,7 @@ class MessageService:
         nonce: str,
         message_type: str = "text",
         reply_to_id: UUID | None = None,
+        is_forwarded: bool = False,
         attachment_ids: list[UUID] | None = None,
     ) -> Message:
 
@@ -117,6 +118,8 @@ class MessageService:
             message_type=message_type,
 
             reply_to_id=reply_to_id,
+
+            is_forwarded=is_forwarded,
         )
 
         message = await self.message_repository.create_message(
@@ -202,6 +205,109 @@ class MessageService:
         return await self.message_repository.mark_read(
             message
         )
+
+    # ==========================================================
+    # EDIT MESSAGE
+    # ==========================================================
+
+    async def edit_message(
+        self,
+        current_user: User,
+        message_id: UUID,
+        ciphertext: str,
+        encrypted_key_sender: str,
+        encrypted_key_receiver: str,
+        nonce: str,
+    ) -> Message:
+
+        message = await self.get_message(
+            current_user,
+            message_id,
+        )
+
+        if message.sender_id != current_user.id:
+            raise ValueError(
+                "Only sender can edit message."
+            )
+
+        if message.deleted_for_everyone:
+            raise ValueError(
+                "Message has already been deleted."
+            )
+
+        return await self.message_repository.edit_payload(
+            message,
+            ciphertext,
+            encrypted_key_sender,
+            encrypted_key_receiver,
+            nonce,
+        )
+
+    # ==========================================================
+    # REACTIONS
+    # ==========================================================
+
+    async def toggle_reaction(
+        self,
+        current_user: User,
+        message_id: UUID,
+        emoji: str,
+    ) -> dict:
+        """
+        WhatsApp-style toggle:
+        - same emoji again  -> reaction removed
+        - different emoji   -> reaction replaced
+        - new emoji         -> reaction added
+        """
+
+        message = await self.get_message(
+            current_user,
+            message_id,
+        )
+
+        existing = await self.message_repository.get_reaction(
+            message_id,
+            current_user.id,
+        )
+
+        action = "add"
+        created_at = None
+
+        if existing is not None and existing.emoji == emoji:
+
+            await self.message_repository.remove_reaction(
+                existing
+            )
+
+            action = "remove"
+
+        else:
+
+            if existing is not None:
+
+                await self.message_repository.remove_reaction(
+                    existing
+                )
+
+            reaction = await self.message_repository.add_reaction(
+                message_id,
+                current_user.id,
+                emoji,
+            )
+
+            created_at = reaction.created_at
+
+        return {
+            "message_id": str(message.id),
+            "user_id": str(current_user.id),
+            "emoji": emoji,
+            "action": action,
+            "created_at": (
+                created_at.isoformat()
+                if created_at is not None
+                else None
+            ),
+        }
 
     # ==========================================================
     # DELETE

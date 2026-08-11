@@ -179,7 +179,7 @@ async def root():
         "status": "running",
         "docs": "/docs",
         "health": "/health",
-        "websocket": "/ws/{conversation_id}",
+        "websocket": "/ws/me",
     }
 
 # ==========================================================

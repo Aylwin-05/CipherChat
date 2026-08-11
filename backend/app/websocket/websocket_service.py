@@ -82,12 +82,32 @@ class WebSocketService:
     async def handle_event(
         self,
         websocket: WebSocket,
-        conversation_id: UUID,
         current_user: User,
         data: dict,
     ):
 
         event = data.get("event")
+
+        if event == "ping":
+
+            await self.handle_ping(websocket)
+
+            return
+
+        # The socket is user-scoped (/ws/me), so every real event
+        # must declare which conversation it targets AND the sender
+        # must be a participant of it.
+        conversation_id = UUID(
+            data.get("conversation_id", "")
+        )
+
+        if not await self.verify_access(
+            conversation_id,
+            current_user,
+        ):
+            raise ValueError(
+                "Access denied."
+            )
 
         handlers = {
 
@@ -116,12 +136,6 @@ class WebSocketService:
             raise ValueError(
                 f"Unknown websocket event '{event}'"
             )
-
-        if event == "ping":
-
-            await handler(websocket)
-
-            return
 
         await handler(
             conversation_id,
@@ -283,6 +297,25 @@ class WebSocketService:
 
         from datetime import datetime, timezone
 
+        # The edited content arrives already encrypted
+        # (Signal ratchet): the server only swaps the payload
+        # fields — the edited plaintext never touches it.
+        if data.get("ciphertext"):
+
+            message.ciphertext = data["ciphertext"]
+            message.encrypted_key_sender = data.get(
+                "encrypted_key_sender",
+                message.encrypted_key_sender,
+            )
+            message.encrypted_key_receiver = data.get(
+                "encrypted_key_receiver",
+                message.encrypted_key_receiver,
+            )
+            message.nonce = data.get(
+                "nonce",
+                message.nonce,
+            )
+
         message.edited = True
         message.updated_at = datetime.now(
             timezone.utc
@@ -297,7 +330,20 @@ class WebSocketService:
 
                 "message_id": str(message.id),
 
+                "sender_id": str(message.sender_id),
+
                 "edited": True,
+
+                "ciphertext": data.get(
+                    "ciphertext",
+                    message.ciphertext,
+                ),
+
+                "encrypted_key_sender": message.encrypted_key_sender,
+
+                "encrypted_key_receiver": message.encrypted_key_receiver,
+
+                "nonce": message.nonce,
 
                 "updated_at":
                     message.updated_at.isoformat(),
@@ -329,17 +375,21 @@ class WebSocketService:
                 "You can delete only your own messages."
             )
 
-        if message.deleted_for_everyone:
-            return
-
         from datetime import datetime, timezone
 
-        message.deleted_for_everyone = True
-        message.updated_at = datetime.now(
-            timezone.utc
-        )
+        # The REST 'delete for everyone' endpoint normally runs
+        # first and already sets the flag; this WS event is the
+        # real-time notification. Skip the write when it is
+        # already deleted, but ALWAYS broadcast so the other
+        # participant's UI updates without a reload.
+        if not message.deleted_for_everyone:
 
-        await self.message_repository.update()
+            message.deleted_for_everyone = True
+            message.updated_at = datetime.now(
+                timezone.utc
+            )
+
+            await self.message_repository.update()
 
         await manager.broadcast(
             conversation_id,
@@ -446,6 +496,7 @@ class WebSocketService:
             {
                 "event": "typing",
                 "user_id": str(current_user.id),
+                "conversation_id": str(conversation_id),
             },
         )
 
@@ -465,6 +516,7 @@ class WebSocketService:
             {
                 "event": "stop_typing",
                 "user_id": str(current_user.id),
+                "conversation_id": str(conversation_id),
             },
         )
 

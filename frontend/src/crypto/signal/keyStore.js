@@ -304,6 +304,7 @@ export class SignalKeyStore {
         conversationId,
         messageId,
         plaintext,
+        ciphertext = null,
     ) {
         const db = await this._db();
         await promisify(tx(db, STORE_PLAINTEXT_CACHE, "readwrite").put({
@@ -311,17 +312,28 @@ export class SignalKeyStore {
             conversationId,
             messageId,
             plaintext,
+            ciphertext,
         }));
+    }
+
+    async getCachedRecord(
+        conversationId,
+        messageId,
+    ) {
+        const db = await this._db();
+        return promisify(
+            tx(db, STORE_PLAINTEXT_CACHE, "readonly")
+                .get(`${conversationId}:${messageId}`),
+        );
     }
 
     async getPlaintext(
         conversationId,
         messageId,
     ) {
-        const db = await this._db();
-        const record = await promisify(
-            tx(db, STORE_PLAINTEXT_CACHE, "readonly")
-                .get(`${conversationId}:${messageId}`),
+        const record = await this.getCachedRecord(
+            conversationId,
+            messageId,
         );
         return record ? record.plaintext : null;
     }

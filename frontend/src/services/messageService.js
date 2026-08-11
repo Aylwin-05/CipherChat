@@ -28,6 +28,7 @@ const messageService = {
         conversationId,
         encrypted,
         replyToId = null,
+        isForwarded = false,
     ) {
 
         const response =
@@ -61,6 +62,72 @@ const messageService = {
                     reply_to_id:
                         replyToId,
 
+                    is_forwarded:
+                        isForwarded,
+
+                }
+
+            );
+
+        return response.data;
+
+    },
+
+    // ======================================================
+    // Edit Message (end-to-end encrypted)
+    //
+    // The edited plaintext is re-encrypted client-side; the
+    // server only stores the new ciphertext + wrapped keys.
+    // ======================================================
+
+    async editMessage(messageId, encrypted) {
+
+        const response =
+            await api.put(
+
+                `/messages/${messageId}/edit`,
+
+                {
+
+                    ciphertext:
+                        encrypted.ciphertext,
+
+                    encrypted_key_sender:
+                        encrypted.encrypted_key_sender ||
+                        "signal",
+
+                    encrypted_key_receiver:
+                        encrypted.encrypted_key_receiver ||
+                        "signal",
+
+                    nonce:
+                        encrypted.nonce ||
+                        "signal",
+
+                }
+
+            );
+
+        return response.data;
+
+    },
+
+    // ======================================================
+    // Toggle Emoji Reaction
+    //
+    // Same emoji again removes it; a different emoji replaces
+    // it (WhatsApp behaviour).
+    // ======================================================
+
+    async toggleReaction(messageId, emoji) {
+
+        const response =
+            await api.put(
+
+                `/messages/${messageId}/reaction`,
+
+                {
+                    emoji,
                 }
 
             );

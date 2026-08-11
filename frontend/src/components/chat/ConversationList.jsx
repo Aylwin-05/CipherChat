@@ -2,6 +2,8 @@ import "./ConversationList.css";
 
 import ConversationItem from "./ConversationItem";
 
+import { useChatSocket } from "../../context/ChatSocketContext";
+
 export default function ConversationList({
 
     conversations,
@@ -13,6 +15,10 @@ export default function ConversationList({
     onSelectConversation,
 
 }) {
+
+    const {
+        presence,
+    } = useChatSocket();
 
     if (loading) {
 
@@ -119,6 +125,14 @@ export default function ConversationList({
                                 key={conversation.id}
 
                                 conversation={conversation}
+
+                                online={
+                                    presence[
+                                        conversation.other_user?.id
+                                    ] ??
+                                    conversation.other_user?.online_status ===
+                                        "online"
+                                }
 
                                 selected={
                                     selectedConversation?.id ===

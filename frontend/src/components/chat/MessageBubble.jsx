@@ -3,7 +3,63 @@ import { useEffect, useRef, useState } from "react";
 import attachmentService from "../../services/attachmentService";
 import ImageLightbox from "./ImageLightbox";
 
-export default function MessageBubble({ message, onDelete }) {
+// ==========================================================
+// Quick-reaction emoji row (WhatsApp-style)
+// ==========================================================
+
+const REACTION_EMOJIS = [
+    "👍",
+    "❤️",
+    "😂",
+    "😮",
+    "😢",
+    "🙏",
+];
+
+// ==========================================================
+// Snippet used in the reply quote preview
+// ==========================================================
+
+function messageSnippet(message) {
+
+    if (!message) return "";
+
+    if (message.deleted_for_everyone) {
+        return "Message deleted";
+    }
+
+    if (message.content) {
+        return message.content;
+    }
+
+    if (message.attachments?.length) {
+        const attachment = message.attachments[0];
+        const kinds = {
+            image: "Photo",
+            voice: "Voice message",
+            audio: "Audio message",
+            video: "Video message",
+        };
+        return kinds[attachment.attachment_type] ||
+            attachment.original_name ||
+            "Attachment";
+    }
+
+    return "";
+
+}
+
+export default function MessageBubble({
+    message,
+    onDelete,
+    onReply,
+    onEdit,
+    onForward,
+    onToggleReaction,
+    repliedMessage,
+    repliedDisplayName = "",
+    groupInfo = {},
+}) {
 
     const { user } = useAuth();
 
@@ -190,19 +246,123 @@ export default function MessageBubble({ message, onDelete }) {
         ? "Message deleted"
         : message.content;
 
+    // --------------------------------------------------------
+    // What can this message do?
+    // --------------------------------------------------------
+
+    const isText =
+        Boolean(content) &&
+        content !== "[Unable to decrypt]" &&
+        !deleted;
+
+    const canEdit =
+        isMine && isText;
+
+    const canForward =
+        isText;
+
+    // --------------------------------------------------------
+    // Reactions: grouped chips with counts
+    // --------------------------------------------------------
+
+    const myReaction =
+        (message.reactions || []).find(
+            reaction =>
+                reaction.user_id ===
+                String(user?.id)
+        );
+
+    const reactionGroups =
+        Object.values(
+            (message.reactions || []).reduce(
+                (groups, reaction) => {
+
+                    if (!groups[reaction.emoji]) {
+
+                        groups[reaction.emoji] = {
+                            emoji: reaction.emoji,
+                            count: 0,
+                            mine: false,
+                        };
+
+                    }
+
+                    groups[reaction.emoji].count += 1;
+
+                    if (
+                        reaction.user_id ===
+                        String(user?.id)
+                    ) {
+
+                        groups[reaction.emoji].mine = true;
+
+                    }
+
+                    return groups;
+
+                },
+                {},
+            )
+        );
+
+    const repliedSenderName =
+        repliedDisplayName ||
+        (repliedMessage?.sender_id === user?.id
+            ? "You"
+            : "Unknown");
+
+    const messageRowClass = [
+        "message-row",
+        isMine ? "mine" : "other",
+        groupInfo.firstInGroup
+            ? "first-in-group"
+            : "",
+        groupInfo.lastInGroup
+            ? "last-in-group"
+            : "",
+    ].join(" ");
+
     return (
 
-        <div
-            className={`message-row ${isMine ? "mine" : "other"}`}
-        >
+        <div className={messageRowClass}>
 
             <div
                 className={[
                     "message-bubble",
                     isMine ? "mine" : "other",
                     deleted ? "deleted" : "",
+                    groupInfo.lastInGroup
+                        ? "tail"
+                        : "",
                 ].join(" ")}
             >
+
+                {/* SENDER NAME (grouped other chats) */}
+
+                {!isMine &&
+                    groupInfo.showName &&
+                    !deleted && (
+
+                        <span className="message-sender-name">
+
+                            {groupInfo.displayName ||
+                                "Unknown"}
+
+                        </span>
+
+                    )}
+
+                {/* FORWARDED LABEL */}
+
+                {message.is_forwarded && !deleted && (
+
+                    <span className="message-forwarded">
+
+                        Forwarded
+
+                    </span>
+
+                )}
 
                 {/* ACTIONS MENU */}
 
@@ -251,6 +411,106 @@ export default function MessageBubble({ message, onDelete }) {
                                 }
                             >
 
+                                {/* QUICK REACTIONS */}
+
+                                <div className="bubble-reactions-row">
+
+                                    {REACTION_EMOJIS.map(emoji => {
+
+                                        const active =
+                                            myReaction?.emoji ===
+                                            emoji;
+
+                                        return (
+
+                                            <button
+                                                key={emoji}
+                                                type="button"
+                                                className={[
+                                                    "bubble-reaction-btn",
+                                                    active
+                                                        ? "active"
+                                                        : "",
+                                                ].join(" ")}
+                                                aria-label={`React ${emoji}`}
+                                                onClick={() => {
+
+                                                    setMenuOpen(false);
+
+                                                    onToggleReaction?.(
+                                                        message.id,
+                                                        emoji,
+                                                    );
+
+                                                }}
+                                            >
+
+                                                {emoji}
+
+                                            </button>
+
+                                        );
+
+                                    })}
+
+                                </div>
+
+                                <button
+                                    type="button"
+                                    className="bubble-menu-item"
+                                    onClick={() => {
+
+                                        setMenuOpen(false);
+
+                                        onReply?.(message);
+
+                                    }}
+                                >
+
+                                    Reply
+
+                                </button>
+
+                                {canEdit && (
+
+                                    <button
+                                        type="button"
+                                        className="bubble-menu-item"
+                                        onClick={() => {
+
+                                            setMenuOpen(false);
+
+                                            onEdit?.(message);
+
+                                        }}
+                                    >
+
+                                        Edit
+
+                                    </button>
+
+                                )}
+
+                                {canForward && (
+
+                                    <button
+                                        type="button"
+                                        className="bubble-menu-item"
+                                        onClick={() => {
+
+                                            setMenuOpen(false);
+
+                                            onForward?.(message);
+
+                                        }}
+                                    >
+
+                                        Forward
+
+                                    </button>
+
+                                )}
+
                                 <button
                                     type="button"
                                     className="bubble-menu-item"
@@ -295,11 +555,53 @@ export default function MessageBubble({ message, onDelete }) {
 
                 )}
 
+                {/* REPLY PREVIEW */}
+
+                {message.reply_to_id &&
+                    repliedMessage &&
+                    !deleted && (
+
+                        <div className="message-reply-preview">
+
+                            <div className="message-reply-accent" />
+
+                            <div className="message-reply-body">
+
+                                <span className="message-reply-name">
+
+                                    {repliedSenderName}
+
+                                </span>
+
+                                <span className="message-reply-text">
+
+                                    {messageSnippet(
+                                        repliedMessage
+                                    )}
+
+                                </span>
+
+                            </div>
+
+                        </div>
+
+                    )}
+
                 {/* TEXT */}
 
-                {content && (
+                {content && !deleted && (
 
                     <div className="message-content">
+
+                        {content}
+
+                    </div>
+
+                )}
+
+                {content && deleted && (
+
+                    <div className="message-content deleted-content">
 
                         {content}
 
@@ -396,6 +698,64 @@ export default function MessageBubble({ message, onDelete }) {
                     }
 
                 })}
+
+                {/* REACTION CHIPS */}
+
+                {reactionGroups.length > 0 && !deleted && (
+
+                    <div className="message-reactions">
+
+                        {reactionGroups.map(group => (
+
+                            <button
+                                key={group.emoji}
+                                type="button"
+                                className={[
+                                    "reaction-chip",
+                                    group.mine ? "mine" : "",
+                                ].join(" ")}
+                                title={
+                                    group.mine
+                                        ? "Tap to remove"
+                                        : ""
+                                }
+                                onClick={() => {
+
+                                    if (group.mine) {
+
+                                        onToggleReaction?.(
+                                            message.id,
+                                            group.emoji,
+                                        );
+
+                                    }
+
+                                }}
+                            >
+
+                                <span className="reaction-chip-emoji">
+
+                                    {group.emoji}
+
+                                </span>
+
+                                {group.count > 1 && (
+
+                                    <span className="reaction-chip-count">
+
+                                        {group.count}
+
+                                    </span>
+
+                                )}
+
+                            </button>
+
+                        ))}
+
+                    </div>
+
+                )}
 
                 {/* FOOTER */}
 

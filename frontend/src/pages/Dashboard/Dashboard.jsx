@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import Sidebar from "../../components/layout/Sidebar";
 
@@ -10,79 +10,50 @@ import SettingsPage from "../Settings/SettingsPage";
 import conversationService from "../../services/conversationService";
 
 import { useAuth } from "../../context/AuthContext";
+import {
+    ChatSocketProvider,
+    useChatSocket,
+} from "../../context/ChatSocketContext";
 
 import "./Dashboard.css";
 
 export default function Dashboard() {
 
+    return (
+
+        <ChatSocketProvider>
+
+            <DashboardInner />
+
+        </ChatSocketProvider>
+
+    );
+
+}
+
+function DashboardInner() {
+
     const { user } = useAuth();
+
+    const {
+        conversations,
+        loading,
+        activeConversationId,
+        selectConversation,
+        refreshConversations,
+    } = useChatSocket();
 
     const [
         currentPage,
         setCurrentPage,
     ] = useState("chats");
 
-    const [
-        conversations,
-        setConversations,
-    ] = useState([]);
-
-    const [
-        loading,
-        setLoading,
-    ] = useState(true);
-
-    const [
-        selectedConversation,
-        setSelectedConversation,
-    ] = useState(null);
-
-    useEffect(() => {
-
-        loadConversations();
-
-    }, []);
-
-    async function loadConversations() {
-
-        try {
-
-            setLoading(true);
-
-            const data =
-                await conversationService.getConversations();
-
-            setConversations(data);
-
-            if (
-
-                data.length > 0 &&
-
-                !selectedConversation
-
-            ) {
-
-                setSelectedConversation(
-                    data[0]
-                );
-
-            }
-
-        }
-
-        catch (error) {
-
-            console.error(error);
-
-        }
-
-        finally {
-
-            setLoading(false);
-
-        }
-
-    }
+    const selectedConversation =
+        conversations.find(
+            conversation =>
+                conversation.id ===
+                activeConversationId
+        ) ?? null;
 
     //----------------------------------------------------------
     // Select conversation (clears its unread badge)
@@ -90,33 +61,7 @@ export default function Dashboard() {
 
     function handleSelectConversation(conversation) {
 
-        setSelectedConversation(conversation);
-
-        if (
-            conversation.unread_count > 0 ||
-            conversation.other_user
-        ) {
-
-            setConversations(previous =>
-
-                previous.map(item =>
-
-                    item.id === conversation.id
-
-                        ? {
-
-                            ...item,
-
-                            unread_count: 0,
-
-                        }
-                        : item
-
-                )
-
-            );
-
-        }
+        selectConversation(conversation.id);
 
     }
 
@@ -156,36 +101,15 @@ export default function Dashboard() {
             // Reload conversations
             //--------------------------------------------------
 
-            const updatedConversations =
-
-                await conversationService.getConversations();
-
-            setConversations(
-                updatedConversations
-            );
+            await refreshConversations();
 
             //--------------------------------------------------
             // Select opened conversation
             //--------------------------------------------------
 
-            const selected =
-
-                updatedConversations.find(
-
-                    conversation =>
-
-                        conversation.id ===
-                        openedConversation.id
-
-                );
-
-            if (selected) {
-
-                setSelectedConversation(
-                    selected
-                );
-
-            }
+            selectConversation(
+                openedConversation.id
+            );
 
             //--------------------------------------------------
             // Switch to Chats
@@ -284,14 +208,6 @@ export default function Dashboard() {
 
                                     conversation={
                                         selectedConversation
-                                    }
-
-                                    conversations={
-                                        conversations
-                                    }
-
-                                    setConversations={
-                                        setConversations
                                     }
 
                                 />

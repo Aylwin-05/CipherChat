@@ -16,8 +16,6 @@ class WebSocketService {
 
         this.lastAliveAt = null;
 
-        this.conversationId = null;
-
         this.token = null;
 
         // Reconnect policy: 1s, 2s, 4s ... capped at 30s
@@ -35,11 +33,8 @@ class WebSocketService {
     // ======================================================
 
     connect(
-        conversationId,
         token,
     ) {
-
-        this.conversationId = conversationId;
 
         this.token = token;
 
@@ -61,11 +56,11 @@ class WebSocketService {
             import.meta.env.VITE_WS_URL;
 
         const url = configured
-            ? `${configured}/ws/${this.conversationId}`
+            ? `${configured}/ws/me`
             : `${window.location.protocol === "https:"
                 ? "wss"
                 : "ws"
-            }://${window.location.host}/ws/${this.conversationId}`;
+            }://${window.location.host}/ws/me`;
 
         const socket =
             new WebSocket(
@@ -351,7 +346,7 @@ class WebSocketService {
     // TYPING
     // ======================================================
 
-    sendTyping() {
+    sendTyping(conversationId) {
 
         if (
             !this.socket ||
@@ -366,6 +361,8 @@ class WebSocketService {
 
                 event: "typing",
 
+                conversation_id: conversationId,
+
             })
 
         );
@@ -376,7 +373,7 @@ class WebSocketService {
     // STOP TYPING
     // ======================================================
 
-    stopTyping() {
+    stopTyping(conversationId) {
 
         if (
             !this.socket ||
@@ -391,6 +388,8 @@ class WebSocketService {
 
                 event: "stop_typing",
 
+                conversation_id: conversationId,
+
             })
 
         );
@@ -402,6 +401,7 @@ class WebSocketService {
     // ======================================================
 
     sendRead(
+        conversationId,
         messageId,
     ) {
 
@@ -418,6 +418,8 @@ class WebSocketService {
 
                 event: "read",
 
+                conversation_id: conversationId,
+
                 message_id: messageId,
 
             })
@@ -431,6 +433,7 @@ class WebSocketService {
     // ======================================================
 
     sendDelivered(
+        conversationId,
         messageId,
     ) {
 
@@ -447,6 +450,8 @@ class WebSocketService {
 
                 event: "delivered",
 
+                conversation_id: conversationId,
+
                 message_id: messageId,
 
             })
@@ -457,11 +462,17 @@ class WebSocketService {
 
     // ======================================================
     // EDIT
+    //
+    // The edited content arrives already encrypted (Signal
+    // ratchet); the server swaps the payload fields and the
+    // plaintext never touches it.
     // ======================================================
 
-    sendEdit(
+    sendEdit({
+        conversationId,
         messageId,
-    ) {
+        encrypted,
+    }) {
 
         if (
             !this.socket ||
@@ -476,7 +487,21 @@ class WebSocketService {
 
                 event: "edit",
 
+                conversation_id: conversationId,
+
                 message_id: messageId,
+
+                ciphertext:
+                    encrypted.ciphertext,
+
+                encrypted_key_sender:
+                    encrypted.encrypted_key_sender,
+
+                encrypted_key_receiver:
+                    encrypted.encrypted_key_receiver,
+
+                nonce:
+                    encrypted.nonce,
 
             })
 
@@ -489,6 +514,7 @@ class WebSocketService {
     // ======================================================
 
     sendDelete(
+        conversationId,
         messageId,
     ) {
 
@@ -504,6 +530,8 @@ class WebSocketService {
             JSON.stringify({
 
                 event: "delete",
+
+                conversation_id: conversationId,
 
                 message_id: messageId,
 
@@ -545,6 +573,14 @@ class WebSocketService {
     onMessage(listener) {
 
         this.listeners.push(listener);
+
+    }
+
+    removeListener(listener) {
+
+        this.listeners = this.listeners.filter(
+            existing => existing !== listener
+        );
 
     }
 

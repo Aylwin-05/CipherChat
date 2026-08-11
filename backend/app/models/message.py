@@ -174,6 +174,12 @@ class Message(Base):
         nullable=False,
     )
 
+    is_forwarded: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
     delivered_at: Mapped[DateTime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,

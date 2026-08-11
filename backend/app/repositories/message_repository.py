@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from app.models.message import Message
+from app.models.message_reaction import MessageReaction
 from app.repositories.base_repository import BaseRepository
 
 
@@ -47,7 +48,8 @@ class MessageRepository(BaseRepository):
 
             select(Message)
             .options(
-                selectinload(Message.attachments)
+                selectinload(Message.attachments),
+                selectinload(Message.reactions),
             )
             .where(
                 Message.id == message_id
@@ -71,7 +73,8 @@ class MessageRepository(BaseRepository):
 
             select(Message)
             .options(
-                selectinload(Message.attachments)
+                selectinload(Message.attachments),
+                selectinload(Message.reactions),
             )
             .where(
                 Message.conversation_id == conversation_id
@@ -110,7 +113,8 @@ class MessageRepository(BaseRepository):
 
             select(Message)
             .options(
-                selectinload(Message.attachments)
+                selectinload(Message.attachments),
+                selectinload(Message.reactions),
             )
             .where(
                 Message.conversation_id == conversation_id
@@ -249,6 +253,109 @@ class MessageRepository(BaseRepository):
         )
 
         return result.scalar_one_or_none()
+
+    # ==========================================================
+    # EDIT
+    # ==========================================================
+
+    async def reload_with_relations(
+        self,
+        message_id: UUID,
+    ) -> Message | None:
+        """
+        Re-fetch a message with all relationships eagerly loaded,
+        overwriting the identity-map version (populate_existing).
+
+        Useful after a commit that expired attributes: a partial
+        refresh leaves the remaining columns expired, and async
+        sessions cannot lazy-load them.
+        """
+
+        result = await self.execute(
+
+            select(Message)
+            .options(
+                selectinload(Message.attachments),
+                selectinload(Message.reactions),
+            )
+            .where(
+                Message.id == message_id
+            )
+            .execution_options(
+                populate_existing=True
+            )
+
+        )
+
+        return result.scalar_one_or_none()
+
+    async def edit_payload(
+        self,
+        message: Message,
+        ciphertext: str,
+        encrypted_key_sender: str,
+        encrypted_key_receiver: str,
+        nonce: str,
+    ) -> Message:
+        """
+        Replace the encrypted payload of an edited message.
+
+        The server only swaps ciphertext + wrapped keys; the
+        edited plaintext never reaches the backend.
+        """
+
+        message.ciphertext = ciphertext
+        message.encrypted_key_sender = encrypted_key_sender
+        message.encrypted_key_receiver = encrypted_key_receiver
+        message.nonce = nonce
+        message.edited = True
+
+        await self.update()
+
+        return message
+
+    # ==========================================================
+    # REACTIONS
+    # ==========================================================
+
+    async def get_reaction(
+        self,
+        message_id: UUID,
+        user_id: UUID,
+    ) -> MessageReaction | None:
+
+        result = await self.execute(
+
+            select(MessageReaction).where(
+                MessageReaction.message_id == message_id,
+                MessageReaction.user_id == user_id,
+            )
+
+        )
+
+        return result.scalar_one_or_none()
+
+    async def add_reaction(
+        self,
+        message_id: UUID,
+        user_id: UUID,
+        emoji: str,
+    ) -> MessageReaction:
+
+        reaction = MessageReaction(
+            message_id=message_id,
+            user_id=user_id,
+            emoji=emoji,
+        )
+
+        return await self.create(reaction)
+
+    async def remove_reaction(
+        self,
+        reaction: MessageReaction,
+    ):
+
+        await self.delete(reaction)
 
     # ==========================================================
     # SAVE

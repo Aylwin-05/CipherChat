@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from uuid import UUID
 
@@ -15,21 +16,17 @@ logger = logging.getLogger("app.websocket.ws")
 router = APIRouter()
 
 
-@router.websocket("/ws/{conversation_id}")
+@router.websocket("/ws/me")
 async def websocket_endpoint(
     websocket: WebSocket,
-    conversation_id: UUID,
 ):
     """
-    Production WebSocket Endpoint.
+    User-scoped WebSocket Endpoint.
 
-    Responsibilities:
-    - Authenticate user
-    - Load user
-    - Verify conversation access
-    - Connect socket
-    - Broadcast presence
-    - Delegate events
+    One socket per user receives events for ALL of the user's
+    conversations (messages, typing, receipts, edits, deletes,
+    reactions, attachments, presence), so every part of the UI -
+    including the sidebar - updates in real time.
     """
 
     # ==========================================================
@@ -68,19 +65,6 @@ async def websocket_endpoint(
         websocket_service = WebSocketService(db)
 
         # ======================================================
-        # Verify Conversation Access
-        # ======================================================
-
-        allowed = await websocket_service.verify_access(
-            conversation_id,
-            current_user,
-        )
-
-        if not allowed:
-            await websocket.close(code=1008)
-            return
-
-        # ======================================================
         # Accept Handshake (echo validated subprotocol)
         # ======================================================
 
@@ -90,35 +74,44 @@ async def websocket_endpoint(
         # Connect
         # ======================================================
 
-        await manager.connect(
-            conversation_id,
+        await manager.connect_user(
             current_user.id,
             websocket,
+        )
+
+        # Resolve this user's conversation peers NOW, on this
+        # session (no open transaction yet). Everything below -
+        # including the disconnect broadcast - then uses the
+        # cached membership instead of opening a second database
+        # connection that could stall behind this long-lived
+        # session's open transaction.
+        await manager.cache_user_members(
+            current_user.id,
+            db,
         )
 
         # Notify current client
         await websocket.send_json(
             {
                 "event": "connected",
-                "conversation_id": str(conversation_id),
                 "user_id": str(current_user.id),
             }
         )
 
-        # Notify everyone in this conversation
-        await manager.broadcast(
-            conversation_id,
-            {
-                "event": "presence",
-                "user_id": str(current_user.id),
-                "online": True,
-            },
+        # Notify everyone sharing a conversation with this user
+        await manager.broadcast_presence(
+            current_user.id,
+            True,
+        )
+
+        # Tell this client who of their peers is already online
+        await manager.send_presence_snapshot(
+            current_user.id,
         )
 
         logger.info(
-            "WS connected: user=%s conversation=%s",
+            "WS connected: user=%s",
             current_user.email,
-            conversation_id,
         )
 
         # ======================================================
@@ -133,20 +126,32 @@ async def websocket_endpoint(
 
                 await websocket_service.handle_event(
                     websocket=websocket,
-                    conversation_id=conversation_id,
                     current_user=current_user,
                     data=data,
                 )
 
+                # The websocket session is otherwise held open for
+                # the whole connection lifetime: any handler write
+                # (read/delivered receipts, edit, delete) would stay
+                # in an open transaction and keep its PostgreSQL row
+                # locks until the socket closes - blocking REST
+                # updates on the same message (e.g. edit) forever.
+                # Commit after every event to release them promptly.
+                await db.commit()
+
         except WebSocketDisconnect:
 
             logger.info(
-                "WS disconnected: user=%s conversation=%s",
+                "WS disconnected: user=%s",
                 current_user.email,
-                conversation_id,
             )
 
         except ValueError as e:
+
+            try:
+                await db.rollback()
+            except Exception:
+                pass
 
             await websocket.send_json(
                 {
@@ -164,6 +169,11 @@ async def websocket_endpoint(
             )
 
             try:
+                await db.rollback()
+            except Exception:
+                pass
+
+            try:
 
                 await websocket.send_json(
                     {
@@ -177,18 +187,27 @@ async def websocket_endpoint(
 
         finally:
 
-            manager.disconnect(
-                conversation_id,
+            manager.disconnect_user(
                 current_user.id,
                 websocket,
             )
 
-            # Notify everyone user went offline
-            await manager.broadcast(
-                conversation_id,
-                {
-                    "event": "presence",
-                    "user_id": str(current_user.id),
-                    "online": False,
-                },
-            )
+            # The TestClient cancels the websocket task immediately
+            # after the client sends its close frame, right as this
+            # finally block runs: an unguarded await would be
+            # cancelled before the offline event reached a single
+            # peer. Shield the broadcast - it is in-memory now
+            # (cached membership), so it completes either way - and
+            # swallow the teardown CancelledError.
+            try:
+
+                await asyncio.shield(
+                    manager.broadcast_presence(
+                        current_user.id,
+                        False,
+                    )
+                )
+
+            except asyncio.CancelledError:
+
+                pass
