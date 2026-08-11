@@ -24,6 +24,8 @@ ENCRYPTED_DIR = BASE_UPLOAD_DIR / "encrypted"
 
 THUMBNAIL_DIR = BASE_UPLOAD_DIR / "thumbnails"
 
+AVATAR_DIR = BASE_UPLOAD_DIR / "avatars"
+
 
 # ==========================================================
 # Maximum File Sizes
@@ -40,6 +42,8 @@ MAX_DOCUMENT_SIZE = 100 * 1024 * 1024
 MAX_ARCHIVE_SIZE = 200 * 1024 * 1024
 
 MAX_ENCRYPTED_SIZE = 500 * 1024 * 1024
+
+MAX_AVATAR_SIZE = 5 * 1024 * 1024
 
 
 # ==========================================================
@@ -98,6 +102,15 @@ ENCRYPTED_EXTENSIONS = {
     ".bin",
 }
 
+AVATAR_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".bmp",
+    ".webp",
+}
+
 
 # ==========================================================
 # Create folders automatically
@@ -122,6 +135,8 @@ for directory in [
     ENCRYPTED_DIR,
 
     THUMBNAIL_DIR,
+
+    AVATAR_DIR,
 
 ]:
     directory.mkdir(

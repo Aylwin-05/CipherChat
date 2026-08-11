@@ -282,12 +282,22 @@ export function AuthProvider({ children }) {
     };
 
     // ==========================================================
+    // Update Current User (used by Settings after profile edits)
+    // ==========================================================
+
+    const updateUser = (updatedUser) => {
+
+        authService.saveUser(updatedUser);
+
+        setUser(updatedUser);
+
+    };
+
+    // ==========================================================
     // Logout
     // ==========================================================
 
-    const logout = () => {
-
-        // Wipe the local Signal key store (and best-effort
+    const logout = () => {        // Wipe the local Signal key store (and best-effort
         // remove the device from the server). Fire-and-forget:
         // logout must not block on the network.
 
@@ -316,6 +326,7 @@ export function AuthProvider({ children }) {
                 accessToken,
                 login,
                 logout,
+                updateUser,
                 isAuthenticated: !!user,
             }}
         >

@@ -40,6 +40,13 @@ class UserResponse(BaseModel):
 
 class UpdateProfileRequest(BaseModel):
 
+    username: Optional[str] = Field(
+        default=None,
+        min_length=3,
+        max_length=30,
+        pattern=r"^[a-zA-Z0-9_.-]+$",
+    )
+
     display_name: Optional[str] = Field(
         default=None,
         min_length=2,

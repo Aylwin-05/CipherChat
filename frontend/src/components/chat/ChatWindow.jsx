@@ -3,7 +3,7 @@ import useMessages from "../../hooks/useMessages";
 import ChatInput from "./ChatInput";
 import MessageList from "./MessageList";
 
-import { avatarGradient, initials } from "../../utils/avatar";
+import UserAvatar from "../UserAvatar";
 
 import "./Chat.css";
 
@@ -153,26 +153,16 @@ export default function ChatWindow({
 
                 <div className="chat-identity">
 
-                    <div
+                    <UserAvatar
+                        user={otherUser}
                         className="chat-avatar"
-                        style={{
-                            background: avatarGradient(
-                                otherUser.display_name
-                            ),
-                        }}
                     >
-
-                        {initials(
-                            otherUser.display_name
-                        )}
-
                         <span
                             className={`chat-presence ${
                                 liveOnline ? "online" : ""
                             }`}
                         />
-
-                    </div>
+                    </UserAvatar>
 
                     <div className="chat-heading">
 
@@ -244,6 +234,7 @@ export default function ChatWindow({
                 messages={messages}
                 loading={loading}
                 onDelete={deleteMessage}
+                conversationId={conversation.id}
             />
 
             {errorMessage ? (

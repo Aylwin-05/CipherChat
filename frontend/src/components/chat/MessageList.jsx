@@ -1,22 +1,161 @@
-import { useEffect, useRef } from "react";
+import {
+    useEffect,
+    useRef,
+} from "react";
 
 import MessageBubble from "./MessageBubble";
+
+import { useAuth } from "../../context/AuthContext";
+
+const PIN_THRESHOLD = 80;
 
 export default function MessageList({
     messages,
     loading,
     onDelete,
+    conversationId,
 }) {
 
-    const bottomRef = useRef(null);
+    const { user } = useAuth();
+
+    const containerRef = useRef(null);
+
+    const contentRef = useRef(null);
+
+    const pinnedRef = useRef(true);
+
+    const prevConversationRef = useRef(null);
+
+    // ==========================================================
+    // Chronological order: oldest at the top, newest at the
+    // bottom (WhatsApp layout). Scrolling up reads history.
+    // ==========================================================
+
+    // ==========================================================
+    // A new conversation (or the first one) starts pinned to
+    // the bottom so the latest message is always visible.
+    // ==========================================================
 
     useEffect(() => {
 
-        bottomRef.current?.scrollIntoView({
-            behavior: "smooth",
+        if (conversationId !== prevConversationRef.current) {
+
+            prevConversationRef.current = conversationId;
+
+            pinnedRef.current = true;
+
+        }
+
+    }, [conversationId]);
+
+    // ==========================================================
+    // Keep track of whether the user is reading at the newest
+    // end (bottom). Scrolling up unpins; returning to the
+    // bottom re-pins.
+    // ==========================================================
+
+    function handleScroll() {
+
+        const container = containerRef.current;
+
+        if (!container) return;
+
+        const distanceFromBottom =
+            container.scrollHeight -
+            container.scrollTop -
+            container.clientHeight;
+
+        pinnedRef.current =
+            distanceFromBottom < PIN_THRESHOLD;
+
+    }
+
+    // ==========================================================
+    // After the message list changes — or when it finishes
+    // loading (the list only appears once `loading` flips to
+    // false, and that flip can land in a different render than
+    // the messages update) — jump to the newest message if we
+    // are pinned there, or if we just sent a message. When the
+    // user is reading history, do NOT yank them away.
+    // ==========================================================
+
+    useEffect(() => {
+
+        if (loading) return;
+
+        const container = containerRef.current;
+
+        if (!container) return;
+
+        const lastMessage =
+            messages[messages.length - 1];
+
+        const isOwn =
+            lastMessage &&
+            lastMessage.sender_id === user?.id;
+
+        if (pinnedRef.current || isOwn) {
+
+            container.scrollTop =
+                container.scrollHeight;
+
+            // A second pass after layout settles (fonts,
+            // async content) so the newest message is
+            // actually on screen when opening a chat.
+            requestAnimationFrame(() => {
+
+                if (
+                    container &&
+                    pinnedRef.current
+                ) {
+
+                    container.scrollTop =
+                        container.scrollHeight;
+
+                }
+
+            });
+
+        }
+
+    }, [messages, loading, conversationId, user?.id]);
+
+    // ==========================================================
+    // Content size changes (images finishing loading, voice
+    // notes, etc.) shift the layout. Stay glued to the newest
+    // message as long as the user is pinned at the bottom.
+    //
+    // Re-attached whenever the list is (re)mounted, because
+    // the skeleton replaces the list while loading and the
+    // content node is recreated each time.
+    // ==========================================================
+
+    useEffect(() => {
+
+        if (loading) return;
+
+        const container = containerRef.current;
+
+        const content = contentRef.current;
+
+        if (!container || !content) return;
+
+        const observer = new ResizeObserver(() => {
+
+            if (pinnedRef.current) {
+
+                container.scrollTop =
+                    container.scrollHeight;
+
+            }
+
         });
 
-    }, [messages]);
+        observer.observe(content);
+
+        return () => observer.disconnect();
+
+    }, [loading, conversationId]);
 
     if (loading) {
 
@@ -93,23 +232,29 @@ export default function MessageList({
 
     return (
 
-        <div className="message-list">
+        <div
+            className="message-list"
+            ref={containerRef}
+            onScroll={handleScroll}
+        >
 
-            {
+            <div className="message-list-inner" ref={contentRef}>
 
-                messages.map((message) => (
+                {
 
-                    <MessageBubble
-                        key={message.id}
-                        message={message}
-                        onDelete={onDelete}
-                    />
+                    messages.map((message) => (
 
-                ))
+                        <MessageBubble
+                            key={message.id}
+                            message={message}
+                            onDelete={onDelete}
+                        />
 
-            }
+                    ))
 
-            <div ref={bottomRef} />
+                }
+
+            </div>
 
         </div>
 

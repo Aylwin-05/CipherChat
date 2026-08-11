@@ -5,6 +5,7 @@ import Sidebar from "../../components/layout/Sidebar";
 import ConversationList from "../../components/chat/ConversationList";
 import ChatWindow from "../../components/chat/ChatWindow";
 import FriendsPage from "../../components/friends/FriendsPage";
+import SettingsPage from "../Settings/SettingsPage";
 
 import conversationService from "../../services/conversationService";
 
@@ -237,7 +238,19 @@ export default function Dashboard() {
 
                     )
 
-                    : (
+                    : currentPage === "settings"
+
+                        ? (
+
+                            <div className="app-stage settings-stage">
+
+                                <SettingsPage />
+
+                            </div>
+
+                        )
+
+                        : (
 
                         <div className="app-stage">
 

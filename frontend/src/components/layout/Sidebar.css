@@ -10,11 +10,7 @@
     align-items: center;
     gap: 22px;
     padding: 18px 0 16px;
-    background: linear-gradient(
-        180deg,
-        rgba(15, 20, 42, 0.92),
-        rgba(8, 11, 25, 0.96)
-    );
+    background: var(--rail-bg);
     border-right: 1px solid var(--border);
 }
 
@@ -107,7 +103,7 @@
     font-size: 15px;
     box-shadow:
         0 4px 16px rgba(0, 0, 0, 0.35),
-        inset 0 0 0 2px rgba(255, 255, 255, 0.18);
+        inset 0 0 0 2px var(--avatar-ring);
 }
 
 .rail-avatar-skeleton {

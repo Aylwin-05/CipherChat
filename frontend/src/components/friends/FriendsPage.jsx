@@ -4,6 +4,8 @@ import useFriends from "../../hooks/useFriends";
 
 import { avatarGradient, initials } from "../../utils/avatar";
 
+import UserAvatar from "../UserAvatar";
+
 import "./FriendsPage.css";
 
 function SearchIcon() {
@@ -513,23 +515,13 @@ export default function FriendsPage({
 
                                     >
 
-                                        <div
+                                        <UserAvatar
+
+                                            user={otherUser}
 
                                             className="f-avatar"
 
-                                            style={{
-                                                background: avatarGradient(
-                                                    otherUser?.display_name
-                                                ),
-                                            }}
-
-                                        >
-
-                                            {initials(
-                                                otherUser?.display_name ?? "?"
-                                            )}
-
-                                        </div>
+                                        />
 
                                         <div className="f-meta">
 

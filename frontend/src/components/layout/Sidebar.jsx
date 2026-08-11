@@ -1,5 +1,5 @@
 import useUser from "../../hooks/useUser";
-import { avatarGradient, initials } from "../../utils/avatar";
+import UserAvatar from "../UserAvatar";
 
 import "./Sidebar.css";
 
@@ -175,20 +175,10 @@ export default function Sidebar({
 
                 ) : (
 
-                    <div
+                    <UserAvatar
+                        user={user}
                         className="rail-avatar"
-                        style={{
-                            background: avatarGradient(
-                                user?.display_name ?? user?.email
-                            ),
-                        }}
-                    >
-
-                        {initials(
-                            user?.display_name ?? "U"
-                        )}
-
-                    </div>
+                    />
 
                 )}
 

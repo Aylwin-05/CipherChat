@@ -88,11 +88,7 @@
     align-items: center;
     gap: 6px;
     padding: 44px 38px 36px;
-    background: linear-gradient(
-        165deg,
-        rgba(28, 36, 66, 0.72),
-        rgba(13, 18, 38, 0.85)
-    );
+    background: var(--card-bg);
     border: 1px solid var(--border-strong);
     border-radius: 26px;
     backdrop-filter: blur(22px);
@@ -170,7 +166,7 @@
     padding: 9px 18px;
     border-radius: var(--radius-pill);
     background: var(--accent-soft);
-    border: 1px solid rgba(124, 92, 255, 0.35);
+    border: 1px solid var(--accent-border);
     color: var(--accent-2);
     font-weight: 600;
     font-size: 13.5px;

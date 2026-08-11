@@ -1,4 +1,4 @@
-import { avatarGradient, initials } from "../../utils/avatar";
+import UserAvatar from "../UserAvatar";
 
 import "./ConversationList.css";
 
@@ -40,22 +40,12 @@ export default function ConversationItem({
 
             <div className="conv-avatar">
 
-                <div
+                <UserAvatar
+                    user={user}
                     className="conv-avatar-badge"
-                    style={{
-                        background: avatarGradient(
-                            user?.display_name
-                        ),
-                    }}
                 >
-
-                    {initials(
-                        user?.display_name ?? "?"
-                    )}
-
-                </div>
-
-                <span className="presence-dot" />
+                    <span className="presence-dot" />
+                </UserAvatar>
 
             </div>
 

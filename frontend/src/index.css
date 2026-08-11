@@ -1,9 +1,9 @@
 /* ==========================================================
    CipherChat — global design system ("Nebula")
 
-   Dark glassmorphism theme: deep-space navy base, violet ->
-   cyan accents, aurora glows. Shared tokens, base elements,
-   animations and utility classes live here.
+   Themes: "blue" (default, below), "dark" and "light" are
+   applied by setting data-theme on <html>:
+     document.documentElement.setAttribute("data-theme", "dark")
    ========================================================== */
 
 :root {
@@ -43,10 +43,233 @@
     --shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
     --shadow-glow: 0 0 24px rgba(124, 92, 255, 0.35);
 
+    /* ---------- themed surfaces ---------- */
+
+    --panel-bg: linear-gradient(
+        175deg,
+        rgba(16, 21, 44, 0.82),
+        rgba(11, 15, 33, 0.9)
+    );
+    --panel-bg-2: linear-gradient(
+        175deg,
+        rgba(14, 18, 38, 0.85),
+        rgba(9, 13, 28, 0.92)
+    );
+    --rail-bg: linear-gradient(
+        180deg,
+        rgba(15, 20, 42, 0.92),
+        rgba(8, 11, 25, 0.96)
+    );
+    --header-bg: rgba(10, 14, 30, 0.4);
+    --card-bg: linear-gradient(
+        160deg,
+        rgba(30, 38, 70, 0.9),
+        rgba(14, 19, 40, 0.95)
+    );
+    --overlay: rgba(4, 7, 18, 0.72);
+    --input-bg: rgba(255, 255, 255, 0.055);
+    --input-bar-bg: rgba(255, 255, 255, 0.05);
+    --bubble-other: rgba(255, 255, 255, 0.06);
+    --attachment-bg: rgba(255, 255, 255, 0.08);
+    --attachment-bg-hover: rgba(255, 255, 255, 0.14);
+    --ring: #0d1230;
+    --avatar-ring: rgba(255, 255, 255, 0.16);
+    --scroll-thumb: rgba(255, 255, 255, 0.14);
+    --scroll-thumb-hover: rgba(255, 255, 255, 0.24);
+    --skeleton-grad: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0.05) 25%,
+        rgba(255, 255, 255, 0.12) 50%,
+        rgba(255, 255, 255, 0.05) 75%
+    );
+    --msg-deco: radial-gradient(
+            700px 400px at 80% 0%,
+            rgba(124, 92, 255, 0.05),
+            transparent 60%
+        ),
+        radial-gradient(
+            700px 400px at 10% 100%,
+            rgba(34, 211, 238, 0.04),
+            transparent 60%
+        );
+    --accent-border: rgba(124, 92, 255, 0.35);
+    --accent-focus: rgba(124, 92, 255, 0.65);
+    --accent-focus-ring: rgba(124, 92, 255, 0.14);
+    --danger-soft-bg: rgba(251, 113, 133, 0.12);
+    --danger-soft-border: rgba(251, 113, 133, 0.32);
+    --danger-hover: rgba(251, 113, 133, 0.24);
+
     --font-body: "Inter", system-ui, -apple-system, sans-serif;
     --font-display: "Outfit", "Inter", system-ui, sans-serif;
 
     --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ==========================================================
+   Theme: dark (neutral, non-navy)
+   ========================================================== */
+
+[data-theme="dark"] {
+    --bg-0: #050607;
+    --bg-1: #0b0d10;
+    --bg-2: #14171c;
+    --surface: rgba(255, 255, 255, 0.05);
+    --surface-2: rgba(255, 255, 255, 0.08);
+    --surface-3: rgba(255, 255, 255, 0.12);
+    --border: rgba(255, 255, 255, 0.09);
+    --border-strong: rgba(255, 255, 255, 0.16);
+
+    --text-1: #f1f2f4;
+    --text-2: #a4a8b0;
+    --text-3: #6b7078;
+
+    --accent-soft: rgba(124, 92, 255, 0.16);
+    --shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+
+    --panel-bg: linear-gradient(
+        175deg,
+        rgba(19, 21, 26, 0.85),
+        rgba(11, 13, 17, 0.95)
+    );
+    --panel-bg-2: linear-gradient(
+        175deg,
+        rgba(16, 18, 23, 0.9),
+        rgba(9, 11, 14, 0.96)
+    );
+    --rail-bg: linear-gradient(
+        180deg,
+        rgba(17, 19, 23, 0.94),
+        rgba(7, 8, 10, 0.98)
+    );
+    --header-bg: rgba(12, 14, 17, 0.5);
+    --card-bg: linear-gradient(
+        160deg,
+        rgba(28, 31, 38, 0.92),
+        rgba(12, 14, 18, 0.96)
+    );
+    --overlay: rgba(2, 3, 5, 0.75);
+    --input-bg: rgba(255, 255, 255, 0.055);
+    --input-bar-bg: rgba(255, 255, 255, 0.05);
+    --bubble-other: rgba(255, 255, 255, 0.06);
+    --attachment-bg: rgba(255, 255, 255, 0.08);
+    --attachment-bg-hover: rgba(255, 255, 255, 0.14);
+    --ring: #0a0b0d;
+    --avatar-ring: rgba(255, 255, 255, 0.18);
+    --scroll-thumb: rgba(255, 255, 255, 0.13);
+    --scroll-thumb-hover: rgba(255, 255, 255, 0.24);
+    --skeleton-grad: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0.05) 25%,
+        rgba(255, 255, 255, 0.11) 50%,
+        rgba(255, 255, 255, 0.05) 75%
+    );
+    --msg-deco: radial-gradient(
+            700px 400px at 80% 0%,
+            rgba(124, 92, 255, 0.05),
+            transparent 60%
+        ),
+        radial-gradient(
+            700px 400px at 10% 100%,
+            rgba(34, 211, 238, 0.04),
+            transparent 60%
+        );
+    --accent-border: rgba(124, 92, 255, 0.4);
+    --accent-focus: rgba(124, 92, 255, 0.7);
+    --accent-focus-ring: rgba(124, 92, 255, 0.16);
+    --danger-soft-bg: rgba(251, 113, 133, 0.12);
+    --danger-soft-border: rgba(251, 113, 133, 0.32);
+    --danger-hover: rgba(251, 113, 133, 0.24);
+}
+
+/* ==========================================================
+   Theme: light
+   ========================================================== */
+
+[data-theme="light"] {
+    --bg-0: #eef1f6;
+    --bg-1: #ffffff;
+    --bg-2: #e7ebf2;
+    --surface: rgba(17, 24, 39, 0.045);
+    --surface-2: rgba(17, 24, 39, 0.07);
+    --surface-3: rgba(17, 24, 39, 0.11);
+    --border: rgba(17, 24, 39, 0.1);
+    --border-strong: rgba(17, 24, 39, 0.18);
+
+    --text-1: #101828;
+    --text-2: #475467;
+    --text-3: #98a2b3;
+
+    --accent: #5b3df5;
+    --accent-2: #0e7fb4;
+    --accent-soft: rgba(91, 61, 245, 0.12);
+    --grad: linear-gradient(135deg, #6d4aff 0%, #0ea5e9 100%);
+    --grad-soft: linear-gradient(
+        135deg,
+        rgba(109, 74, 255, 0.25),
+        rgba(14, 165, 233, 0.25)
+    );
+
+    --success: #059669;
+    --danger: #e11d48;
+    --warning: #d97706;
+
+    --shadow-sm: 0 2px 8px rgba(16, 24, 40, 0.08);
+    --shadow: 0 14px 44px rgba(16, 24, 40, 0.16);
+    --shadow-glow: 0 0 24px rgba(109, 74, 255, 0.25);
+
+    --panel-bg: linear-gradient(
+        175deg,
+        rgba(255, 255, 255, 0.96),
+        rgba(247, 249, 252, 0.98)
+    );
+    --panel-bg-2: linear-gradient(
+        175deg,
+        rgba(255, 255, 255, 0.98),
+        rgba(244, 247, 251, 1)
+    );
+    --rail-bg: linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.98),
+        rgba(242, 245, 250, 0.99)
+    );
+    --header-bg: rgba(255, 255, 255, 0.7);
+    --card-bg: linear-gradient(
+        160deg,
+        rgba(255, 255, 255, 0.98),
+        rgba(246, 248, 252, 1)
+    );
+    --overlay: rgba(15, 23, 42, 0.45);
+    --input-bg: rgba(17, 24, 39, 0.05);
+    --input-bar-bg: rgba(17, 24, 39, 0.045);
+    --bubble-other: rgba(17, 24, 39, 0.06);
+    --attachment-bg: rgba(17, 24, 39, 0.06);
+    --attachment-bg-hover: rgba(17, 24, 39, 0.1);
+    --ring: #ffffff;
+    --avatar-ring: rgba(255, 255, 255, 0.9);
+    --scroll-thumb: rgba(17, 24, 39, 0.18);
+    --scroll-thumb-hover: rgba(17, 24, 39, 0.3);
+    --skeleton-grad: linear-gradient(
+        90deg,
+        rgba(17, 24, 39, 0.06) 25%,
+        rgba(17, 24, 39, 0.12) 50%,
+        rgba(17, 24, 39, 0.06) 75%
+    );
+    --msg-deco: radial-gradient(
+            700px 400px at 80% 0%,
+            rgba(109, 74, 255, 0.07),
+            transparent 60%
+        ),
+        radial-gradient(
+            700px 400px at 10% 100%,
+            rgba(14, 165, 233, 0.05),
+            transparent 60%
+        );
+    --accent-border: rgba(91, 61, 245, 0.35);
+    --accent-focus: rgba(91, 61, 245, 0.6);
+    --accent-focus-ring: rgba(91, 61, 245, 0.13);
+    --danger-soft-bg: rgba(225, 29, 72, 0.08);
+    --danger-soft-border: rgba(225, 29, 72, 0.3);
+    --danger-hover: rgba(225, 29, 72, 0.14);
 }
 
 * {
@@ -91,7 +314,7 @@ input {
 
 * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+    scrollbar-color: var(--scroll-thumb) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -104,12 +327,12 @@ input {
 }
 
 *::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.14);
+    background: var(--scroll-thumb);
     border-radius: 8px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.24);
+    background: var(--scroll-thumb-hover);
 }
 
 /* ---------- shared primitives ---------- */
@@ -118,6 +341,16 @@ input {
     background: var(--surface);
     border: 1px solid var(--border);
     backdrop-filter: blur(18px);
+}
+
+/* avatar image (used by UserAvatar inside avatar containers) */
+
+.avatar-img {
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    object-fit: cover;
+    display: block;
 }
 
 .shield-mark {
@@ -174,12 +407,7 @@ input {
 }
 
 .skeleton {
-    background: linear-gradient(
-        90deg,
-        rgba(255, 255, 255, 0.05) 25%,
-        rgba(255, 255, 255, 0.12) 50%,
-        rgba(255, 255, 255, 0.05) 75%
-    );
+    background: var(--skeleton-grad);
     background-size: 800px 100%;
     animation: shimmer 1.4s infinite linear;
     border-radius: var(--radius-sm);
@@ -240,7 +468,7 @@ input {
     z-index: 100;
     display: grid;
     place-items: center;
-    background: rgba(4, 7, 18, 0.72);
+    background: var(--overlay);
     backdrop-filter: blur(8px);
     animation: fadeIn 0.18s ease;
     padding: 20px;
@@ -249,11 +477,7 @@ input {
 .modal-card {
     width: 100%;
     max-width: 400px;
-    background: linear-gradient(
-        160deg,
-        rgba(30, 38, 70, 0.9),
-        rgba(14, 19, 40, 0.95)
-    );
+    background: var(--card-bg);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow);
@@ -363,7 +587,7 @@ input {
     width: 100%;
     padding: 14px 16px 14px 46px;
     border-radius: var(--radius);
-    background: rgba(255, 255, 255, 0.055);
+    background: var(--input-bg);
     border: 1px solid var(--border);
     font-size: 15px;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -374,16 +598,16 @@ input {
 }
 
 .field input:focus {
-    border-color: rgba(124, 92, 255, 0.65);
-    box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.14);
+    border-color: var(--accent-focus);
+    box-shadow: 0 0 0 4px var(--accent-focus-ring);
 }
 
 .form-error {
     width: 100%;
     padding: 10px 14px;
     border-radius: var(--radius-sm);
-    background: rgba(251, 113, 133, 0.12);
-    border: 1px solid rgba(251, 113, 133, 0.32);
+    background: var(--danger-soft-bg);
+    border: 1px solid var(--danger-soft-border);
     color: var(--danger);
     font-size: 13.5px;
     line-height: 1.45;

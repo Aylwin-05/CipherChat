@@ -1,3 +1,5 @@
+from fastapi import HTTPException
+
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UpdateProfileRequest
@@ -33,6 +35,22 @@ class UserService:
         user: User,
         request: UpdateProfileRequest,
     ) -> User:
+
+        if request.username is not None:
+            username = request.username.strip()
+
+            existing_user = await self.repository.get_by_username(
+                username
+            )
+
+            if existing_user is not None and existing_user.id != user.id:
+
+                raise HTTPException(
+                    status_code=409,
+                    detail="Username already exists.",
+                )
+
+            user.username = username
 
         if request.display_name is not None:
             user.display_name = request.display_name.strip()
