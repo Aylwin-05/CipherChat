@@ -168,6 +168,8 @@ class MessageResponse(BaseModel):
 
     read_at: datetime | None
 
+    expires_at: datetime | None
+
     created_at: datetime
 
     updated_at: datetime

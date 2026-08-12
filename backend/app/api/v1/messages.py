@@ -85,6 +85,7 @@ def serialize_message(message):
         is_read=message.is_read,
         delivered_at=message.delivered_at,
         read_at=message.read_at,
+        expires_at=message.expires_at,
 
         created_at=message.created_at,
         updated_at=message.updated_at,

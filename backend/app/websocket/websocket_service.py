@@ -250,6 +250,11 @@ class WebSocketService:
                         False,
                     ),
 
+                "expires_at":
+                    data.get(
+                        "expires_at"
+                    ),
+
                 "created_at":
                     data["created_at"],
 

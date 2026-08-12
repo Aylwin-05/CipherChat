@@ -12,13 +12,69 @@ function formatTime(value) {
     });
 }
 
-export default function ConversationItem({
+function PinIcon() {
+    return (
+        <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M12 17v5" />
+            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+        </svg>
+    );
+}
 
+function MuteIcon() {
+    return (
+        <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="m19 5-7 7-7 7" />
+            <path d="m5 5 7 7 7 7" />
+        </svg>
+    );
+}
+
+function ArchiveIcon() {
+    return (
+        <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <rect x="2" y="3" width="20" height="5" rx="1" />
+            <path d="M4 8v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8" />
+            <path d="M10 12h4" />
+        </svg>
+    );
+}
+
+export default function ConversationItem({
     conversation,
     selected,
     onSelect,
     online,
-
+    onTogglePin,
+    onToggleMute,
+    onToggleArchive,
 }) {
 
     const user = conversation.other_user;
@@ -27,6 +83,10 @@ export default function ConversationItem({
         !selected
             ? (conversation.unread_count ?? 0)
             : 0;
+
+    const pinned = Boolean(conversation.is_pinned);
+
+    const muted = Boolean(conversation.muted);
 
     return (
 
@@ -60,6 +120,12 @@ export default function ConversationItem({
 
                     <h4 className="conv-name">
 
+                        {pinned && (
+                            <span className="conv-pin-icon" title="Pinned">
+                                <PinIcon />
+                            </span>
+                        )}
+
                         {user?.display_name || "Unknown"}
 
                     </h4>
@@ -80,21 +146,107 @@ export default function ConversationItem({
 
                     <p className="conv-preview">
 
+                        {muted && (
+                            <span className="conv-mute-icon" title="Muted">
+                                <MuteIcon />
+                            </span>
+                        )}
+
+                        {conversation.disappear_after_seconds && (
+
+                            <span
+                                className="conv-mute-icon"
+                                title="Disappearing messages on"
+                            >
+                                <svg
+                                    width="14"
+                                    height="14"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                >
+                                    <circle cx="12" cy="13" r="8" />
+                                    <path d="M12 9v4l2.5 2.5" />
+                                    <path d="M9 2h6" />
+                                </svg>
+                            </span>
+
+                        )}
+
                         {conversation.last_message
                             ? "Encrypted message"
                             : "No messages yet"}
 
                     </p>
 
-                    {unread > 0 ? (
+                    <div className="conv-actions">
 
-                        <span className="unread-pill">
+                        {unread > 0 ? (
 
-                            {unread}
+                            <span className="unread-pill">
 
-                        </span>
+                                {unread}
 
-                    ) : null}
+                            </span>
+
+                        ) : null}
+
+                        {onTogglePin ? (
+
+                            <button
+                                type="button"
+                                className="conv-action"
+                                title={pinned ? "Unpin" : "Pin"}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onTogglePin(conversation);
+                                }}
+                            >
+                                <PinIcon />
+                            </button>
+
+                        ) : null}
+
+                        {onToggleMute ? (
+
+                            <button
+                                type="button"
+                                className="conv-action"
+                                title={muted ? "Unmute" : "Mute"}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onToggleMute(conversation);
+                                }}
+                            >
+                                <MuteIcon />
+                            </button>
+
+                        ) : null}
+
+                        {onToggleArchive ? (
+
+                            <button
+                                type="button"
+                                className="conv-action"
+                                title={
+                                    conversation.is_archived
+                                        ? "Unarchive"
+                                        : "Archive"
+                                }
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onToggleArchive(conversation);
+                                }}
+                            >
+                                <ArchiveIcon />
+                            </button>
+
+                        ) : null}
+
+                    </div>
 
                 </div>
 

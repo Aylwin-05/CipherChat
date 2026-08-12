@@ -1,5 +1,8 @@
 from uuid import UUID
 
+from datetime import timedelta
+from datetime import datetime, timezone
+
 from fastapi import UploadFile
 
 from app.models.message import Message
@@ -101,6 +104,23 @@ class MessageService:
                     "Reply target does not exist."
                 )
 
+        expires_at = None
+
+        conversation = (
+            await self.conversation_repository.get_by_id(
+                conversation_id
+            )
+        )
+
+        if conversation and conversation.disappear_after_seconds:
+
+            expires_at = (
+                datetime.now(timezone.utc)
+                + timedelta(
+                    seconds=conversation.disappear_after_seconds
+                )
+            )
+
         message = Message(
             conversation_id=conversation_id,
             sender_id=current_user.id,
@@ -120,6 +140,8 @@ class MessageService:
             reply_to_id=reply_to_id,
 
             is_forwarded=is_forwarded,
+
+            expires_at=expires_at,
         )
 
         message = await self.message_repository.create_message(

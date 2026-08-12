@@ -67,9 +67,11 @@ export default function MessageList({
     onReply,
     onEdit,
     onForward,
+    onInfo,
     onToggleReaction,
     otherUser,
     conversationId,
+    highlightMessageId,
 }) {
 
     const { user } = useAuth();
@@ -81,6 +83,42 @@ export default function MessageList({
     const pinnedRef = useRef(true);
 
     const prevConversationRef = useRef(null);
+
+    const highlightRef = useRef(null);
+
+    // ==========================================================
+    // Search result jump: scroll the target message into view
+    // (centered) without yanking away the bottom pin.
+    // ==========================================================
+
+    useEffect(() => {
+
+        if (!highlightMessageId) return;
+
+        pinnedRef.current = false;
+
+        requestAnimationFrame(() => {
+
+            const element = highlightRef.current;
+
+            if (!element) return;
+
+            const container = containerRef.current;
+
+            if (!container) return;
+
+            const top =
+                element.offsetTop -
+                container.clientHeight / 2;
+
+            container.scrollTo({
+                top: Math.max(0, top),
+                behavior: "smooth",
+            });
+
+        });
+
+    }, [highlightMessageId]);
 
     // ==========================================================
     // Chronological order: oldest at the top, newest at the
@@ -429,7 +467,27 @@ export default function MessageList({
                                 : otherUser?.display_name ||
                                     "Unknown";
 
+                        const highlight =
+                            highlightMessageId ===
+                            message.id;
+
                         return (
+
+                            <div
+                                ref={
+                                    highlight
+                                        ? highlightRef
+                                        : null
+                                }
+                                key={highlight
+                                    ? `hl-${message.id}`
+                                    : message.id}
+                                className={
+                                    highlight
+                                        ? "message-row-highlight"
+                                        : null
+                                }
+                            >
 
                             <MessageBubble
                                 key={message.id}
@@ -438,6 +496,7 @@ export default function MessageList({
                                 onReply={onReply}
                                 onEdit={onEdit}
                                 onForward={onForward}
+                                onInfo={onInfo}
                                 onToggleReaction={
                                     onToggleReaction
                                 }
@@ -449,6 +508,8 @@ export default function MessageList({
                                 }
                                 groupInfo={groupInfo}
                             />
+
+                            </div>
 
                         );
 

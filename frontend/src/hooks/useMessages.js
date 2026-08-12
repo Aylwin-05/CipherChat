@@ -97,6 +97,15 @@ export default function useMessages(
     const [error, setError] =
         useState(null);
 
+    const [searchQuery, setSearchQuery] =
+        useState("");
+
+    const [searchResults, setSearchResults] =
+        useState([]);
+
+    const [searching, setSearching] =
+        useState(false);
+
     //------------------------------------------------------
     // Decrypt an incoming message (Signal first, RSA fallback)
     //------------------------------------------------------
@@ -209,6 +218,8 @@ export default function useMessages(
         if (!conversation) {
 
             setMessages([]);
+
+            clearSearch();
 
             return;
 
@@ -784,6 +795,156 @@ export default function useMessages(
 
     }, [conversation?.id]);
 
+    //------------------------------------------------------
+    // Disappearing messages: drop messages locally when their
+    // server-side expiry time arrives (the server also purges
+    // the ciphertext on any read, so this is purely visual).
+    //------------------------------------------------------
+
+    useEffect(() => {
+
+        if (!messages.length) return;
+
+        const timers = [];
+
+        for (const message of messages) {
+
+            if (!message.expires_at) continue;
+
+            const delay =
+                new Date(message.expires_at) -
+                Date.now();
+
+            if (delay <= 0) {
+
+                setMessages(previous =>
+                    previous.filter(m =>
+                        m.id !== message.id
+                    )
+                );
+
+                continue;
+
+            }
+
+            timers.push(
+                setTimeout(() => {
+
+                    setMessages(previous =>
+                        previous.filter(m =>
+                            m.id !== message.id
+                        )
+                    );
+
+                }, delay)
+            );
+
+        }
+
+        return () => {
+            timers.forEach(clearTimeout);
+        };
+
+    }, [messages]);
+
+    //------------------------------------------------------
+    // Search messages (client-side over decrypted plaintext).
+    //
+    // The backend can never match plaintext (it only stores
+    // ciphertext), so the search fetches the conversation
+    // history, decrypts each message through the Signal
+    // session / plaintext cache, and filters locally. E2EE
+    // means the search itself never leaves the device.
+    //------------------------------------------------------
+
+    async function searchMessages(query) {
+
+        if (!query.trim()) {
+
+            setSearchResults([]);
+
+            setSearchQuery("");
+
+            return;
+
+        }
+
+        setSearchQuery(query);
+
+        setSearching(true);
+
+        try {
+
+            const history =
+                await messageService.getMessages(
+                    conversation.id
+                );
+
+            const needle =
+                query.trim().toLowerCase();
+
+            const matches = [];
+
+            for (const message of history) {
+
+                const plaintext =
+                    await decryptIncoming(message);
+
+                const haystack =
+                    (plaintext ?? "").toLowerCase();
+
+                if (haystack.includes(needle)) {
+
+                    matches.push({
+                        id: message.id,
+                        content: plaintext,
+                        created_at:
+                            message.created_at,
+                        sender_id:
+                            message.sender_id,
+                        message_type:
+                            message.message_type,
+                    });
+
+                }
+
+            }
+
+            setSearchResults(matches);
+
+        }
+        catch (error) {
+
+            console.error(
+                "Search failed",
+                error
+            );
+
+            setSearchResults([]);
+
+            setError(error);
+
+        }
+        finally {
+
+            setSearching(false);
+
+        }
+
+    }
+
+    //------------------------------------------------------
+    // Clear search state (switching chats, closing the bar)
+    //------------------------------------------------------
+
+    function clearSearch() {
+
+        setSearchQuery("");
+
+        setSearchResults([]);
+
+    }
+
     async function initialize() {
 
         try {
@@ -1138,6 +1299,7 @@ export default function useMessages(
                 message_type: saved.message_type,
                 reply_to_id: saved.reply_to_id,
                 is_forwarded: saved.is_forwarded,
+                expires_at: saved.expires_at,
                 created_at: saved.created_at,
                 attachments: localMessage.attachments,
             });
@@ -1432,6 +1594,7 @@ export default function useMessages(
                     message_type: saved.message_type,
                     reply_to_id: saved.reply_to_id,
                     is_forwarded: saved.is_forwarded,
+                    expires_at: saved.expires_at,
                     created_at: saved.created_at,
                     attachments: [],
                 });
@@ -1599,6 +1762,16 @@ export default function useMessages(
         typing,
 
         stopTyping,
+
+        searchMessages,
+
+        clearSearch,
+
+        searchQuery,
+
+        searchResults,
+
+        searching,
 
     };
 }

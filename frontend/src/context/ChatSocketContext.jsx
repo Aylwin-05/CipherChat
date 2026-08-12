@@ -85,9 +85,17 @@ export function ChatSocketProvider({ children }) {
                 !activeRef.current
             ) {
 
-                setActiveConversationId(
-                    data[0].id
-                );
+                // Never auto-open an archived conversation.
+                const firstActive =
+                    data.find(c => !c.is_archived);
+
+                if (firstActive) {
+
+                    setActiveConversationId(
+                        firstActive.id
+                    );
+
+                }
 
             }
 
@@ -296,7 +304,16 @@ export function ChatSocketProvider({ children }) {
 
             });
 
+            // Pinned chats stay on top; recency within each group
             updated.sort((a, b) => {
+
+                const pinnedA = a.is_pinned ? 0 : 1;
+
+                const pinnedB = b.is_pinned ? 0 : 1;
+
+                if (pinnedA !== pinnedB) {
+                    return pinnedA - pinnedB;
+                }
 
                 const dateA =
                     new Date(
@@ -319,6 +336,67 @@ export function ChatSocketProvider({ children }) {
             return updated;
 
         });
+
+    }
+
+    //=====================================================
+    // Update conversation settings (pin / archive / mute)
+    //=====================================================
+
+    async function updateSettings(
+        conversationId,
+        settings,
+    ) {
+
+        const updated =
+            await conversationService.updateSettings(
+                conversationId,
+                settings,
+            );
+
+        setConversations(previous => {
+
+            const updatedList = previous.map((conv) => {
+
+                if (conv.id === conversationId) {
+
+                    return {
+                        ...conv,
+                        is_pinned:
+                            updated.is_pinned ??
+                            conv.is_pinned,
+                        is_archived:
+                            updated.is_archived ??
+                            conv.is_archived,
+                        muted:
+                            updated.muted ??
+                            conv.muted,
+                        disappear_after_seconds:
+                            "disappear_after_seconds" in updated
+                                ? updated.disappear_after_seconds
+                                : conv.disappear_after_seconds,
+                    };
+
+                }
+
+                return conv;
+
+            });
+
+            // Re-apply pinned-first ordering locally so the UI
+            // reacts instantly without a server round-trip.
+            const pinned = updatedList.filter(c => c.is_pinned);
+
+            const rest = updatedList.filter(c => !c.is_pinned);
+
+            return [
+                ...pinned,
+                ...rest,
+            ];
+
+        });
+
+        return updated;
 
     }
 
@@ -351,6 +429,8 @@ export function ChatSocketProvider({ children }) {
         selectConversation,
 
         bumpConversation,
+
+        updateSettings,
 
         subscribe,
 

@@ -55,6 +55,7 @@ export default function MessageBubble({
     onReply,
     onEdit,
     onForward,
+    onInfo,
     onToggleReaction,
     repliedMessage,
     repliedDisplayName = "",
@@ -462,6 +463,22 @@ export default function MessageBubble({
 
                                         setMenuOpen(false);
 
+                                        onInfo?.(message);
+
+                                    }}
+                                >
+
+                                    Info
+
+                                </button>
+
+                                <button
+                                    type="button"
+                                    className="bubble-menu-item"
+                                    onClick={() => {
+
+                                        setMenuOpen(false);
+
                                         onReply?.(message);
 
                                     }}
@@ -774,6 +791,30 @@ export default function MessageBubble({
                         })}
 
                     </span>
+
+                    {message.expires_at && !deleted && (
+
+                        <span
+                            className="message-timer"
+                            title="Disappearing message"
+                        >
+                            <svg
+                                width="13"
+                                height="13"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
+                                <circle cx="12" cy="13" r="8" />
+                                <path d="M12 9v4l2.5 2.5" />
+                                <path d="M9 2h6" />
+                            </svg>
+                        </span>
+
+                    )}
 
                     {message.edited && (
 

@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
+from app.models.attachment import Attachment
 from app.models.message import Message
 from app.models.message_reaction import MessageReaction
 from app.repositories.base_repository import BaseRepository
@@ -34,6 +35,69 @@ class MessageRepository(BaseRepository):
     ) -> Message:
 
         return await self.create(message)
+
+    # ==========================================================
+    # DISAPPEARING MESSAGES
+    # ==========================================================
+
+    async def purge_expired(
+        self,
+        now: datetime | None = None,
+    ) -> list[tuple[UUID, UUID]]:
+        """
+        Hard-delete messages whose expiry time has passed.
+
+        Returns a list of (conversation_id, message_id) pairs so
+        callers can broadcast a real-time cleanup event. Child
+        rows (reactions, attachments) are removed explicitly so
+        the purge also works on dialects without FK cascades
+        (e.g. SQLite in tests).
+        """
+
+        if now is None:
+            now = datetime.now(timezone.utc)
+
+        result = await self.execute(
+            select(
+                Message.id,
+                Message.conversation_id,
+            ).where(
+                Message.expires_at.is_not(None),
+                Message.expires_at <= now,
+            )
+        )
+
+        expired = result.all()
+
+        if not expired:
+            return []
+
+        message_ids = [row.id for row in expired]
+
+        await self.db.execute(
+            delete(MessageReaction).where(
+                MessageReaction.message_id.in_(message_ids)
+            )
+        )
+
+        await self.db.execute(
+            delete(Attachment).where(
+                Attachment.message_id.in_(message_ids)
+            )
+        )
+
+        await self.db.execute(
+            delete(Message).where(
+                Message.id.in_(message_ids)
+            )
+        )
+
+        await self.db.flush()
+
+        return [
+            (row.conversation_id, row.id)
+            for row in expired
+        ]
 
     # ==========================================================
     # GET
@@ -68,6 +132,8 @@ class MessageRepository(BaseRepository):
         conversation_id: UUID,
         user_id: UUID | None = None,
     ) -> list[Message]:
+
+        await self.purge_expired()
 
         result = await self.execute(
 
@@ -108,6 +174,8 @@ class MessageRepository(BaseRepository):
         conversation_id: UUID,
         user_id: UUID | None = None,
     ) -> Message | None:
+
+        await self.purge_expired()
 
         result = await self.execute(
 
@@ -193,6 +261,8 @@ class MessageRepository(BaseRepository):
     ) -> int:
         """Count messages sent by others that the user hasn't read."""
 
+        await self.purge_expired()
+
         result = await self.db.execute(
             select(Message.id)
             .where(
@@ -243,6 +313,8 @@ class MessageRepository(BaseRepository):
         self,
         reply_to_id: UUID,
     ) -> Message | None:
+
+        await self.purge_expired()
 
         result = await self.execute(
 

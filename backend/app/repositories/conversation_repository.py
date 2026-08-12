@@ -123,6 +123,29 @@ class ConversationRepository(BaseRepository):
         return result.scalars().all()
 
     # ==========================================================
+    # Get Participant
+    # ==========================================================
+
+    async def get_participant(
+        self,
+        conversation_id: UUID,
+        user_id: UUID,
+    ) -> ConversationParticipant | None:
+
+        result = await self.execute(
+            select(ConversationParticipant).where(
+                and_(
+                    ConversationParticipant.conversation_id
+                    == conversation_id,
+                    ConversationParticipant.user_id
+                    == user_id,
+                )
+            )
+        )
+
+        return result.scalar_one_or_none()
+
+    # ==========================================================
     # Get Other User
     # ==========================================================
 

@@ -13,6 +13,21 @@ class CreateConversationRequest(BaseModel):
 
 
 # ==========================================================
+# Update Conversation Settings (pin / archive / mute)
+# ==========================================================
+
+class UpdateConversationSettingsRequest(BaseModel):
+
+    is_pinned: bool | None = None
+
+    is_archived: bool | None = None
+
+    muted_until: datetime | None = None
+
+    disappear_after_seconds: int | None = None
+
+
+# ==========================================================
 # Create Conversation Response
 # ==========================================================
 
@@ -73,3 +88,11 @@ class ConversationResponse(BaseModel):
     last_message: LastMessage | None = None
 
     unread_count: int = 0
+
+    is_pinned: bool = False
+
+    is_archived: bool = False
+
+    muted: bool = False
+
+    disappear_after_seconds: int | None = None

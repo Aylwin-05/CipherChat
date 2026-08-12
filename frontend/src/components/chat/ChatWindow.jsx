@@ -1,16 +1,48 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import toast from "react-hot-toast";
 
 import useMessages from "../../hooks/useMessages";
 
 import ChatInput from "./ChatInput";
 import MessageList from "./MessageList";
 import ForwardModal from "./ForwardModal";
+import MessageInfoPanel from "./MessageInfoPanel";
 
 import UserAvatar from "../UserAvatar";
 import { useAuth } from "../../context/AuthContext";
 import { useChatSocket } from "../../context/ChatSocketContext";
 
 import "./Chat.css";
+
+// ==========================================================
+// Disappearing-message durations (seconds), WhatsApp-style
+// ==========================================================
+
+const DISAPPEAR_OPTIONS = [
+    { label: "Off", seconds: null },
+    { label: "24 hours", seconds: 24 * 60 * 60 },
+    { label: "7 days", seconds: 7 * 24 * 60 * 60 },
+    { label: "90 days", seconds: 90 * 24 * 60 * 60 },
+];
+
+function TimerIcon() {
+    return (
+        <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <circle cx="12" cy="13" r="8" />
+            <path d="M12 9v4l2.5 2.5" />
+            <path d="M9 2h6" />
+        </svg>
+    );
+}
 
 export default function ChatWindow({
     conversation,
@@ -21,6 +53,7 @@ export default function ChatWindow({
     const {
         presence,
         bumpConversation,
+        updateSettings,
     } = useChatSocket();
 
     // Always call hooks first
@@ -36,6 +69,11 @@ export default function ChatWindow({
         deleteMessage,
         typing,
         stopTyping,
+        searchMessages,
+        clearSearch,
+        searchQuery,
+        searchResults,
+        searching,
     } = useMessages(
         conversation,
         (newMessage) => {
@@ -69,6 +107,113 @@ export default function ChatWindow({
     const [forwardTarget, setForwardTarget] =
         useState(null);
 
+    const [infoTarget, setInfoTarget] =
+        useState(null);
+
+    const [showTimerMenu, setShowTimerMenu] =
+        useState(false);
+
+    const [showSearch, setShowSearch] =
+        useState(false);
+
+    const [searchInput, setSearchInput] =
+        useState("");
+
+    const [searchIndex, setSearchIndex] =
+        useState(0);
+
+    const [highlightMessageId, setHighlightMessageId] =
+        useState(null);
+
+    const searchTimerRef = useRef(null);
+
+    // ==========================================================
+    // Search
+    // ==========================================================
+
+    function handleSearchChange(value) {
+
+        setSearchInput(value);
+
+        setSearchIndex(0);
+
+        clearTimeout(searchTimerRef.current);
+
+        searchTimerRef.current =
+            setTimeout(() => {
+                searchMessages(value);
+            }, 350);
+
+    }
+
+    function handleCloseSearch() {
+
+        clearTimeout(searchTimerRef.current);
+
+        setShowSearch(false);
+
+        setSearchInput("");
+
+        setSearchIndex(0);
+
+        clearSearch();
+
+    }
+
+    function handleJumpSearch(offset) {
+
+        if (!searchResults.length) return;
+
+        const nextIndex = Math.min(
+            searchResults.length - 1,
+            Math.max(0, searchIndex + offset),
+        );
+
+        setSearchIndex(nextIndex);
+
+        const target = searchResults[nextIndex];
+
+        setHighlightMessageId(null);
+
+        requestAnimationFrame(() => {
+            setHighlightMessageId(target.id);
+        });
+
+    }
+
+    const currentResult =
+        searchResults[searchIndex] ?? null;
+
+    // ==========================================================
+    // Disappearing messages
+    // ==========================================================
+
+    async function handleSetDisappearing(seconds) {
+
+        try {
+
+            await updateSettings(conversation.id, {
+                disappear_after_seconds: seconds,
+            });
+
+            toast.success(
+                seconds
+                    ? "Disappearing messages on. New messages will expire."
+                    : "Disappearing messages off.",
+            );
+
+        }
+        catch (error) {
+
+            toast.error(
+                error.response?.data?.detail ??
+                "Unable to change disappearing messages."
+            );
+
+        }
+
+    }
+
     function handleReply(message) {
 
         setReplyTo({
@@ -83,6 +228,21 @@ export default function ChatWindow({
         });
 
     }
+
+    // Close transient panels when switching chats
+    useEffect(() => {
+
+        setInfoTarget(null);
+
+        setForwardTarget(null);
+
+        setReplyTo(null);
+
+        setShowTimerMenu(false);
+
+        handleCloseSearch();
+
+    }, [conversation?.id]);
 
     function handleEdit(message) {
 
@@ -275,11 +435,203 @@ export default function ChatWindow({
 
                 <div className="chat-header-actions">
 
+                    <span className="e2e-chip icon-chip" title="Search messages">
+
+                        <button
+                            type="button"
+                            className="chip-btn"
+                            onClick={() => {
+                                setShowSearch(v => !v);
+                                if (showSearch) {
+                                    handleCloseSearch();
+                                }
+                            }}
+                        >
+                            <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
+                                <circle cx="11" cy="11" r="7" />
+                                <path d="m21 21-4.35-4.35" />
+                            </svg>
+                        </button>
+                    </span>
+
+                    {showSearch && (
+
+                        <div className="chat-search">
+
+                            <input
+                                className="chat-search-input"
+                                type="text"
+                                placeholder={`Search "${otherUser.display_name}"`}
+                                value={searchInput}
+                                autoFocus
+                                onChange={(e) =>
+                                    handleSearchChange(e.target.value)
+                                }
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        if (e.shiftKey) {
+                                            handleJumpSearch(-1);
+                                        }
+                                        else {
+                                            handleJumpSearch(1);
+                                        }
+                                    }
+                                    if (e.key === "Escape") {
+                                        handleCloseSearch();
+                                    }
+                                }}
+                            />
+
+                            {searchInput.trim() && (
+
+                                <div className="chat-search-results">
+
+                                    {searching ? (
+                                        <div className="chat-search-status">
+                                            Searching…
+                                        </div>
+                                    ) : searchResults.length === 0 ? (
+                                        <div className="chat-search-status">
+                                            No messages found
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="chat-search-meta">
+                                                <span className="chat-search-count">
+                                                    {searchIndex + 1} of {searchResults.length}
+                                                </span>
+                                                <div className="chat-search-nav">
+                                                    <button
+                                                        type="button"
+                                                        className="chat-search-nav-btn"
+                                                        disabled={searchIndex === 0}
+                                                        onClick={() =>
+                                                            handleJumpSearch(-1)
+                                                        }
+                                                    >
+                                                        ↑
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="chat-search-nav-btn"
+                                                        disabled={
+                                                            searchIndex >=
+                                                            searchResults.length - 1
+                                                        }
+                                                        onClick={() =>
+                                                            handleJumpSearch(1)
+                                                        }
+                                                    >
+                                                        ↓
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div className="chat-search-snippet">
+                                                <span className="chat-search-sender">
+                                                    {currentResult.sender_id === user?.id
+                                                        ? "You"
+                                                        : otherUser.display_name}
+                                                </span>
+                                                <span className="chat-search-text">
+                                                    {currentResult.content}
+                                                </span>
+                                            </div>
+                                        </>
+                                    )}
+
+                                </div>
+
+                            )}
+
+                        </div>
+
+                    )}
+
+                    <span
+                        className={
+                            conversation.disappear_after_seconds
+                                ? "e2e-chip icon-chip chip-active"
+                                : "e2e-chip icon-chip"
+                        }
+                        title={
+                            conversation.disappear_after_seconds
+                                ? "Disappearing messages on"
+                                : "Disappearing messages"
+                        }
+                    >
+                        <button
+                            type="button"
+                            className="chip-btn"
+                            onClick={() =>
+                                setShowTimerMenu(v => !v)
+                            }
+                        >
+                            <TimerIcon />
+                        </button>
+                    </span>
+
+                    {showTimerMenu && (
+
+                        <div className="timer-menu">
+
+                            <div className="timer-menu-head">
+                                Disappearing messages
+                            </div>
+
+                            {DISAPPEAR_OPTIONS.map(option => {
+
+                                const active =
+                                    (conversation.disappear_after_seconds ?? null) ===
+                                    option.seconds;
+
+                                return (
+                                    <button
+                                        key={option.label}
+                                        type="button"
+                                        className={
+                                            active
+                                                ? "timer-option active"
+                                                : "timer-option"
+                                        }
+                                        onClick={() => {
+                                            handleSetDisappearing(
+                                                option.seconds
+                                            );
+                                            setShowTimerMenu(false);
+                                        }}
+                                    >
+                                        <span>{option.label}</span>
+                                        {active && (
+                                            <span className="timer-check">✓</span>
+                                        )}
+                                    </button>
+                                );
+                            })}
+
+                            <div className="timer-menu-note">
+                                New messages in this chat will
+                                disappear after this time.
+                            </div>
+
+                        </div>
+
+                    )}
+
                     <span className="e2e-chip" title="Signal protocol, end-to-end encrypted">
 
                         <svg
-                            width="13"
-                            height="13"
+                            width="15"
+                            height="15"
                             viewBox="0 0 24 24"
                             fill="none"
                             stroke="currentColor"
@@ -299,6 +651,25 @@ export default function ChatWindow({
 
             </div>
 
+            {conversation.disappear_after_seconds ? (
+
+                <div className="disappear-banner">
+
+                    <TimerIcon />
+
+                    {`Messages disappear after ${
+                        DISAPPEAR_OPTIONS.find(
+                            option =>
+                                option.seconds ===
+                                conversation.disappear_after_seconds
+                        )?.label ??
+                        `${conversation.disappear_after_seconds} seconds`
+                    }`}
+
+                </div>
+
+            ) : null}
+
             <MessageList
                 messages={messages}
                 loading={loading}
@@ -306,9 +677,11 @@ export default function ChatWindow({
                 onReply={handleReply}
                 onEdit={handleEdit}
                 onForward={setForwardTarget}
+                onInfo={setInfoTarget}
                 onToggleReaction={toggleReaction}
                 otherUser={otherUser}
                 conversationId={conversation.id}
+                highlightMessageId={highlightMessageId}
             />
 
             {errorMessage ? (
@@ -356,6 +729,18 @@ export default function ChatWindow({
                         setForwardTarget(null)
                     }
                     onForward={handleForwardSubmit}
+                />
+
+            )}
+
+            {infoTarget && (
+
+                <MessageInfoPanel
+                    message={infoTarget}
+                    otherUser={otherUser}
+                    onClose={() =>
+                        setInfoTarget(null)
+                    }
                 />
 
             )}

@@ -71,6 +71,42 @@ const conversationService = {
     },
 
     //==========================================================
+    // Update Conversation Settings (pin / archive / mute)
+    //==========================================================
+
+    async updateSettings(
+        conversationId,
+        settings,
+    ) {
+
+        try {
+
+            const response = await api.patch(
+
+                `/conversations/${conversationId}`,
+
+                settings,
+
+            );
+
+            return response.data;
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Failed to update conversation settings",
+                error
+            );
+
+            throw error;
+
+        }
+
+    },
+
+    //==========================================================
     // Refresh Conversation List
     //==========================================================
 

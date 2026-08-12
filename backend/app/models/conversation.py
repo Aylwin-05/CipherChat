@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from sqlalchemy import DateTime, func
+from sqlalchemy import DateTime, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,8 +11,8 @@ class Conversation(Base):
     """
     Represents a chat conversation.
 
-    Initially supports one-to-one chats.
-    Can later be extended for group chats.
+    - private: exactly two participants
+    - group: many participants, shared by all members
     """
 
     __tablename__ = "conversations"
@@ -21,6 +21,17 @@ class Conversation(Base):
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
+    )
+
+    name: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    conversation_type: Mapped[str] = mapped_column(
+        String(20),
+        default="private",
+        nullable=False,
     )
 
     created_at: Mapped[DateTime] = mapped_column(
@@ -34,4 +45,11 @@ class Conversation(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+    # Disappearing messages: seconds after send before the
+    # server erases the ciphertext (None = disabled).
+    disappear_after_seconds: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
     )

@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends
+import traceback
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
@@ -16,6 +19,7 @@ from app.repositories.message_repository import (
 from app.schemas.conversation import (
     ConversationResponse,
     CreateConversationRequest,
+    UpdateConversationSettingsRequest,
 )
 
 from app.services.conversation_service import (
@@ -93,11 +97,78 @@ async def create_private_conversation(
                 if last_message
                 else None
             ),
+            "disappear_after_seconds":
+                conversation.disappear_after_seconds,
         }
 
     except Exception:
         traceback.print_exc()
         raise
+
+# ==========================================================
+# Update Settings (pin / archive / mute)
+# ==========================================================
+
+@router.patch("/{conversation_id}")
+async def update_conversation_settings(
+    conversation_id: str,
+    request: UpdateConversationSettingsRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from uuid import UUID
+
+    try:
+        conversation_repository = ConversationRepository(db)
+        message_repository = MessageRepository(db)
+
+        service = ConversationService(
+            conversation_repository,
+            message_repository,
+        )
+
+        # Only apply the fields the client actually sent, so an
+        # explicit `muted_until: null` can clear an existing mute.
+        payload = {}
+
+        if "is_pinned" in request.model_fields_set:
+            payload["is_pinned"] = bool(request.is_pinned)
+
+        if "is_archived" in request.model_fields_set:
+            payload["is_archived"] = bool(request.is_archived)
+
+        if "muted_until" in request.model_fields_set:
+            payload["muted_until"] = request.muted_until
+
+        if "disappear_after_seconds" in request.model_fields_set:
+            payload["disappear_after_seconds"] = (
+                request.disappear_after_seconds
+            )
+
+        settings = await service.update_settings(
+            current_user,
+            UUID(conversation_id),
+            **payload,
+        )
+
+        await db.commit()
+
+        return {
+            "id": conversation_id,
+            **settings,
+        }
+
+    except PermissionError as error:
+        raise HTTPException(
+            status_code=403,
+            detail=str(error),
+        ) from error
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid conversation id.",
+        ) from error
 
 # ==========================================================
 # My Conversations

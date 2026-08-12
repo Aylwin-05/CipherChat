@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import "./ConversationList.css";
 
 import ConversationItem from "./ConversationItem";
@@ -18,7 +20,11 @@ export default function ConversationList({
 
     const {
         presence,
+        updateSettings,
     } = useChatSocket();
+
+    const [showArchived, setShowArchived] =
+        useState(false);
 
     if (loading) {
 
@@ -59,6 +65,74 @@ export default function ConversationList({
         );
 
     }
+
+    const activeConversations =
+        conversations.filter(c => !c.is_archived);
+
+    const archivedConversations =
+        conversations.filter(c => c.is_archived);
+
+    async function handleTogglePin(conversation) {
+
+        await updateSettings(conversation.id, {
+            is_pinned: !conversation.is_pinned,
+        });
+
+    }
+
+    async function handleToggleMute(conversation) {
+
+        // Quick mute toggle: mute for a week, or unmute.
+        if (conversation.muted) {
+
+            await updateSettings(conversation.id, {
+                muted_until: null,
+            });
+
+            return;
+
+        }
+
+        const until = new Date(
+            Date.now() + 7 * 24 * 60 * 60 * 1000
+        ).toISOString();
+
+        await updateSettings(conversation.id, {
+            muted_until: until,
+        });
+
+    }
+
+    async function handleToggleArchive(conversation) {
+
+        await updateSettings(conversation.id, {
+            is_archived: !conversation.is_archived,
+        });
+
+    }
+
+    const itemProps = (conversation) => ({
+
+        conversation,
+
+        online:
+            presence[conversation.other_user?.id] ??
+            conversation.other_user?.online_status ===
+                "online",
+
+        selected:
+            selectedConversation?.id ===
+            conversation.id,
+
+        onSelect: onSelectConversation,
+
+        onTogglePin: handleTogglePin,
+
+        onToggleMute: handleToggleMute,
+
+        onToggleArchive: handleToggleArchive,
+
+    });
 
     return (
 
@@ -116,7 +190,7 @@ export default function ConversationList({
 
                 {
 
-                    conversations.map(
+                    activeConversations.map(
 
                         (conversation) => (
 
@@ -124,28 +198,105 @@ export default function ConversationList({
 
                                 key={conversation.id}
 
-                                conversation={conversation}
-
-                                online={
-                                    presence[
-                                        conversation.other_user?.id
-                                    ] ??
-                                    conversation.other_user?.online_status ===
-                                        "online"
-                                }
-
-                                selected={
-                                    selectedConversation?.id ===
-                                    conversation.id
-                                }
-
-                                onSelect={
-                                    onSelectConversation
-                                }
+                                {...itemProps(conversation)}
 
                             />
 
                         )
+
+                    )
+
+                }
+
+                {
+
+                    archivedConversations.length > 0 && (
+
+                        <div className="conv-archive-block">
+
+                            <button
+                                type="button"
+                                className="conv-archive-toggle"
+                                onClick={() =>
+                                    setShowArchived(v => !v)
+                                }
+                            >
+                                <span className="conv-archive-icon">
+
+                                    <svg
+                                        width="16"
+                                        height="16"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    >
+                                        <rect x="2" y="3" width="20" height="5" rx="1" />
+                                        <path d="M4 8v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8" />
+                                        <path d="M10 12h4" />
+                                    </svg>
+
+                                </span>
+
+                                <span className="conv-archive-label">
+                                    Archived
+                                </span>
+
+                                <span className="conv-archive-count">
+                                    {archivedConversations.length}
+                                </span>
+
+                                <svg
+                                    className={
+                                        showArchived
+                                            ? "conv-archive-chevron open"
+                                            : "conv-archive-chevron"
+                                    }
+                                    width="14"
+                                    height="14"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2.2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                >
+                                    <path d="m6 9 6 6 6-6" />
+                                </svg>
+
+                            </button>
+
+                            {showArchived && (
+
+                                <div className="conv-archive-items">
+
+                                    {
+
+                                        archivedConversations.map(
+
+                                            (conversation) => (
+
+                                                <ConversationItem
+
+                                                    key={conversation.id}
+
+                                                    {...itemProps(conversation)}
+
+                                                />
+
+                                            )
+
+                                        )
+
+                                    }
+
+                                </div>
+
+                            )}
+
+                        </div>
 
                     )
 

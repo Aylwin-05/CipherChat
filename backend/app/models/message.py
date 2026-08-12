@@ -190,6 +190,13 @@ class Message(Base):
         nullable=True,
     )
 
+    # Disappearing messages: absolute time the server erases this
+    # ciphertext (None = message persists).
+    expires_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
