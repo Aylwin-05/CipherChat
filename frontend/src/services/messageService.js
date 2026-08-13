@@ -57,6 +57,7 @@ const messageService = {
                         "signal",
 
                     message_type:
+                        encrypted.message_type ||
                         "text",
 
                     reply_to_id:
@@ -64,6 +65,9 @@ const messageService = {
 
                     is_forwarded:
                         isForwarded,
+
+                    recipient_keys:
+                        encrypted.recipient_keys || [],
 
                 }
 
@@ -103,6 +107,9 @@ const messageService = {
                     nonce:
                         encrypted.nonce ||
                         "signal",
+
+                    recipient_keys:
+                        encrypted.recipient_keys || [],
 
                 }
 

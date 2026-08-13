@@ -268,6 +268,11 @@ class WebSocketService:
                         "attachments",
                         [],
                     ),
+                "recipient_keys":
+                    data.get(
+                        "recipient_keys",
+                        [],
+                    ),
             },
         )
             # ======================================================
@@ -321,6 +326,20 @@ class WebSocketService:
                 message.nonce,
             )
 
+            # Group edits carry fresh per-recipient wrapped keys.
+            if data.get("recipient_keys"):
+
+                await self.message_repository.replace_recipient_keys(
+                    message.id,
+                    [
+                        (
+                            UUID(key["user_id"]),
+                            key["encrypted_key"],
+                        )
+                        for key in data["recipient_keys"]
+                    ],
+                )
+
         message.edited = True
         message.updated_at = datetime.now(
             timezone.utc
@@ -349,6 +368,16 @@ class WebSocketService:
                 "encrypted_key_receiver": message.encrypted_key_receiver,
 
                 "nonce": message.nonce,
+
+                "recipient_keys": [
+                    {
+                        "user_id": str(key.user_id),
+                        "encrypted_key": key.encrypted_key,
+                    }
+                    for key in message.recipient_keys
+                ]
+                if "recipient_keys" in message.__dict__
+                else [],
 
                 "updated_at":
                     message.updated_at.isoformat(),

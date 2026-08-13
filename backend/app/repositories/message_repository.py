@@ -6,7 +6,18 @@ from sqlalchemy.orm import selectinload
 from app.models.attachment import Attachment
 from app.models.message import Message
 from app.models.message_reaction import MessageReaction
+from app.models.message_recipient_key import MessageRecipientKey
+from app.models.signal_session import SignalSession
 from app.repositories.base_repository import BaseRepository
+
+
+def _message_options():
+    """Eager-loads that serialize_message expects."""
+    return [
+        selectinload(Message.attachments),
+        selectinload(Message.reactions),
+        selectinload(Message.recipient_keys),
+    ]
 
 
 class MessageRepository(BaseRepository):
@@ -112,8 +123,7 @@ class MessageRepository(BaseRepository):
 
             select(Message)
             .options(
-                selectinload(Message.attachments),
-                selectinload(Message.reactions),
+                *_message_options()
             )
             .where(
                 Message.id == message_id
@@ -139,8 +149,7 @@ class MessageRepository(BaseRepository):
 
             select(Message)
             .options(
-                selectinload(Message.attachments),
-                selectinload(Message.reactions),
+                *_message_options()
             )
             .where(
                 Message.conversation_id == conversation_id
@@ -181,8 +190,7 @@ class MessageRepository(BaseRepository):
 
             select(Message)
             .options(
-                selectinload(Message.attachments),
-                selectinload(Message.reactions),
+                *_message_options()
             )
             .where(
                 Message.conversation_id == conversation_id
@@ -278,6 +286,80 @@ class MessageRepository(BaseRepository):
     # DELETE
     # ==========================================================
 
+    async def get_conversation_attachments(
+        self,
+        conversation_id: UUID,
+    ) -> list[Attachment]:
+        """
+        Every attachment row whose message belongs to this
+        conversation. Used before the full wipe so the physical
+        files can be unlinked from disk.
+        """
+        result = await self.execute(
+            select(Attachment)
+            .join(
+                Message,
+                Attachment.message_id == Message.id,
+            )
+            .where(
+                Message.conversation_id == conversation_id
+            )
+        )
+        return list(result.scalars().all())
+
+    async def delete_conversation_content(
+        self,
+        conversation_id: UUID,
+    ) -> None:
+        """
+        Hard-delete every message of a conversation and all
+        children (reactions, per-recipient wrapped keys,
+        attachments, signal sessions).
+
+        Child rows are removed explicitly so the wipe works on
+        dialects without FK cascades (e.g. SQLite in tests).
+        """
+
+        message_ids = select(Message.id).where(
+            Message.conversation_id == conversation_id
+        )
+
+        await self.db.execute(
+            delete(MessageReaction).where(
+                MessageReaction.message_id.in_(message_ids)
+            )
+        )
+
+        await self.db.execute(
+            delete(MessageRecipientKey).where(
+                MessageRecipientKey.message_id.in_(message_ids)
+            )
+        )
+
+        await self.db.execute(
+            delete(Attachment).where(
+                Attachment.message_id.in_(message_ids)
+            )
+        )
+
+        await self.db.execute(
+            delete(SignalSession).where(
+                SignalSession.conversation_id == conversation_id
+            )
+        )
+
+        await self.db.execute(
+            delete(Message).where(
+                Message.conversation_id == conversation_id
+            )
+        )
+
+        await self.db.flush()
+
+    # ==========================================================
+    # DELETE (message-level)
+    # ==========================================================
+
     async def delete_for_everyone(
         self,
         message: Message,
@@ -304,6 +386,49 @@ class MessageRepository(BaseRepository):
             await self.update()
 
         return message
+
+    # ==========================================================
+    # PER-RECIPIENT KEYS (group E2EE)
+    # ==========================================================
+
+    async def add_recipient_key(
+        self,
+        message_id: UUID,
+        user_id: UUID,
+        encrypted_key: str,
+    ) -> MessageRecipientKey:
+
+        row = MessageRecipientKey(
+            message_id=message_id,
+            user_id=user_id,
+            encrypted_key=encrypted_key,
+        )
+
+        return await self.create(row)
+
+    async def replace_recipient_keys(
+        self,
+        message_id: UUID,
+        keys: list[tuple[UUID, str]],
+    ) -> None:
+
+        await self.db.execute(
+            delete(MessageRecipientKey).where(
+                MessageRecipientKey.message_id == message_id
+            )
+        )
+
+        for user_id, encrypted_key in keys:
+
+            row = MessageRecipientKey(
+                message_id=message_id,
+                user_id=user_id,
+                encrypted_key=encrypted_key,
+            )
+
+            await self.create(row)
+
+        await self.db.flush()
 
     # ==========================================================
     # REPLY
@@ -347,8 +472,7 @@ class MessageRepository(BaseRepository):
 
             select(Message)
             .options(
-                selectinload(Message.attachments),
-                selectinload(Message.reactions),
+                *_message_options()
             )
             .where(
                 Message.id == message_id

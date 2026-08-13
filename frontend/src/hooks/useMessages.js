@@ -38,6 +38,10 @@ import {
     getPrivateKey,
     getPublicKey,
 } from "../crypto/keyStorage";
+import {
+    encryptGroupMessage,
+    decryptGroupMessage,
+} from "../utils/groupEncryption";
 
 // ==========================================================
 // Reaction list updater
@@ -106,6 +110,84 @@ export default function useMessages(
     const [searching, setSearching] =
         useState(false);
 
+    const isGroup =
+        conversation?.conversation_type === "group";
+
+    // Group chats: participants (with public keys) fetched
+    // from the backend, needed to wrap message keys at send.
+    const [groupDetail, setGroupDetail] =
+        useState(null);
+
+    async function refreshGroupDetail() {
+
+        if (!conversation || !isGroup) return;
+
+        try {
+
+            const detail =
+                await conversationService.getConversation(
+                    conversation.id
+                );
+
+            setGroupDetail(detail);
+
+        }
+        catch (error) {
+
+            console.error(
+                "Failed to load group detail",
+                error
+            );
+
+        }
+
+    }
+
+    useEffect(() => {
+
+        if (isGroup) {
+
+            setGroupDetail(null);
+
+            void refreshGroupDetail();
+
+        }
+        else {
+
+            setGroupDetail(null);
+
+        }
+
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [conversation?.id]);
+
+    // Group membership always changes through a
+    // `conversations_changed` event: re-fetch participants
+    // so senders wrap keys for the CURRENT member set.
+    useEffect(() => {
+
+        if (!isGroup) return;
+
+        const unsubscribe = subscribe(
+            async (event) => {
+
+                if (
+                    event.event ===
+                    "conversations_changed"
+                ) {
+
+                    await refreshGroupDetail();
+
+                }
+
+            }
+        );
+
+        return unsubscribe;
+
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [conversation?.id]);
+
     //------------------------------------------------------
     // Decrypt an incoming message (Signal first, RSA fallback)
     //------------------------------------------------------
@@ -151,6 +233,37 @@ export default function useMessages(
 
         let plaintext;
 
+        // -------------------------------------------------
+        // Group message: the AES key was wrapped to EVERY
+        // member; unwrap OUR copy and decrypt.
+        // -------------------------------------------------
+
+        if (message.recipient_keys?.length) {
+
+            try {
+
+                plaintext =
+                    await decryptGroupMessage(
+                        message,
+                        getPrivateKey(),
+                        user.id,
+                    );
+
+            }
+            catch (error) {
+
+                console.error(
+                    "Failed to decrypt group message:",
+                    error
+                );
+
+                return "[Unable to decrypt]";
+
+            }
+
+        }
+        else {
+
         try {
 
             // Signal envelope JSON?
@@ -184,6 +297,8 @@ export default function useMessages(
                 return "[Unable to decrypt]";
 
             }
+
+        }
 
         }
 
@@ -355,6 +470,18 @@ export default function useMessages(
                             break;
 
                         //--------------------------------------------------
+                        // Conversation deleted (two-party wipe)
+                        //--------------------------------------------------
+
+                        case "conversation_deleted":
+
+                            setMessages([]);
+
+                            clearSearch();
+
+                            break;
+
+                        //--------------------------------------------------
                         // Typing
                         //--------------------------------------------------
 
@@ -452,6 +579,11 @@ export default function useMessages(
                                                         event.nonce ??
                                                         message.nonce,
 
+                                                    recipient_keys:
+                                                        event.recipient_keys ??
+                                                        message.recipient_keys ??
+                                                        [],
+
                                                 }
 
                                                 : message
@@ -493,6 +625,9 @@ export default function useMessages(
 
                                             nonce:
                                                 event.nonce,
+
+                                            recipient_keys:
+                                                event.recipient_keys ?? [],
 
                                         });
 
@@ -1133,6 +1268,101 @@ export default function useMessages(
         try {
 
             //--------------------------------------------------
+            // Group chats: fresh AES key wrapped to every
+            // member's public key (E2EE for N recipients).
+            //--------------------------------------------------
+
+            if (isGroup) {
+
+                if (file) {
+
+                    throw new Error(
+                        "Attachments are not available "
+                        + "in group chats yet."
+                    );
+
+                }
+
+                if (!groupDetail?.participants?.length) {
+
+                    throw new Error(
+                        "Group members are still loading. "
+                        + "Try again in a moment."
+                    );
+
+                }
+
+                const encrypted =
+                    await encryptGroupMessage(
+                        plaintext,
+                        groupDetail.participants,
+                    );
+
+                const saved =
+                    await messageService.sendMessage(
+                        conversation.id,
+                        encrypted,
+                        replyToId,
+                        isForwarded,
+                    );
+
+                const localMessage = {
+                    ...saved,
+                    content: plaintext,
+                    attachments: [],
+                };
+
+                setMessages(previous => [
+                    ...previous,
+                    localMessage,
+                ]);
+
+                onNewMessage?.(localMessage);
+
+                try {
+
+                    await signalKeyStore.savePlaintext(
+                        conversation.id,
+                        saved.id,
+                        plaintext,
+                        saved.ciphertext,
+                    );
+
+                }
+                catch (error) {
+
+                    console.error(
+                        "Failed to cache sent message:",
+                        error
+                    );
+
+                }
+
+                websocketService.sendMessage({
+                    id: saved.id,
+                    conversation_id: saved.conversation_id,
+                    sender_id: saved.sender_id,
+                    ciphertext: saved.ciphertext,
+                    encrypted_key_sender: saved.encrypted_key_sender,
+                    encrypted_key_receiver: saved.encrypted_key_receiver,
+                    nonce: saved.nonce,
+                    crypto_version: saved.crypto_version,
+                    message_type: saved.message_type,
+                    reply_to_id: saved.reply_to_id,
+                    is_forwarded: saved.is_forwarded,
+                    expires_at: saved.expires_at,
+                    created_at: saved.created_at,
+                    attachments: [],
+                    recipient_keys: saved.recipient_keys ?? [],
+                });
+
+                if (error) setError(null);
+
+                return;
+
+            }
+
+            //--------------------------------------------------
             // Encrypt for the conversation (Signal ratchet)
             //--------------------------------------------------
 
@@ -1363,21 +1593,54 @@ export default function useMessages(
 
         try {
 
+            let encrypted;
+
+            let recipientKeys = [];
+
             //--------------------------------------------------
-            // Fresh ratchet envelope (the server never sees
-            // the plaintext)
+            // Group edit: fresh AES key wrapped to every member
             //--------------------------------------------------
 
-            const encrypted =
-                await encryptForConversation({
-                    conversationId: conversation.id,
-                    otherUserId: conversation.other_user.id,
-                    plaintext: newPlaintext,
-                    bundleProvider: async () =>
-                        deviceService.getBundle(
-                            conversation.other_user.id
-                        ),
-                });
+            if (isGroup) {
+
+                if (!groupDetail?.participants?.length) {
+
+                    throw new Error(
+                        "Group members are still loading. "
+                        + "Try again in a moment."
+                    );
+
+                }
+
+                encrypted =
+                    await encryptGroupMessage(
+                        newPlaintext,
+                        groupDetail.participants,
+                    );
+
+                recipientKeys =
+                    encrypted.recipient_keys ?? [];
+
+            }
+            else {
+
+                //--------------------------------------------------
+                // Fresh ratchet envelope (the server never sees
+                // the plaintext)
+                //--------------------------------------------------
+
+                encrypted =
+                    await encryptForConversation({
+                        conversationId: conversation.id,
+                        otherUserId: conversation.other_user.id,
+                        plaintext: newPlaintext,
+                        bundleProvider: async () =>
+                            deviceService.getBundle(
+                                conversation.other_user.id
+                            ),
+                    });
+
+            }
 
             await messageService.editMessage(
                 messageId,
@@ -1411,6 +1674,9 @@ export default function useMessages(
                                 nonce:
                                     encrypted.nonce,
 
+                                recipient_keys:
+                                    recipientKeys,
+
                             }
 
                             : message
@@ -1435,6 +1701,15 @@ export default function useMessages(
                 );
 
             }
+
+            websocketService.sendEdit({
+                conversationId: conversation.id,
+                messageId,
+                encrypted: {
+                    ...encrypted,
+                    recipient_keys: recipientKeys,
+                },
+            });
 
             return true;
 
@@ -1772,6 +2047,10 @@ export default function useMessages(
         searchResults,
 
         searching,
+
+        groupDetail,
+
+        refreshGroupDetail,
 
     };
 }

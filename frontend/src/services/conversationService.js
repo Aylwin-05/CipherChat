@@ -71,6 +71,140 @@ const conversationService = {
     },
 
     //==========================================================
+    // Create Group
+    //==========================================================
+
+    async createGroup(name, memberIds) {
+
+        try {
+
+            const response = await api.post(
+
+                "/conversations/group",
+
+                {
+
+                    name,
+
+                    member_ids: memberIds,
+
+                }
+
+            );
+
+            return response.data;
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Failed to create group",
+                error
+            );
+
+            throw error;
+
+        }
+
+    },
+
+    //==========================================================
+    // Get Conversation Detail (group participants + keys)
+    //==========================================================
+
+    async getConversation(conversationId) {
+
+        try {
+
+            const response = await api.get(
+                `/conversations/${conversationId}`
+            );
+
+            return response.data;
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Failed to load conversation detail",
+                error
+            );
+
+            throw error;
+
+        }
+
+    },
+
+    //==========================================================
+    // Add Group Members (admin only)
+    //==========================================================
+
+    async addGroupMembers(conversationId, memberIds) {
+
+        try {
+
+            const response = await api.post(
+
+                `/conversations/${conversationId}/group/add`,
+
+                {
+
+                    member_ids: memberIds,
+
+                }
+
+            );
+
+            return response.data;
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Failed to add group members",
+                error
+            );
+
+            throw error;
+
+        }
+
+    },
+
+    //==========================================================
+    // Leave Group
+    //==========================================================
+
+    async leaveGroup(conversationId) {
+
+        try {
+
+            const response = await api.post(
+                `/conversations/${conversationId}/group/leave`
+            );
+
+            return response.data;
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Failed to leave group",
+                error
+            );
+
+            throw error;
+
+        }
+
+    },
+
+    //==========================================================
     // Update Conversation Settings (pin / archive / mute)
     //==========================================================
 
@@ -103,6 +237,57 @@ const conversationService = {
             throw error;
 
         }
+
+    },
+
+    //==========================================================
+    // Request Conversation Deletion (two-party consent)
+    //
+    // User 1 requests the wipe; the OTHER participant must
+    // confirm (delete-confirm) before anything is erased.
+    //==========================================================
+
+    async requestDelete(conversationId) {
+
+        const response = await api.post(
+            `/conversations/${conversationId}/delete-request`
+        );
+
+        return response.data;
+
+    },
+
+    //==========================================================
+    // Confirm Conversation Deletion
+    //
+    // The second participant consents; the server then purges
+    // every message + attachment + the conversation itself.
+    //==========================================================
+
+    async confirmDelete(conversationId) {
+
+        const response = await api.post(
+            `/conversations/${conversationId}/delete-confirm`
+        );
+
+        return response.data;
+
+    },
+
+    //==========================================================
+    // Cancel a Pending Deletion Request
+    //
+    // The requester can withdraw their request; the other
+    // participant can dismiss it ("Not now").
+    //==========================================================
+
+    async cancelDelete(conversationId) {
+
+        const response = await api.post(
+            `/conversations/${conversationId}/delete-cancel`
+        );
+
+        return response.data;
 
     },
 

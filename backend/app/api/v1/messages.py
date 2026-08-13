@@ -100,6 +100,16 @@ def serialize_message(message):
             )
             for reaction in message.reactions
         ],
+
+        recipient_keys=[
+            {
+                "user_id": key.user_id,
+                "encrypted_key": key.encrypted_key,
+            }
+            for key in message.recipient_keys
+        ]
+        if "recipient_keys" in message.__dict__
+        else [],
     )
 
 
@@ -146,6 +156,12 @@ async def send_message(
             message_type=request.message_type,
             reply_to_id=request.reply_to_id,
             is_forwarded=request.is_forwarded,
+            recipient_keys=[
+                (key.user_id, key.encrypted_key)
+                for key in request.recipient_keys
+            ]
+            if request.recipient_keys
+            else None,
         )
 
         await db.commit()
@@ -155,6 +171,7 @@ async def send_message(
         [
             "attachments",
             "reactions",
+            "recipient_keys",
         ]
         )
 
@@ -215,6 +232,12 @@ async def edit_message(
             encrypted_key_sender=request.encrypted_key_sender,
             encrypted_key_receiver=request.encrypted_key_receiver,
             nonce=request.nonce,
+            recipient_keys=[
+                (key.user_id, key.encrypted_key)
+                for key in request.recipient_keys
+            ]
+            if request.recipient_keys
+            else None,
         )
 
         await db.commit()

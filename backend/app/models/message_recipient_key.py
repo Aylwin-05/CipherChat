@@ -2,7 +2,7 @@ from uuid import uuid4
 
 from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
 
@@ -60,4 +60,8 @@ class MessageRecipientKey(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+    )
+
+    message: Mapped["Message"] = relationship(
+        backref="recipient_keys",
     )

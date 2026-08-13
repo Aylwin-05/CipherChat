@@ -156,6 +156,8 @@
     right: 0;
     z-index: 30;
     width: 240px;
+    max-height: calc(100dvh - 96px);
+    overflow-y: auto;
     padding: 8px;
     border-radius: 14px;
     background: var(--surface-1);
@@ -230,6 +232,25 @@
     border-bottom: 1px solid var(--border);
 }
 
+/* ---------- pending conversation-deletion banner ---------- */
+
+.chat-delete-pending-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 7px 14px;
+    font-size: 12px;
+    color: var(--danger);
+    background: rgba(251, 113, 133, 0.09);
+    border-bottom: 1px solid rgba(251, 113, 133, 0.25);
+}
+
+.btn-xs {
+    padding: 4px 12px;
+    font-size: 11.5px;
+}
+
 /* ---------- chat search ---------- */
 
 .chat-search {
@@ -259,6 +280,8 @@
     top: calc(100% + 8px);
     right: 0;
     width: 300px;
+    max-height: min(360px, calc(100dvh - 96px));
+    overflow-y: auto;
     padding: 8px;
     border-radius: 14px;
     background: var(--surface-1);
@@ -705,6 +728,21 @@
 .message-row.other .bubble-menu {
     right: auto;
     left: 0;
+}
+
+/* Flip the menu upward when it would overflow the bottom
+   of the window (e.g. the menu of the latest message). */
+
+.bubble-menu.up {
+    top: auto;
+    bottom: calc(100% + 4px);
+}
+
+/* Long menus must never escape the window: cap and scroll */
+
+.bubble-menu {
+    max-height: min(420px, calc(100dvh - 32px));
+    overflow-y: auto;
 }
 
 .bubble-menu-item {

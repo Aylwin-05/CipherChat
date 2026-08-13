@@ -1,6 +1,7 @@
 import {
     useEffect,
     useRef,
+    useState,
 } from "react";
 
 import MessageBubble from "./MessageBubble";
@@ -72,6 +73,7 @@ export default function MessageList({
     otherUser,
     conversationId,
     highlightMessageId,
+    participantsMap = null,
 }) {
 
     const { user } = useAuth();
@@ -85,6 +87,18 @@ export default function MessageList({
     const prevConversationRef = useRef(null);
 
     const highlightRef = useRef(null);
+
+    // Only one message actions menu can be open at a time;
+    // owning the state here prevents two dropdowns from
+    // overlapping on nearby messages.
+    const [openMenuId, setOpenMenuId] =
+        useState(null);
+
+    useEffect(() => {
+
+        setOpenMenuId(null);
+
+    }, [conversationId]);
 
     // ==========================================================
     // Search result jump: scroll the target message into view
@@ -397,7 +411,10 @@ export default function MessageList({
             message.sender_id === user?.id
                 ? user?.display_name ||
                     "You"
-                : otherUser?.display_name ||
+                : (participantsMap?.[
+                        message.sender_id
+                    ]?.display_name ??
+                    otherUser?.display_name) ||
                     "Unknown";
 
         rows.push({
@@ -464,7 +481,10 @@ export default function MessageList({
                             repliedMessage?.sender_id ===
                             user?.id
                                 ? "You"
-                                : otherUser?.display_name ||
+                                : (participantsMap?.[
+                                        repliedMessage?.sender_id
+                                    ]?.display_name ??
+                                    otherUser?.display_name) ||
                                     "Unknown";
 
                         const highlight =
@@ -507,6 +527,17 @@ export default function MessageList({
                                     repliedDisplayName
                                 }
                                 groupInfo={groupInfo}
+                                menuOpen={
+                                    openMenuId ===
+                                    message.id
+                                }
+                                onToggleMenu={(open) =>
+                                    setOpenMenuId(
+                                        open
+                                            ? message.id
+                                            : null
+                                    )
+                                }
                             />
 
                             </div>

@@ -212,6 +212,108 @@ export function ChatSocketProvider({ children }) {
 
                     }
 
+                    // ==========================================
+                    // Two-party conversation deletion
+                    // ==========================================
+
+                    case "conversation_delete_request": {
+
+                        const conversationId =
+                            event.conversation_id;
+
+                        setConversations(previous =>
+                            previous.map(conversation =>
+
+                                conversation.id ===
+                                conversationId
+
+                                    ? {
+
+                                        ...conversation,
+
+                                        delete_requested_by:
+                                            event.requested_by,
+
+                                        delete_requested_at:
+                                            event.requested_at,
+
+                                    }
+
+                                    : conversation
+                            )
+                        );
+
+                        break;
+
+                    }
+
+                    case "conversation_delete_cancelled": {
+
+                        const conversationId =
+                            event.conversation_id;
+
+                        setConversations(previous =>
+                            previous.map(conversation =>
+
+                                conversation.id ===
+                                conversationId
+
+                                    ? {
+
+                                        ...conversation,
+
+                                        delete_requested_by: null,
+
+                                        delete_requested_at: null,
+
+                                    }
+
+                                    : conversation
+                            )
+                        );
+
+                        break;
+
+                    }
+
+                    case "conversation_deleted": {
+
+                        const conversationId =
+                            event.conversation_id;
+
+                        setConversations(previous =>
+                            previous.filter(
+                                conversation =>
+                                    conversation.id !==
+                                    conversationId
+                            )
+                        );
+
+                        if (
+                            conversationId &&
+                            conversationId ===
+                                activeRef.current
+                        ) {
+
+                            setActiveConversationId(null);
+
+                        }
+
+                        break;
+
+                    }
+
+                    // ==========================================
+                    // Group membership changed (created, members
+                    // added, someone left): refresh the sidebar.
+                    // ==========================================
+
+                    case "conversations_changed":
+
+                        await loadConversations();
+
+                        break;
+
                 }
 
                 emit(event);
@@ -401,6 +503,111 @@ export function ChatSocketProvider({ children }) {
     }
 
     //=====================================================
+    // Two-party conversation deletion helpers
+    //
+    // The server keeps nothing until BOTH participants have
+    // consented. The other user's consent arrives either
+    // through their confirm call (returned here) or through
+    // the real-time WS events handled above.
+    //=====================================================
+
+    function applyDeleteState(conversationId, data) {
+
+        setConversations(previous => {
+
+            const exists = previous.some(
+                conv => conv.id === conversationId
+            );
+
+            if (!exists) return previous;
+
+            return previous.map(conv => {
+
+                if (conv.id !== conversationId) return conv;
+
+                if (data.status === "deleted") {
+
+                    return null;
+
+                }
+
+                return {
+
+                    ...conv,
+
+                    delete_requested_by:
+                        data.delete_requested_by ?? null,
+
+                    delete_requested_at:
+                        data.delete_requested_at ?? null,
+
+                };
+
+            }).filter(Boolean);
+
+        });
+
+    }
+
+    async function requestConversationDelete(conversationId) {
+
+        const data =
+            await conversationService.requestDelete(
+                conversationId
+            );
+
+        applyDeleteState(conversationId, data);
+
+        return data;
+
+    }
+
+    async function confirmConversationDelete(conversationId) {
+
+        const data =
+            await conversationService.confirmDelete(
+                conversationId
+            );
+
+        if (data.status === "deleted") {
+
+            setConversations(previous =>
+                previous.filter(
+                    conv => conv.id !== conversationId
+                )
+            );
+
+            if (conversationId === activeRef.current) {
+
+                setActiveConversationId(null);
+
+            }
+
+            emit({
+                event: "conversation_deleted",
+                conversation_id: conversationId,
+            });
+
+        }
+
+        return data;
+
+    }
+
+    async function cancelConversationDelete(conversationId) {
+
+        const data =
+            await conversationService.cancelDelete(
+                conversationId
+            );
+
+        applyDeleteState(conversationId, data);
+
+        return data;
+
+    }
+
+    //=====================================================
     // Raw event subscription for per-conversation hooks
     //=====================================================
 
@@ -431,6 +638,12 @@ export function ChatSocketProvider({ children }) {
         bumpConversation,
 
         updateSettings,
+
+        requestConversationDelete,
+
+        confirmConversationDelete,
+
+        cancelConversationDelete,
 
         subscribe,
 

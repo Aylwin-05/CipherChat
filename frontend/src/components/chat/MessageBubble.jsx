@@ -60,6 +60,8 @@ export default function MessageBubble({
     repliedMessage,
     repliedDisplayName = "",
     groupInfo = {},
+    menuOpen = false,
+    onToggleMenu,
 }) {
 
     const { user } = useAuth();
@@ -68,18 +70,29 @@ export default function MessageBubble({
 
     const [lightbox, setLightbox] = useState(null);
 
-    const [menuOpen, setMenuOpen] = useState(false);
-
     const [confirming, setConfirming] = useState(null);
 
-    // Close the actions menu when clicking elsewhere
+    const [menuUp, setMenuUp] = useState(false);
+
+    const menuRef = useRef(null);
+
+    // Keep the latest onToggleMenu without re-registering
+    // the outside-click listener on every render.
+    const onToggleMenuRef = useRef(onToggleMenu);
+
+    onToggleMenuRef.current = onToggleMenu;
+
+    // Close the actions menu when clicking elsewhere.
+    // NOTE: deliberately NOT closed on scroll — the menu is
+    // positioned inside its message row, so it scrolls along
+    // with the row and never detaches from it.
     useEffect(() => {
 
         if (!menuOpen) return;
 
         function closeMenu() {
 
-            setMenuOpen(false);
+            onToggleMenuRef.current?.(false);
 
             setConfirming(null);
 
@@ -101,6 +114,75 @@ export default function MessageBubble({
 
     }, [menuOpen]);
 
+    // Flip the dropdown upward when it would run past the
+    // bottom edge of the window (e.g. the latest message).
+    // Re-measures while open — even during a scroll — but
+    // only flips; it never closes the menu.
+    useEffect(() => {
+
+        if (!menuOpen) return;
+
+        let frame = null;
+
+        const measure = () => {
+
+            const menu = menuRef.current;
+
+            if (!menu) return;
+
+            const rect = menu.getBoundingClientRect();
+
+            const overflowsBottom =
+                rect.bottom > window.innerHeight - 8;
+
+            setMenuUp(previous =>
+                previous === overflowsBottom
+                    ? previous
+                    : overflowsBottom
+            );
+
+        };
+
+        const measureScheduled = () => {
+
+            cancelAnimationFrame(frame);
+
+            frame = requestAnimationFrame(measure);
+
+        };
+
+        measure();
+
+        window.addEventListener(
+            "resize",
+            measureScheduled,
+        );
+
+        window.addEventListener(
+            "scroll",
+            measureScheduled,
+            true,
+        );
+
+        return () => {
+
+            cancelAnimationFrame(frame);
+
+            window.removeEventListener(
+                "resize",
+                measureScheduled,
+            );
+
+            window.removeEventListener(
+                "scroll",
+                measureScheduled,
+                true,
+            );
+
+        };
+
+    }, [menuOpen, confirming]);
+
     // ==========================================================
     // Delete actions
     // ==========================================================
@@ -119,7 +201,7 @@ export default function MessageBubble({
 
         }
 
-        setMenuOpen(false);
+        onToggleMenuRef.current?.(false);
 
         setConfirming(null);
 
@@ -379,11 +461,16 @@ export default function MessageBubble({
                             type="button"
                             className="bubble-actions-btn"
                             aria-label="Message actions"
+                            onMouseDown={(event) =>
+                                event.preventDefault()
+                            }
                             onClick={(event) => {
 
                                 event.stopPropagation();
 
-                                setMenuOpen(open => !open);
+                                onToggleMenuRef.current?.(
+                                    !menuOpen
+                                );
 
                                 setConfirming(null);
 
@@ -406,7 +493,10 @@ export default function MessageBubble({
                         {menuOpen && (
 
                             <div
-                                className="bubble-menu"
+                                ref={menuRef}
+                                className={`bubble-menu ${
+                                    menuUp ? "up" : ""
+                                }`}
                                 onClick={(event) =>
                                     event.stopPropagation()
                                 }
@@ -436,7 +526,7 @@ export default function MessageBubble({
                                                 aria-label={`React ${emoji}`}
                                                 onClick={() => {
 
-                                                    setMenuOpen(false);
+                                                    onToggleMenuRef.current?.(false);
 
                                                     onToggleReaction?.(
                                                         message.id,
@@ -461,7 +551,7 @@ export default function MessageBubble({
                                     className="bubble-menu-item"
                                     onClick={() => {
 
-                                        setMenuOpen(false);
+                                        onToggleMenuRef.current?.(false);
 
                                         onInfo?.(message);
 
@@ -477,7 +567,7 @@ export default function MessageBubble({
                                     className="bubble-menu-item"
                                     onClick={() => {
 
-                                        setMenuOpen(false);
+                                        onToggleMenuRef.current?.(false);
 
                                         onReply?.(message);
 
@@ -495,7 +585,7 @@ export default function MessageBubble({
                                         className="bubble-menu-item"
                                         onClick={() => {
 
-                                            setMenuOpen(false);
+                                            onToggleMenuRef.current?.(false);
 
                                             onEdit?.(message);
 
@@ -515,7 +605,7 @@ export default function MessageBubble({
                                         className="bubble-menu-item"
                                         onClick={() => {
 
-                                            setMenuOpen(false);
+                                            onToggleMenuRef.current?.(false);
 
                                             onForward?.(message);
 
@@ -863,3 +953,4 @@ export default function MessageBubble({
     );
 
 }
+

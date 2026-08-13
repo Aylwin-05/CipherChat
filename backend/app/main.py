@@ -98,7 +98,11 @@ async def validation_exception_handler(
         for error in exc.errors()
     ]
 
-    request_id = request.state.request_id
+    request_id = getattr(
+        request.state,
+        "request_id",
+        None,
+    )
 
     return JSONResponse(
         status_code=422,

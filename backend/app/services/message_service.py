@@ -84,6 +84,7 @@ class MessageService:
         reply_to_id: UUID | None = None,
         is_forwarded: bool = False,
         attachment_ids: list[UUID] | None = None,
+        recipient_keys: list[tuple[UUID, str]] | None = None,
     ) -> Message:
 
         await self._validate_participant(
@@ -147,6 +148,18 @@ class MessageService:
         message = await self.message_repository.create_message(
             message
         )
+
+        # Group E2EE: the fresh AES key was wrapped for EVERY
+        # member at send time; store each wrapped copy.
+        if recipient_keys:
+
+            for user_id, encrypted_key in recipient_keys:
+
+                await self.message_repository.add_recipient_key(
+                    message.id,
+                    user_id,
+                    encrypted_key,
+                )
 
         # Attach uploaded files to this message
         if attachment_ids:
@@ -240,6 +253,7 @@ class MessageService:
         encrypted_key_sender: str,
         encrypted_key_receiver: str,
         nonce: str,
+        recipient_keys: list[tuple[UUID, str]] | None = None,
     ) -> Message:
 
         message = await self.get_message(
@@ -257,13 +271,23 @@ class MessageService:
                 "Message has already been deleted."
             )
 
-        return await self.message_repository.edit_payload(
+        edited = await self.message_repository.edit_payload(
             message,
             ciphertext,
             encrypted_key_sender,
             encrypted_key_receiver,
             nonce,
         )
+
+        # Group edits re-wrap the key for every current member.
+        if recipient_keys:
+
+            await self.message_repository.replace_recipient_keys(
+                message.id,
+                recipient_keys,
+            )
+
+        return edited
 
     # ==========================================================
     # REACTIONS

@@ -3,6 +3,7 @@ import { useState } from "react";
 import "./ConversationList.css";
 
 import ConversationItem from "./ConversationItem";
+import GroupModal from "./GroupModal";
 
 import { useChatSocket } from "../../context/ChatSocketContext";
 
@@ -16,6 +17,8 @@ export default function ConversationList({
 
     onSelectConversation,
 
+    onGroupCreated,
+
 }) {
 
     const {
@@ -24,6 +27,9 @@ export default function ConversationList({
     } = useChatSocket();
 
     const [showArchived, setShowArchived] =
+        useState(false);
+
+    const [groupModalOpen, setGroupModalOpen] =
         useState(false);
 
     if (loading) {
@@ -140,15 +146,30 @@ export default function ConversationList({
 
             <div className="conv-panel-header">
 
-                <h2 className="conv-title">Chats</h2>
+                    <h2 className="conv-title">Chats</h2>
 
-                <span className="conv-count">
+                    <div className="conv-header-actions">
 
-                    {conversations.length}
+                        <button
+                            type="button"
+                            className="conv-new-group-btn"
+                            title="New group"
+                            onClick={() =>
+                                setGroupModalOpen(true)
+                            }
+                        >
+                            +
+                        </button>
 
-                </span>
+                        <span className="conv-count">
 
-            </div>
+                            {conversations.length}
+
+                        </span>
+
+                    </div>
+
+                </div>
 
             <div className="conv-list-body">
 
@@ -303,6 +324,22 @@ export default function ConversationList({
                 }
 
             </div>
+
+            {groupModalOpen && (
+
+                <GroupModal
+
+                    onClose={() =>
+                        setGroupModalOpen(false)
+                    }
+
+                    onCreate={(group) =>
+                        onGroupCreated?.(group)
+                    }
+
+                />
+
+            )}
 
         </div>
 

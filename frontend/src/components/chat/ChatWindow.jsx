@@ -7,6 +7,8 @@ import ChatInput from "./ChatInput";
 import MessageList from "./MessageList";
 import ForwardModal from "./ForwardModal";
 import MessageInfoPanel from "./MessageInfoPanel";
+import DeleteConversationModal from "./DeleteConversationModal";
+import GroupInfoModal from "./GroupInfoModal";
 
 import UserAvatar from "../UserAvatar";
 import { useAuth } from "../../context/AuthContext";
@@ -46,6 +48,7 @@ function TimerIcon() {
 
 export default function ChatWindow({
     conversation,
+    onLeaveGroup,
 }) {
 
     const { user } = useAuth();
@@ -74,6 +77,8 @@ export default function ChatWindow({
         searchQuery,
         searchResults,
         searching,
+        groupDetail,
+        refreshGroupDetail,
     } = useMessages(
         conversation,
         (newMessage) => {
@@ -114,6 +119,12 @@ export default function ChatWindow({
         useState(false);
 
     const [showSearch, setShowSearch] =
+        useState(false);
+
+    const [deleteOpen, setDeleteOpen] =
+        useState(false);
+
+    const [groupInfoOpen, setGroupInfoOpen] =
         useState(false);
 
     const [searchInput, setSearchInput] =
@@ -221,9 +232,7 @@ export default function ChatWindow({
             ...message,
 
             sender_display_name:
-                message.sender_id === user?.id
-                    ? user?.display_name
-                    : otherUser.display_name,
+                senderName(message.sender_id),
 
         });
 
@@ -239,6 +248,8 @@ export default function ChatWindow({
         setReplyTo(null);
 
         setShowTimerMenu(false);
+
+        setDeleteOpen(false);
 
         handleCloseSearch();
 
@@ -359,16 +370,57 @@ export default function ChatWindow({
             online_status: "offline",
         };
 
+    const isGroup =
+        conversation.conversation_type === "group";
+
+    const participantsMap = {};
+
+    for (const participant of
+        groupDetail?.participants ?? []) {
+
+        participantsMap[participant.user_id] =
+            participant.user ?? {};
+
+    }
+
+    const groupName =
+        groupDetail?.name ?? conversation.name;
+
+    function senderName(senderId) {
+
+        if (senderId === user?.id) {
+
+            return user?.display_name || "You";
+
+        }
+
+        return (
+            participantsMap[senderId]?.display_name ??
+            otherUser.display_name
+        );
+
+    }
+
+    const countMembers =
+        groupDetail?.participants?.length ?? 0;
+
     const liveOnline =
-        presence[otherUser.id] ??
-        otherUser.online_status === "online";
+        isGroup
+            ? false
+            : presence[otherUser.id] ??
+                otherUser.online_status === "online";
+
+    const typingName =
+        typingUsers.length > 0
+            ? senderName(typingUsers[0].sender_id)
+            : null;
 
     // Friendly wording for common errors
     const errorMessage = error
         ? /no (registered )?devic|no-such-device|bundle unavailable/i.test(
             error.message ?? "",
         )
-            ? `${otherUser.display_name} hasn't set up
+            ? `${senderName(null)} hasn't set up
                end-to-end encryption yet. Ask them to
                log in once so their secure device is ready.`
             : error.message
@@ -383,21 +435,28 @@ export default function ChatWindow({
                 <div className="chat-identity">
 
                     <UserAvatar
-                        user={otherUser}
+                        user={isGroup
+                            ? {
+                                display_name: groupName,
+                                avatar_color: conversation.id,
+                            }
+                            : otherUser}
                         className="chat-avatar"
                     >
-                        <span
-                            className={`chat-presence ${
-                                liveOnline ? "online" : ""
-                            }`}
-                        />
+                        {!isGroup && (
+                            <span
+                                className={`chat-presence ${
+                                    liveOnline ? "online" : ""
+                                }`}
+                            />
+                        )}
                     </UserAvatar>
 
                     <div className="chat-heading">
 
                         <h3 className="chat-name">
 
-                            {otherUser.display_name}
+                            {groupName}
 
                         </h3>
 
@@ -413,7 +472,19 @@ export default function ChatWindow({
 
                                 </span>
 
-                                Typing…
+                                {isGroup
+                                    ? `${typingName ?? "Someone"} is typing…`
+                                    : "Typing…"}
+
+                            </div>
+
+                        ) : isGroup ? (
+
+                            <div className="chat-status">
+
+                                {countMembers > 0
+                                    ? `${countMembers} members`
+                                    : "Group"}
 
                             </div>
 
@@ -470,7 +541,7 @@ export default function ChatWindow({
                             <input
                                 className="chat-search-input"
                                 type="text"
-                                placeholder={`Search "${otherUser.display_name}"`}
+                                placeholder={`Search "${isGroup ? groupName : otherUser.display_name}"`}
                                 value={searchInput}
                                 autoFocus
                                 onChange={(e) =>
@@ -647,9 +718,85 @@ export default function ChatWindow({
 
                     </span>
 
+                    <span
+                        className="e2e-chip icon-chip"
+                        title={
+                            isGroup
+                                ? "Group info"
+                                : "Delete chat"
+                        }
+                    >
+                        <button
+                            type="button"
+                            className="chip-btn"
+                            onClick={() =>
+                                isGroup
+                                    ? setGroupInfoOpen(true)
+                                    : setDeleteOpen(true)
+                            }
+                        >
+                            {isGroup ? (
+                                <svg
+                                    width="15"
+                                    height="15"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                >
+                                    <circle cx="18" cy="5" r="3" />
+                                    <circle cx="6" cy="12" r="3" />
+                                    <circle cx="18" cy="19" r="3" />
+                                    <path d="m8.59 13.51 6.83 3.98" />
+                                    <path d="m15.41 6.51-6.82 3.98" />
+                                </svg>
+                            ) : (
+                                <svg
+                                    width="14"
+                                    height="14"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                >
+                                    <path d="M3 6h18" />
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                </svg>
+                            )}
+                        </button>
+                    </span>
+
                 </div>
 
             </div>
+
+            {conversation.delete_requested_by === user?.id && (
+
+                <div className="chat-delete-pending-banner">
+
+                    <span>
+                        Waiting for {otherUser.display_name}
+                        to confirm deleting this chat.
+                    </span>
+
+                    <button
+                        type="button"
+                        className="btn-ghost btn-xs"
+                        onClick={() =>
+                            setDeleteOpen(true)
+                        }
+                    >
+                        View / cancel
+                    </button>
+
+                </div>
+
+            )}
 
             {conversation.disappear_after_seconds ? (
 
@@ -682,6 +829,9 @@ export default function ChatWindow({
                 otherUser={otherUser}
                 conversationId={conversation.id}
                 highlightMessageId={highlightMessageId}
+                participantsMap={
+                    isGroup ? participantsMap : null
+                }
             />
 
             {errorMessage ? (
@@ -724,7 +874,11 @@ export default function ChatWindow({
 
                 <ForwardModal
                     message={forwardTarget}
-                    excludeUserId={otherUser.id}
+                    excludeUserId={
+                        isGroup
+                            ? user?.id
+                            : otherUser.id
+                    }
                     onClose={() =>
                         setForwardTarget(null)
                     }
@@ -737,10 +891,44 @@ export default function ChatWindow({
 
                 <MessageInfoPanel
                     message={infoTarget}
-                    otherUser={otherUser}
+                    otherUser={
+                        isGroup
+                            ? participantsMap[
+                                    infoTarget.sender_id
+                                ] ?? otherUser
+                            : otherUser
+                    }
                     onClose={() =>
                         setInfoTarget(null)
                     }
+                />
+
+            )}
+
+            {deleteOpen && !isGroup && (
+
+                <DeleteConversationModal
+                    conversation={conversation}
+                    onClose={() =>
+                        setDeleteOpen(false)
+                    }
+                />
+
+            )}
+
+            {groupInfoOpen && isGroup && (
+
+                <GroupInfoModal
+                    conversation={conversation}
+                    groupDetail={groupDetail}
+                    onClose={() =>
+                        setGroupInfoOpen(false)
+                    }
+                    onUpdated={refreshGroupDetail}
+                    onLeave={() => {
+                        setGroupInfoOpen(false);
+                        onLeaveGroup?.();
+                    }}
                 />
 
             )}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import Sidebar from "../../components/layout/Sidebar";
 
@@ -6,6 +6,7 @@ import ConversationList from "../../components/chat/ConversationList";
 import ChatWindow from "../../components/chat/ChatWindow";
 import FriendsPage from "../../components/friends/FriendsPage";
 import SettingsPage from "../Settings/SettingsPage";
+import DeleteConversationModal from "../../components/chat/DeleteConversationModal";
 
 import conversationService from "../../services/conversationService";
 
@@ -47,6 +48,48 @@ function DashboardInner() {
         currentPage,
         setCurrentPage,
     ] = useState("chats");
+
+    //------------------------------------------------------
+    // Incoming two-party delete request: auto-open the
+    // confirmation popup when someone wants to wipe a chat.
+    // Each pending request prompts exactly once (keyed by
+    // its id + timestamp) until it is resolved or replaced.
+    //------------------------------------------------------
+
+    const [pendingDeletePrompt, setPendingDeletePrompt] =
+        useState(null);
+
+    const promptSeenRef = useRef(null);
+
+    useEffect(() => {
+
+        if (!user) return;
+
+        const incoming = conversations.find(conv =>
+
+            conv.delete_requested_by &&
+            conv.delete_requested_by !== user.id
+
+        );
+
+        if (!incoming) {
+
+            setPendingDeletePrompt(null);
+
+            return;
+
+        }
+
+        const key =
+            `${incoming.id}:${incoming.delete_requested_at ?? ""}`;
+
+        if (promptSeenRef.current === key) return;
+
+        promptSeenRef.current = key;
+
+        setPendingDeletePrompt(incoming);
+
+    }, [conversations, user]);
 
     const selectedConversation =
         conversations.find(
@@ -130,6 +173,54 @@ function DashboardInner() {
 
     }
 
+    //----------------------------------------------------------
+    // Group created: refresh the sidebar and open the chat
+    //----------------------------------------------------------
+
+    async function handleGroupCreated(group) {
+
+        try {
+
+            await refreshConversations();
+
+            selectConversation(group.id);
+
+        }
+        catch (error) {
+
+            console.error(
+                "Unable to refresh after group creation",
+                error
+            );
+
+        }
+
+    }
+
+    //----------------------------------------------------------
+    // Left a group: drop it from the sidebar and close the chat
+    //----------------------------------------------------------
+
+    async function handleLeaveGroup() {
+
+        try {
+
+            await refreshConversations();
+
+            selectConversation(null);
+
+        }
+        catch (error) {
+
+            console.error(
+                "Unable to refresh after leaving group",
+                error
+            );
+
+        }
+
+    }
+
     return (
 
         <div className="app-shell">
@@ -198,6 +289,10 @@ function DashboardInner() {
                                         handleSelectConversation
                                     }
 
+                                    onGroupCreated={
+                                        handleGroupCreated
+                                    }
+
                                 />
 
                             </div>
@@ -210,6 +305,10 @@ function DashboardInner() {
                                         selectedConversation
                                     }
 
+                                    onLeaveGroup={
+                                        handleLeaveGroup
+                                    }
+
                                 />
 
                             </div>
@@ -219,6 +318,22 @@ function DashboardInner() {
                     )
 
             }
+
+            {pendingDeletePrompt && (
+
+                <DeleteConversationModal
+
+                    conversation={
+                        pendingDeletePrompt
+                    }
+
+                    onClose={() =>
+                        setPendingDeletePrompt(null)
+                    }
+
+                />
+
+            )}
 
         </div>
 

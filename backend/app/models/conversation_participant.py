@@ -56,6 +56,15 @@ class ConversationParticipant(Base):
         nullable=False,
     )
 
+    # Admin rights in group chats (creator + promoted members).
+    # Only admins can add members; the creator cannot be removed.
+    is_admin: Mapped[bool] = mapped_column(
+        Boolean(),
+        default=False,
+        server_default="false",
+        nullable=False,
+    )
+
     is_pinned: Mapped[bool] = mapped_column(
         Boolean(),
         default=False,

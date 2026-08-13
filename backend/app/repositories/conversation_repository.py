@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, delete, func, select
 
 from app.models.conversation import Conversation
 from app.models.conversation_participant import (
@@ -123,7 +123,7 @@ class ConversationRepository(BaseRepository):
         return result.scalars().all()
 
     # ==========================================================
-    # Get Participant
+    # Get Conversation Participant
     # ==========================================================
 
     async def get_participant(
@@ -211,9 +211,120 @@ class ConversationRepository(BaseRepository):
         return result.scalar_one_or_none()
 
     # ==========================================================
+    # Get Participants with User Profiles + Public Keys
+    #
+    # Group chat needs every member's profile and RSA public
+    # key so the client can wrap the fresh AES message key for
+    # each recipient. Returns raw rows: (participant, user,
+    # public_key or None).
+    # ==========================================================
+
+    async def get_participants_with_users(
+        self,
+        conversation_id: UUID,
+    ):
+
+        from app.models.user_key import UserKey
+
+        result = await self.execute(
+            select(
+                ConversationParticipant,
+                User,
+                UserKey.public_key,
+            )
+            .join(
+                User,
+                User.id == ConversationParticipant.user_id,
+            )
+            .outerjoin(
+                UserKey,
+                UserKey.user_id == User.id,
+            )
+            .where(
+                ConversationParticipant.conversation_id
+                == conversation_id
+            )
+        )
+
+        return result.all()
+
+    # ==========================================================
+    # Get Participant Count
+    # ==========================================================
+
+    async def get_participant_count(
+        self,
+        conversation_id: UUID,
+    ) -> int:
+
+        result = await self.execute(
+            select(func.count())
+            .select_from(ConversationParticipant)
+            .where(
+                ConversationParticipant.conversation_id
+                == conversation_id
+            )
+        )
+
+        return result.scalar_one()
+
+    # ==========================================================
+    # Remove Participant (leave group)
+    # ==========================================================
+
+    async def remove_participant(
+        self,
+        conversation_id: UUID,
+        user_id: UUID,
+    ) -> None:
+
+        await self.db.execute(
+            delete(ConversationParticipant).where(
+                and_(
+                    ConversationParticipant.conversation_id
+                    == conversation_id,
+                    ConversationParticipant.user_id
+                    == user_id,
+                )
+            )
+        )
+
+        await self.db.flush()
+
+    # ==========================================================
     # Save
     # ==========================================================
 
     async def save(self):
 
         await self.update()
+
+    # ==========================================================
+    # Delete Conversation (two-party consent wipe)
+    # ==========================================================
+
+    async def delete_conversation_record(
+        self,
+        conversation_id: UUID,
+    ) -> None:
+        """
+        Remove the participants and the conversation row itself.
+
+        Messages + attachments are wiped separately via
+        MessageRepository.delete_conversation_content.
+        """
+
+        await self.db.execute(
+            delete(ConversationParticipant).where(
+                ConversationParticipant.conversation_id
+                == conversation_id
+            )
+        )
+
+        await self.db.execute(
+            delete(Conversation).where(
+                Conversation.id == conversation_id
+            )
+        )
+
+        await self.db.flush()

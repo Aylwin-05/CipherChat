@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ==========================================================
@@ -10,6 +10,35 @@ from pydantic import BaseModel, ConfigDict
 
 class CreateConversationRequest(BaseModel):
     user_id: UUID
+
+
+# ==========================================================
+# Create Group
+# ==========================================================
+
+class CreateGroupRequest(BaseModel):
+
+    name: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+    member_ids: list[UUID] = Field(
+        min_length=1,
+        max_length=49,
+    )
+
+
+# ==========================================================
+# Add Group Members
+# ==========================================================
+
+class AddGroupMembersRequest(BaseModel):
+
+    member_ids: list[UUID] = Field(
+        min_length=1,
+        max_length=49,
+    )
 
 
 # ==========================================================
@@ -83,7 +112,13 @@ class ConversationResponse(BaseModel):
 
     updated_at: datetime
 
-    other_user: ConversationUser
+    conversation_type: str = "private"
+
+    name: str | None = None
+
+    participant_count: int | None = None
+
+    other_user: ConversationUser | None = None
 
     last_message: LastMessage | None = None
 
@@ -96,3 +131,7 @@ class ConversationResponse(BaseModel):
     muted: bool = False
 
     disappear_after_seconds: int | None = None
+
+    delete_requested_by: UUID | None = None
+
+    delete_requested_at: datetime | None = None

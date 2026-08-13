@@ -12,13 +12,18 @@ from app.models.user import User
 from app.repositories.conversation_repository import (
     ConversationRepository,
 )
+from app.repositories.friend_repository import (
+    FriendRepository,
+)
 from app.repositories.message_repository import (
     MessageRepository,
 )
 
 from app.schemas.conversation import (
+    AddGroupMembersRequest,
     ConversationResponse,
     CreateConversationRequest,
+    CreateGroupRequest,
     UpdateConversationSettingsRequest,
 )
 
@@ -99,6 +104,14 @@ async def create_private_conversation(
             ),
             "disappear_after_seconds":
                 conversation.disappear_after_seconds,
+            "delete_requested_by":
+                str(conversation.delete_requested_by)
+                if conversation.delete_requested_by
+                else None,
+            "delete_requested_at":
+                conversation.delete_requested_at.isoformat()
+                if conversation.delete_requested_at
+                else None,
         }
 
     except Exception:
@@ -190,3 +203,315 @@ async def my_conversations(
     return await service.my_conversations(
         current_user
     )
+
+# ==========================================================
+# Create Group
+# ==========================================================
+
+@router.post(
+    "/group",
+    response_model=ConversationResponse,
+    dependencies=[
+        rate_limit("conversations.create", 30, 60),
+    ],
+)
+async def create_group(
+    request: CreateGroupRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        conversation_repository = ConversationRepository(db)
+        message_repository = MessageRepository(db)
+
+        service = ConversationService(
+            conversation_repository,
+            message_repository,
+            FriendRepository(db),
+        )
+
+        conversation = await service.create_group(
+            current_user,
+            request.name,
+            request.member_ids,
+        )
+
+        await db.commit()
+
+        await db.refresh(conversation)
+
+        participant_count = (
+            await conversation_repository.get_participant_count(
+                conversation.id
+            )
+        )
+
+        return {
+            "id": conversation.id,
+            "updated_at": conversation.updated_at,
+            "conversation_type": conversation.conversation_type,
+            "name": conversation.name,
+            "participant_count": participant_count,
+            "other_user": None,
+            "last_message": None,
+            "disappear_after_seconds":
+                conversation.disappear_after_seconds,
+            "delete_requested_by": None,
+            "delete_requested_at": None,
+        }
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+
+# ==========================================================
+# Group Detail
+# ==========================================================
+
+@router.get(
+    "/{conversation_id}",
+    dependencies=[
+        rate_limit("conversations.detail", 60, 60),
+    ],
+)
+async def group_detail(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        conversation_repository = ConversationRepository(db)
+        message_repository = MessageRepository(db)
+
+        service = ConversationService(
+            conversation_repository,
+            message_repository,
+        )
+
+        return await service.get_group_detail(
+            current_user,
+            UUID(conversation_id),
+        )
+
+    except PermissionError as error:
+        raise HTTPException(
+            status_code=403,
+            detail=str(error),
+        ) from error
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+
+# ==========================================================
+# Add Group Members (admin only)
+# ==========================================================
+
+@router.post(
+    "/{conversation_id}/group/add",
+    dependencies=[
+        rate_limit("conversations.group", 20, 60),
+    ],
+)
+async def add_group_members(
+    conversation_id: str,
+    request: AddGroupMembersRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        conversation_repository = ConversationRepository(db)
+        message_repository = MessageRepository(db)
+
+        service = ConversationService(
+            conversation_repository,
+            message_repository,
+            FriendRepository(db),
+        )
+
+        return await service.add_group_members(
+            current_user,
+            UUID(conversation_id),
+            request.member_ids,
+        )
+
+    except PermissionError as error:
+        raise HTTPException(
+            status_code=403,
+            detail=str(error),
+        ) from error
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+
+# ==========================================================
+# Leave Group
+# ==========================================================
+
+@router.post(
+    "/{conversation_id}/group/leave",
+    dependencies=[
+        rate_limit("conversations.group", 20, 60),
+    ],
+)
+async def leave_group(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        conversation_repository = ConversationRepository(db)
+        message_repository = MessageRepository(db)
+
+        service = ConversationService(
+            conversation_repository,
+            message_repository,
+        )
+
+        return await service.leave_group(
+            current_user,
+            UUID(conversation_id),
+        )
+
+    except PermissionError as error:
+        raise HTTPException(
+            status_code=403,
+            detail=str(error),
+        ) from error
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+
+# ==========================================================
+# Two-Party Conversation Deletion
+#
+# request:  User 1 presses "delete chat" -> pending request,
+#           the other participant gets a real-time popup.
+# confirm:  User 2 confirms -> BOTH consented, the server
+#           purges all messages + attachments (rows and
+#           physical files) + the conversation itself.
+# cancel:   Either participant aborts a pending request.
+# ==========================================================
+
+@router.post(
+    "/{conversation_id}/delete-request",
+    dependencies=[
+        rate_limit("conversations.delete", 10, 60),
+    ],
+)
+async def request_conversation_delete(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        conversation_repository = ConversationRepository(db)
+        message_repository = MessageRepository(db)
+
+        service = ConversationService(
+            conversation_repository,
+            message_repository,
+        )
+
+        return await service.request_conversation_delete(
+            current_user,
+            UUID(conversation_id),
+        )
+
+    except PermissionError as error:
+        raise HTTPException(
+            status_code=403,
+            detail=str(error),
+        ) from error
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+
+
+@router.post(
+    "/{conversation_id}/delete-confirm",
+    dependencies=[
+        rate_limit("conversations.delete", 10, 60),
+    ],
+)
+async def confirm_conversation_delete(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        conversation_repository = ConversationRepository(db)
+        message_repository = MessageRepository(db)
+
+        service = ConversationService(
+            conversation_repository,
+            message_repository,
+        )
+
+        return await service.confirm_conversation_delete(
+            current_user,
+            UUID(conversation_id),
+        )
+
+    except PermissionError as error:
+        raise HTTPException(
+            status_code=403,
+            detail=str(error),
+        ) from error
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+
+
+@router.post(
+    "/{conversation_id}/delete-cancel",
+    dependencies=[
+        rate_limit("conversations.delete", 10, 60),
+    ],
+)
+async def cancel_conversation_delete(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        conversation_repository = ConversationRepository(db)
+        message_repository = MessageRepository(db)
+
+        service = ConversationService(
+            conversation_repository,
+            message_repository,
+        )
+
+        return await service.cancel_conversation_delete(
+            current_user,
+            UUID(conversation_id),
+        )
+
+    except PermissionError as error:
+        raise HTTPException(
+            status_code=403,
+            detail=str(error),
+        ) from error
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error

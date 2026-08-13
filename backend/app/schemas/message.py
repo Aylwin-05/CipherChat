@@ -47,6 +47,23 @@ class SendMessageRequest(BaseModel):
     # NEW
     attachment_ids: list[UUID] = []
 
+    # Per-recipient wrapped AES key copies (group chats).
+    # One entry per member, keyed by public key at creation time.
+    recipient_keys: list["RecipientKeyInput"] = []
+
+
+# ==========================================================
+# PER-RECIPIENT MESSAGE KEY (group E2EE)
+# ==========================================================
+
+class RecipientKeyInput(BaseModel):
+
+    user_id: UUID
+
+    encrypted_key: str = Field(
+        min_length=1,
+    )
+
 
 # ==========================================================
 # EDIT MESSAGE
@@ -78,6 +95,8 @@ class EditMessageRequest(BaseModel):
         min_length=1,
     )
 
+    recipient_keys: list["RecipientKeyInput"] = []
+
 
 # ==========================================================
 # REACTION
@@ -105,6 +124,17 @@ class ReactionResponse(BaseModel):
     emoji: str
 
     created_at: datetime
+
+
+# ==========================================================
+# PER-RECIPIENT KEY RESPONSE
+# ==========================================================
+
+class RecipientKeyResponse(BaseModel):
+
+    user_id: UUID
+
+    encrypted_key: str
 
 
 # ==========================================================
@@ -177,6 +207,8 @@ class MessageResponse(BaseModel):
     attachments: list[AttachmentResponse] = []
 
     reactions: list[ReactionResponse] = []
+
+    recipient_keys: list[RecipientKeyResponse] = []
 
 
 # ==========================================================

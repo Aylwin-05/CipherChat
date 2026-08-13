@@ -503,6 +503,9 @@ class WebSocketService {
                 nonce:
                     encrypted.nonce,
 
+                recipient_keys:
+                    encrypted.recipient_keys || [],
+
             })
 
         );

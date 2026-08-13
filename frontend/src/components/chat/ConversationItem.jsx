@@ -77,7 +77,15 @@ export default function ConversationItem({
     onToggleArchive,
 }) {
 
+    const isGroup =
+        conversation.conversation_type === "group";
+
     const user = conversation.other_user;
+
+    const groupName =
+        conversation.name ||
+        conversation.other_user?.display_name ||
+        "Group";
 
     const unread =
         !selected
@@ -101,16 +109,29 @@ export default function ConversationItem({
 
             <div className="conv-avatar">
 
-                <UserAvatar
-                    user={user}
-                    className="conv-avatar-badge"
-                >
-                    <span
-                        className={`presence-dot ${
-                            online ? "online" : ""
-                        }`}
-                    />
-                </UserAvatar>
+                {isGroup ? (
+
+                    <div
+                        className="conv-group-avatar"
+                        title={groupName}
+                    >
+                        {groupName.slice(0, 1).toUpperCase()}
+                    </div>
+
+                ) : (
+
+                    <UserAvatar
+                        user={user}
+                        className="conv-avatar-badge"
+                    >
+                        <span
+                            className={`presence-dot ${
+                                online ? "online" : ""
+                            }`}
+                        />
+                    </UserAvatar>
+
+                )}
 
             </div>
 
@@ -126,7 +147,9 @@ export default function ConversationItem({
                             </span>
                         )}
 
-                        {user?.display_name || "Unknown"}
+                        {isGroup
+                            ? groupName
+                            : user?.display_name || "Unknown"}
 
                     </h4>
 
@@ -176,9 +199,17 @@ export default function ConversationItem({
 
                         )}
 
-                        {conversation.last_message
-                            ? "Encrypted message"
-                            : "No messages yet"}
+                        {isGroup &&
+                        !conversation.last_message
+                            ? `${
+                                conversation.participant_count ??
+                                conversation.other_user
+                                    ?.participant_count ??
+                                ""
+                            } members`
+                            : conversation.last_message
+                                ? "Encrypted message"
+                                : "No messages yet"}
 
                     </p>
 
