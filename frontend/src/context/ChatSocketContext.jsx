@@ -80,9 +80,16 @@ export function ChatSocketProvider({ children }) {
 
             setConversations(data);
 
+            // Desktop shows list + chat side by side, so the
+            // first conversation is pre-selected. On phones the
+            // chat is a separate full-screen view — land on the
+            // conversation list instead.
             if (
                 data.length > 0 &&
-                !activeRef.current
+                !activeRef.current &&
+                window.matchMedia(
+                    "(min-width: 721px)"
+                ).matches
             ) {
 
                 // Never auto-open an archived conversation.

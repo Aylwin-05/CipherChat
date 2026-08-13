@@ -69,6 +69,9 @@ const messageService = {
                     recipient_keys:
                         encrypted.recipient_keys || [],
 
+                    envelopes:
+                        encrypted.envelopes || [],
+
                 }
 
             );
@@ -110,6 +113,9 @@ const messageService = {
 
                     recipient_keys:
                         encrypted.recipient_keys || [],
+
+                    envelopes:
+                        encrypted.envelopes || [],
 
                 }
 

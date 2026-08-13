@@ -17,7 +17,7 @@ import {
     replenishPreKeys,
 } from "../services/signalService";
 import {
-    encryptForConversation,
+    encryptForDevices,
     decryptMessage as signalDecryptMessage,
 } from "../services/signalChatService";
 import {
@@ -198,6 +198,28 @@ export default function useMessages(
             message.conversation_id || conversation.id;
 
         // -------------------------------------------------
+        // Multi-device: pick the envelope addressed to THIS
+        // device. Messages carry one envelope per device of
+        // every participant; only our own copy is decryptable
+        // here. (Messages sent from another browser of this
+        // account have a copy for us too — the sender wraps
+        // for all devices.)
+        // -------------------------------------------------
+
+        const envelopes = message.envelopes ?? [];
+
+        const meta = await signalKeyStore.getMeta();
+
+        const myDeviceId = meta?.deviceId ?? null;
+
+        const myEnvelope = myDeviceId
+            ? envelopes.find(
+                (entry) =>
+                    entry.device_id === myDeviceId
+              )?.data ?? null
+            : null;
+
+        // -------------------------------------------------
         // Plaintext cache first. Some envelopes are
         // fundamentally NOT replayable after a reload:
         //  - our own sends (no (me, me) ratchet session)
@@ -235,10 +257,22 @@ export default function useMessages(
 
         // -------------------------------------------------
         // Group message: the AES key was wrapped to EVERY
-        // member; unwrap OUR copy and decrypt.
+        // member's device; unwrap OUR copy and decrypt.
+        // (Determined by conversation type — modern group
+        // messages may carry no legacy RSA recipient keys.)
         // -------------------------------------------------
 
-        if (message.recipient_keys?.length) {
+        if (conversation?.conversation_type === "group") {
+
+            // Per-device copies exist but none for THIS device
+            // (e.g. history on a device registered later).
+            if (envelopes.length && !myEnvelope) {
+
+                return message.sender_id === user.id
+                    ? "[Sent from another device]"
+                    : "[Encrypted for another device]";
+
+            }
 
             try {
 
@@ -247,6 +281,7 @@ export default function useMessages(
                         message,
                         getPrivateKey(),
                         user.id,
+                        myDeviceId,
                     );
 
             }
@@ -260,6 +295,47 @@ export default function useMessages(
                 return "[Unable to decrypt]";
 
             }
+
+        }
+        else if (myEnvelope) {
+
+            //--------------------------------------------------
+            // DM with a copy addressed to this device
+            //--------------------------------------------------
+
+            try {
+
+                plaintext = await signalDecryptMessage({
+                    conversationId,
+                    senderId: message.sender_id,
+                    ciphertext: myEnvelope,
+                });
+
+            }
+            catch (error) {
+
+                console.error(
+                    "Failed to decrypt device envelope:",
+                    error
+                );
+
+                return "[Unable to decrypt]";
+
+            }
+
+        }
+        else if (envelopes.length) {
+
+            //--------------------------------------------------
+            // The message has per-device copies but none for
+            // THIS device (e.g. old history on a browser that
+            // registered after the message was sent). It was
+            // never meant to be decryptable here.
+            //--------------------------------------------------
+
+            return message.sender_id === user.id
+                ? "[Sent from another device]"
+                : "[Encrypted for another device]";
 
         }
         else {
@@ -584,6 +660,11 @@ export default function useMessages(
                                                         message.recipient_keys ??
                                                         [],
 
+                                                    envelopes:
+                                                        event.envelopes ??
+                                                        message.envelopes ??
+                                                        [],
+
                                                 }
 
                                                 : message
@@ -629,12 +710,19 @@ export default function useMessages(
                                             recipient_keys:
                                                 event.recipient_keys ?? [],
 
+                                            envelopes:
+                                                event.envelopes ?? [],
+
                                         });
 
                                     if (
                                         updatedPlaintext &&
                                         updatedPlaintext !==
-                                            "[Unable to decrypt]"
+                                            "[Unable to decrypt]" &&
+                                        updatedPlaintext !==
+                                            "[Sent from another device]" &&
+                                        updatedPlaintext !==
+                                            "[Encrypted for another device]"
                                     ) {
 
                                         setMessages(
@@ -1296,6 +1384,7 @@ export default function useMessages(
                     await encryptGroupMessage(
                         plaintext,
                         groupDetail.participants,
+                        conversation.id,
                     );
 
                 const saved =
@@ -1354,6 +1443,7 @@ export default function useMessages(
                     created_at: saved.created_at,
                     attachments: [],
                     recipient_keys: saved.recipient_keys ?? [],
+                    envelopes: saved.envelopes ?? [],
                 });
 
                 if (error) setError(null);
@@ -1363,18 +1453,30 @@ export default function useMessages(
             }
 
             //--------------------------------------------------
-            // Encrypt for the conversation (Signal ratchet)
+            // Encrypt for EVERY device of both users (Signal
+            // ratchet): one envelope per device, so this
+            // account's other browsers can decrypt the echo.
             //--------------------------------------------------
 
+            const [peerBundle, myBundle] = await Promise.all([
+                deviceService.getBundle(
+                    conversation.other_user.id
+                ),
+                deviceService.getBundle(
+                    user.id
+                ),
+            ]);
+
+            const allDevices = [
+                ...(peerBundle?.devices ?? []),
+                ...(myBundle?.devices ?? []),
+            ];
+
             const encrypted =
-                await encryptForConversation({
+                await encryptForDevices({
                     conversationId: conversation.id,
-                    otherUserId: conversation.other_user.id,
                     plaintext,
-                    bundleProvider: async () =>
-                        deviceService.getBundle(
-                            conversation.other_user.id
-                        ),
+                    devices: allDevices,
                 });
 
             console.log(
@@ -1532,6 +1634,8 @@ export default function useMessages(
                 expires_at: saved.expires_at,
                 created_at: saved.created_at,
                 attachments: localMessage.attachments,
+                recipient_keys: saved.recipient_keys ?? [],
+                envelopes: saved.envelopes ?? [],
             });
 
             if (error) setError(null);
@@ -1616,6 +1720,7 @@ export default function useMessages(
                     await encryptGroupMessage(
                         newPlaintext,
                         groupDetail.participants,
+                        conversation.id,
                     );
 
                 recipientKeys =
@@ -1625,19 +1730,27 @@ export default function useMessages(
             else {
 
                 //--------------------------------------------------
-                // Fresh ratchet envelope (the server never sees
-                // the plaintext)
+                // Fresh per-device ratchet envelopes (the server
+                // never sees the plaintext)
                 //--------------------------------------------------
 
+                const [peerBundle, myBundle] = await Promise.all([
+                    deviceService.getBundle(
+                        conversation.other_user.id
+                    ),
+                    deviceService.getBundle(
+                        user.id
+                    ),
+                ]);
+
                 encrypted =
-                    await encryptForConversation({
+                    await encryptForDevices({
                         conversationId: conversation.id,
-                        otherUserId: conversation.other_user.id,
                         plaintext: newPlaintext,
-                        bundleProvider: async () =>
-                            deviceService.getBundle(
-                                conversation.other_user.id
-                            ),
+                        devices: [
+                            ...(peerBundle?.devices ?? []),
+                            ...(myBundle?.devices ?? []),
+                        ],
                     });
 
             }
@@ -1677,6 +1790,9 @@ export default function useMessages(
                                 recipient_keys:
                                     recipientKeys,
 
+                                envelopes:
+                                    encrypted.envelopes ?? [],
+
                             }
 
                             : message
@@ -1708,6 +1824,7 @@ export default function useMessages(
                 encrypted: {
                     ...encrypted,
                     recipient_keys: recipientKeys,
+                    envelopes: encrypted.envelopes ?? [],
                 },
             });
 
@@ -1836,15 +1953,23 @@ export default function useMessages(
                         targetUser.id
                     );
 
+                const [peerBundle, myBundle] = await Promise.all([
+                    deviceService.getBundle(
+                        targetUser.id
+                    ),
+                    deviceService.getBundle(
+                        user.id
+                    ),
+                ]);
+
                 const encrypted =
-                    await encryptForConversation({
+                    await encryptForDevices({
                         conversationId: targetConversation.id,
-                        otherUserId: targetUser.id,
                         plaintext,
-                        bundleProvider: async () =>
-                            deviceService.getBundle(
-                                targetUser.id
-                            ),
+                        devices: [
+                            ...(peerBundle?.devices ?? []),
+                            ...(myBundle?.devices ?? []),
+                        ],
                     });
 
                 const saved =
@@ -1872,6 +1997,8 @@ export default function useMessages(
                     expires_at: saved.expires_at,
                     created_at: saved.created_at,
                     attachments: [],
+                    recipient_keys: saved.recipient_keys ?? [],
+                    envelopes: saved.envelopes ?? [],
                 });
 
                 try {

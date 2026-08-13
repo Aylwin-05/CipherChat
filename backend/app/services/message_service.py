@@ -85,6 +85,7 @@ class MessageService:
         is_forwarded: bool = False,
         attachment_ids: list[UUID] | None = None,
         recipient_keys: list[tuple[UUID, str]] | None = None,
+        envelopes: list[dict] | None = None,
     ) -> Message:
 
         await self._validate_participant(
@@ -143,6 +144,8 @@ class MessageService:
             is_forwarded=is_forwarded,
 
             expires_at=expires_at,
+
+            envelopes=envelopes,
         )
 
         message = await self.message_repository.create_message(
@@ -254,6 +257,7 @@ class MessageService:
         encrypted_key_receiver: str,
         nonce: str,
         recipient_keys: list[tuple[UUID, str]] | None = None,
+        envelopes: list[dict] | None = None,
     ) -> Message:
 
         message = await self.get_message(
@@ -286,6 +290,11 @@ class MessageService:
                 message.id,
                 recipient_keys,
             )
+
+        # Multi-device edits re-wrap for every device.
+        if envelopes is not None:
+
+            edited.envelopes = envelopes or None
 
         return edited
 

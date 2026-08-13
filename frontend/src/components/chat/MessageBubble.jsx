@@ -336,6 +336,8 @@ export default function MessageBubble({
     const isText =
         Boolean(content) &&
         content !== "[Unable to decrypt]" &&
+        content !== "[Sent from another device]" &&
+        content !== "[Encrypted for another device]" &&
         !deleted;
 
     const canEdit =

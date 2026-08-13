@@ -110,6 +110,8 @@ def serialize_message(message):
         ]
         if "recipient_keys" in message.__dict__
         else [],
+
+        envelopes=message.envelopes or [],
     )
 
 
@@ -161,6 +163,15 @@ async def send_message(
                 for key in request.recipient_keys
             ]
             if request.recipient_keys
+            else None,
+            envelopes=[
+                {
+                    "device_id": env.device_id,
+                    "data": env.data,
+                }
+                for env in request.envelopes
+            ]
+            if request.envelopes
             else None,
         )
 
@@ -238,6 +249,15 @@ async def edit_message(
             ]
             if request.recipient_keys
             else None,
+            envelopes=[
+                {
+                    "device_id": env.device_id,
+                    "data": env.data,
+                }
+                for env in request.envelopes
+            ]
+            if request.envelopes
+            else None,
         )
 
         await db.commit()
@@ -263,6 +283,7 @@ async def edit_message(
                 "updated_at": message.updated_at.isoformat()
                 if message.updated_at
                 else None,
+                "envelopes": message.envelopes or [],
             },
         )
 

@@ -506,6 +506,9 @@ class WebSocketService {
                 recipient_keys:
                     encrypted.recipient_keys || [],
 
+                envelopes:
+                    encrypted.envelopes || [],
+
             })
 
         );

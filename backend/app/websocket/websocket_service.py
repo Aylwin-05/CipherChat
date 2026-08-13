@@ -273,6 +273,11 @@ class WebSocketService:
                         "recipient_keys",
                         [],
                     ),
+                "envelopes":
+                    data.get(
+                        "envelopes",
+                        [],
+                    ),
             },
         )
             # ======================================================
@@ -340,6 +345,17 @@ class WebSocketService:
                     ],
                 )
 
+            # Multi-device edits carry fresh per-device envelopes.
+            if data.get("envelopes"):
+
+                message.envelopes = [
+                    {
+                        "device_id": env["device_id"],
+                        "data": env["data"],
+                    }
+                    for env in data["envelopes"]
+                ]
+
         message.edited = True
         message.updated_at = datetime.now(
             timezone.utc
@@ -378,6 +394,8 @@ class WebSocketService:
                 ]
                 if "recipient_keys" in message.__dict__
                 else [],
+
+                "envelopes": message.envelopes or [],
 
                 "updated_at":
                     message.updated_at.isoformat(),

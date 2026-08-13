@@ -14,11 +14,21 @@
 .chat-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 14px;
     padding: 14px 20px;
     border-bottom: 1px solid var(--border);
     background: var(--header-bg);
+}
+
+/* Action icons always go to the far right; the identity
+   (back button + avatar + name) stays grouped at the left. */
+.chat-header-actions {
+    margin-left: auto;
+}
+
+/* Mobile-only back button (shown under 720px) */
+.chat-back-btn {
+    display: none;
 }
 
 .chat-identity {

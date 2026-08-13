@@ -57,6 +57,7 @@ export default function ChatWindow({
         presence,
         bumpConversation,
         updateSettings,
+        selectConversation,
     } = useChatSocket();
 
     // Always call hooks first
@@ -431,6 +432,28 @@ export default function ChatWindow({
         <div className="chat-window">
 
             <div className="chat-header">
+
+                <button
+                    type="button"
+                    className="chat-back-btn"
+                    aria-label="Back to conversations"
+                    onClick={() =>
+                        selectConversation(null)
+                    }
+                >
+                    <svg
+                        width="22"
+                        height="22"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    >
+                        <path d="m15 18-6-6 6-6" />
+                    </svg>
+                </button>
 
                 <div className="chat-identity">
 

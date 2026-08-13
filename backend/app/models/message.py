@@ -127,6 +127,20 @@ class Message(Base):
     )
 
     # ==========================================================
+    # Multi-device envelopes
+    #
+    # One Signal envelope per device of every participant
+    # ([{device_id, data}] JSON). A client decrypts only its own
+    # copy; `ciphertext` above keeps the legacy single-envelope
+    # payload for old clients and the pinned device.
+    # ==========================================================
+
+    envelopes: Mapped[list | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    # ==========================================================
     # Metadata
     # ==========================================================
 

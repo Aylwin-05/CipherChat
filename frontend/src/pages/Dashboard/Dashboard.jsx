@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 
 import Sidebar from "../../components/layout/Sidebar";
 
+import MobileTabBar from "../../components/mobile/MobileTabBar";
+
 import ConversationList from "../../components/chat/ConversationList";
 import ChatWindow from "../../components/chat/ChatWindow";
 import FriendsPage from "../../components/friends/FriendsPage";
@@ -334,6 +336,14 @@ function DashboardInner() {
                 />
 
             )}
+
+            <MobileTabBar
+
+                currentPage={currentPage}
+
+                setCurrentPage={setCurrentPage}
+
+            />
 
         </div>
 

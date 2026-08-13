@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import App from "./App";
 import "./index.css";
+import "./styles/mobile.css";
 import { AuthProvider } from "./context/AuthContext";
 import ErrorBoundary from "./components/layout/ErrorBoundary";
 import { applyTheme, getTheme } from "./utils/theme";

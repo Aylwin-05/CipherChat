@@ -7,6 +7,13 @@
 //   - decrypt():  parse an incoming envelope JSON and decrypt
 //                 via the local device's session
 //
+// Multi-device:
+//   - encryptForDevices(): one envelope PER device of both
+//                 users (sender's other devices included), so
+//                 every browser of an account can decrypt.
+//   - encryptBytesForDevices(): same, but payload is raw bytes
+//                 (used to wrap group AES keys per device).
+//
 // Envelope JSON is carried in the message "ciphertext" field of
 // the existing REST/WS message schema (legacy RSA fields get
 // placeholder values), keeping the backend API unchanged.
@@ -177,7 +184,203 @@ export async function encryptForConversation({
 }
 
 // ==========================================================
-// Decrypt an incoming message envelope
+// Encrypt a payload (raw bytes) for a LIST of devices
+//
+// Each target device gets its own envelope: the existing
+// ratchet session when there is one, otherwise a fresh X3DH
+// handshake against that device's bundle. Our own current
+// device is skipped (own sends are read from the plaintext
+// cache, and a (me, me) session does not exist).
+// ==========================================================
+
+export async function encryptBytesForDevices({
+    conversationId,
+    bytes,
+    devices,
+    keyStore = signalKeyStore,
+}) {
+    const { manager, identity } = await getSignalSessionManager(keyStore);
+    const our = await localDevice(keyStore);
+
+    const envelopes = [];
+
+    for (const device of devices) {
+
+        if (!device?.device_id) continue;
+
+        // Never encrypt to ourselves: no (me, me) ratchet.
+        if (device.device_id === our.deviceId) continue;
+
+        const session = await manager.store.get(
+            our.deviceId,
+            device.device_id,
+            conversationId,
+        );
+
+        let envelope;
+
+        if (session) {
+
+            envelope = await manager.encrypt({
+                ourDeviceId: our.deviceId,
+                ourUserId: our.deviceId,
+                remoteDeviceId: device.device_id,
+                conversationId,
+                plaintext: bytes,
+            });
+
+        }
+        else {
+
+            envelope = await manager.encryptFirst({
+                ourDeviceId: our.deviceId,
+                ourUserId: our.deviceId,
+                ourIdentityPrivate: b64decode(identity.identityKeyPrivate),
+                theirDeviceId: device.device_id,
+                theirBundle: device,
+                conversationId,
+                plaintext: bytes,
+            });
+
+        }
+
+        envelopes.push({
+            device_id: device.device_id,
+            data: envelope.toJson(),
+        });
+
+    }
+
+    return envelopes;
+
+}
+
+// ==========================================================
+// Encrypt a plaintext for EVERY device of both users
+//
+// devices: list of bundle entries — peer devices first, then
+// our own devices. Returns:
+//   - envelopes: one envelope per reachable device
+//   - ciphertext: the envelope for the conversation's pinned
+//     device (legacy field; keeps old clients / search working)
+// ==========================================================
+
+export async function encryptForDevices({
+    conversationId,
+    plaintext,
+    devices,
+    keyStore = signalKeyStore,
+}) {
+
+    const envelopes = await encryptBytesForDevices({
+        conversationId,
+        bytes: utf8Bytes(plaintext),
+        devices,
+        keyStore,
+    });
+
+    if (!envelopes.length) {
+        throw new SignalChatError("No reachable peer devices.");
+    }
+
+    // Legacy ciphertext: the envelope for the pinned remote
+    // device (first message picks devices[0]; afterwards it is
+    // pinned in the peer map, exactly like the single-envelope
+    // path used to do).
+    const deviceList = devices;
+    const pinned = await resolveRemoteDevice(
+        keyStore,
+        conversationId,
+        deviceList,
+    );
+
+    const pinnedEnvelope = envelopes.find(
+        (entry) => entry.device_id === pinned,
+    );
+
+    return {
+        ciphertext: pinnedEnvelope?.data ?? envelopes[0].data,
+        envelopes,
+    };
+
+}
+
+// ==========================================================
+// Decrypt an incoming envelope JSON -> raw bytes
+//
+// Shared by DM decryption (payload = plaintext) and group
+// decryption (payload = the wrapped AES key).
+// ==========================================================
+
+export async function decryptEnvelopeBytes({
+    conversationId,
+    envelopeJson,
+    keyStore = signalKeyStore,
+}) {
+    const { manager, identity } = await getSignalSessionManager(keyStore);
+    const our = await localDevice(keyStore);
+
+    let envelope;
+    try {
+        envelope = SignalEnvelope.fromJson(envelopeJson);
+    } catch {
+        throw new SignalChatError("Not a Signal envelope.");
+    }
+
+    if (envelope.type === "data") {
+
+        const result = await manager.decrypt({
+            envelope,
+            ourDeviceId: our.deviceId,
+            conversationId,
+        });
+
+        return result.plaintext;
+
+    }
+
+    if (envelope.type === "prekey") {
+
+        const spkId = envelope.x3dhInfo?.signed_prekey_id ?? null;
+        const spk = spkId != null ? await keyStore.getSignedPrekey(spkId) : null;
+        if (!spk) {
+            throw new SignalChatError("Signed prekey not found for handshake.");
+        }
+
+        let oneTime = null;
+        const opkId = envelope.x3dhInfo?.one_time_prekey_id ?? null;
+        if (opkId != null) {
+            oneTime = await keyStore.getOneTimePrekey(opkId);
+            if (!oneTime) {
+                throw new SignalChatError("One-time prekey not found.");
+            }
+        }
+
+        const result = await manager.decryptFirst({
+            envelope,
+            ourDeviceId: our.deviceId,
+            ourIdentityKey: b64decode(identity.identityKeyPrivate),
+            signedPrekey: { key_id: spk.keyId, private_key: spk.privateKey },
+            oneTimePrekey: oneTime
+                ? { key_id: oneTime.keyId, private_key: oneTime.privateKey }
+                : null,
+            conversationId,
+        });
+
+        // One-time prekeys are single-use: purge locally
+        if (oneTime) {
+            await keyStore.removeOneTimePrekey(opkId);
+        }
+
+        return result.plaintext;
+
+    }
+
+    throw new SignalChatError(`Unknown envelope type: ${envelope.type}`);
+}
+
+// ==========================================================
+// Decrypt an incoming message envelope (DM path)
 // ==========================================================
 
 export async function decryptMessage({
@@ -185,69 +388,12 @@ export async function decryptMessage({
     ciphertext,
     keyStore = signalKeyStore,
 }) {
-    let envelope;
-    try {
-        envelope = SignalEnvelope.fromJson(ciphertext);
-    } catch {
-        throw new SignalChatError("Not a Signal envelope.");
-    }
-
-    if (envelope.type === "data") {
-        return decryptData({ conversationId, envelope, keyStore });
-    }
-    if (envelope.type === "prekey") {
-        return decryptPrekey({ conversationId, envelope, keyStore });
-    }
-    throw new SignalChatError(`Unknown envelope type: ${envelope.type}`);
-}
-
-async function decryptData({ conversationId, envelope, keyStore }) {
-    const { manager } = await getSignalSessionManager(keyStore);
-    const our = await localDevice(keyStore);
-    const result = await manager.decrypt({
-        envelope,
-        ourDeviceId: our.deviceId,
+    const plaintextBytes = await decryptEnvelopeBytes({
         conversationId,
+        envelopeJson: ciphertext,
+        keyStore,
     });
-    return utf8DecodeBytes(result.plaintext);
-}
-
-async function decryptPrekey({ conversationId, envelope, keyStore }) {
-    const { manager, identity } = await getSignalSessionManager(keyStore);
-    const our = await localDevice(keyStore);
-
-    const spkId = envelope.x3dhInfo?.signed_prekey_id ?? null;
-    const spk = spkId != null ? await keyStore.getSignedPrekey(spkId) : null;
-    if (!spk) {
-        throw new SignalChatError("Signed prekey not found for handshake.");
-    }
-
-    let oneTime = null;
-    const opkId = envelope.x3dhInfo?.one_time_prekey_id ?? null;
-    if (opkId != null) {
-        oneTime = await keyStore.getOneTimePrekey(opkId);
-        if (!oneTime) {
-            throw new SignalChatError("One-time prekey not found.");
-        }
-    }
-
-    const result = await manager.decryptFirst({
-        envelope,
-        ourDeviceId: our.deviceId,
-        ourIdentityKey: b64decode(identity.identityKeyPrivate),
-        signedPrekey: { key_id: spk.keyId, private_key: spk.privateKey },
-        oneTimePrekey: oneTime
-            ? { key_id: oneTime.keyId, private_key: oneTime.privateKey }
-            : null,
-        conversationId,
-    });
-
-    // One-time prekeys are single-use: purge locally
-    if (oneTime) {
-        await keyStore.removeOneTimePrekey(opkId);
-    }
-
-    return utf8DecodeBytes(result.plaintext);
+    return utf8DecodeBytes(plaintextBytes);
 }
 
 // ==========================================================

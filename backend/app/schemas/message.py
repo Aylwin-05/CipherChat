@@ -51,6 +51,27 @@ class SendMessageRequest(BaseModel):
     # One entry per member, keyed by public key at creation time.
     recipient_keys: list["RecipientKeyInput"] = []
 
+    # Per-device Signal envelopes (multi-device E2EE).
+    # One entry per device of every participant; a device can
+    # only decrypt its own copy.
+    envelopes: list["MessageEnvelopeInput"] = []
+
+
+# ==========================================================
+# PER-DEVICE ENVELOPE (multi-device E2EE)
+# ==========================================================
+
+class MessageEnvelopeInput(BaseModel):
+
+    device_id: str = Field(
+        min_length=8,
+        max_length=64,
+    )
+
+    data: str = Field(
+        min_length=1,
+    )
+
 
 # ==========================================================
 # PER-RECIPIENT MESSAGE KEY (group E2EE)
@@ -97,6 +118,8 @@ class EditMessageRequest(BaseModel):
 
     recipient_keys: list["RecipientKeyInput"] = []
 
+    envelopes: list["MessageEnvelopeInput"] = []
+
 
 # ==========================================================
 # REACTION
@@ -135,6 +158,17 @@ class RecipientKeyResponse(BaseModel):
     user_id: UUID
 
     encrypted_key: str
+
+
+# ==========================================================
+# PER-DEVICE ENVELOPE RESPONSE
+# ==========================================================
+
+class MessageEnvelopeResponse(BaseModel):
+
+    device_id: str
+
+    data: str
 
 
 # ==========================================================
@@ -209,6 +243,8 @@ class MessageResponse(BaseModel):
     reactions: list[ReactionResponse] = []
 
     recipient_keys: list[RecipientKeyResponse] = []
+
+    envelopes: list[MessageEnvelopeResponse] = []
 
 
 # ==========================================================
