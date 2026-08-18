@@ -126,6 +126,28 @@ const messageService = {
     },
 
     // ======================================================
+    // Upsert Sync Envelope (cross-browser history)
+    //
+    // Stores the account-key copy of a message's plaintext so
+    // browsers that register later can read it after unlocking
+    // the sync secret. Opaque to the server.
+    // ======================================================
+
+    async saveSyncEnvelope(messageId, envelope) {
+
+        const response =
+            await api.put(
+                `/messages/${messageId}/sync-envelope`,
+                {
+                    sync_copy: envelope,
+                }
+            );
+
+        return response.data;
+
+    },
+
+    // ======================================================
     // Toggle Emoji Reaction
     //
     // Same emoji again removes it; a different emoji replaces
@@ -193,6 +215,10 @@ const messageService = {
         messageId,
         file,
         encryption = null,
+        {
+            onProgress = null,
+            signal = null,
+        } = {},
     ) {
 
         const formData = new FormData();
@@ -224,6 +250,17 @@ const messageService = {
                 encryption.nonce
             );
 
+            if (encryption.wrapped_keys) {
+
+                formData.append(
+                    "wrapped_keys",
+                    JSON.stringify(
+                        encryption.wrapped_keys
+                    )
+                );
+
+            }
+
         }
 
         const response =
@@ -237,6 +274,29 @@ const messageService = {
                     headers: {
                         "Content-Type":
                             "multipart/form-data",
+                    },
+                    signal,
+
+                    onUploadProgress: (event) => {
+
+                        if (!onProgress) return;
+
+                        if (!event.total) {
+
+                            onProgress(null);
+
+                            return;
+
+                        }
+
+                        onProgress(
+                            Math.round(
+                                (event.loaded /
+                                    event.total) *
+                                100
+                            )
+                        );
+
                     },
                 }
 

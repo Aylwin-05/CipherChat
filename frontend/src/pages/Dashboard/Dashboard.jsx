@@ -9,6 +9,7 @@ import ChatWindow from "../../components/chat/ChatWindow";
 import FriendsPage from "../../components/friends/FriendsPage";
 import SettingsPage from "../Settings/SettingsPage";
 import DeleteConversationModal from "../../components/chat/DeleteConversationModal";
+import RecoveryModal from "../../components/recovery/RecoveryModal";
 
 import conversationService from "../../services/conversationService";
 
@@ -17,6 +18,7 @@ import {
     ChatSocketProvider,
     useChatSocket,
 } from "../../context/ChatSocketContext";
+import { CallProvider } from "../../context/CallContext";
 
 import "./Dashboard.css";
 
@@ -26,7 +28,11 @@ export default function Dashboard() {
 
         <ChatSocketProvider>
 
-            <DashboardInner />
+            <CallProvider>
+
+                <DashboardInner />
+
+            </CallProvider>
 
         </ChatSocketProvider>
 
@@ -36,7 +42,12 @@ export default function Dashboard() {
 
 function DashboardInner() {
 
-    const { user } = useAuth();
+    const {
+        user,
+        recoveryCode,
+        needsRecoveryEntry,
+        dismissRecoveryEntry,
+    } = useAuth();
 
     const {
         conversations,
@@ -333,6 +344,27 @@ function DashboardInner() {
                         setPendingDeletePrompt(null)
                     }
 
+                />
+
+            )}
+
+            {recoveryCode && (
+
+                <RecoveryModal mode="show-code" />
+
+            )}
+
+            {!recoveryCode && needsRecoveryEntry && (
+
+                <RecoveryModal
+                    mode="enter-code"
+                    onGoToSupport={() => {
+
+                        dismissRecoveryEntry();
+
+                        setCurrentPage("settings");
+
+                    }}
                 />
 
             )}

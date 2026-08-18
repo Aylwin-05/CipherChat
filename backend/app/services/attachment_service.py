@@ -284,6 +284,8 @@ class AttachmentService:
     encrypted_key_receiver: str | None = None,
 
     nonce: str | None = None,
+
+    wrapped_keys: list | None = None,
     ) -> Attachment:
 
         extension, attachment_type, size = (
@@ -328,6 +330,8 @@ class AttachmentService:
                 encrypted_key_receiver=encrypted_key_receiver,
 
                 nonce=nonce,
+
+                wrapped_keys=wrapped_keys,
             )
 
             return await self.repository.create_attachment(

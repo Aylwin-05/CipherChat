@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -124,9 +124,13 @@ class AuthRepository(BaseRepository):
             .where(
                 OTPCode.is_used.is_(False)
             )
+            .where(
+                OTPCode.expires_at > datetime.now(timezone.utc)
+            )
             .order_by(
                 OTPCode.created_at.desc()
             )
+            .limit(1)
         )
 
         return result.scalar_one_or_none()
@@ -179,9 +183,21 @@ class AuthRepository(BaseRepository):
     # Transaction Helpers
     # ==========================================================
 
-    async def commit(self):
+    async def delete_old_used_otps(
+        self,
+        email: str,
+    ):
 
-        await self.db.commit()
+        await self.execute(
+            delete(OTPCode).where(
+                OTPCode.email == email,
+                OTPCode.is_used.is_(True),
+                OTPCode.updated_at < datetime.now(timezone.utc) -
+                timedelta(hours=24),
+            )
+        )
+
+        await self.update()
 
     async def rollback(self):
 

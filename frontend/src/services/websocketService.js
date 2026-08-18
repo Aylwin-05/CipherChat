@@ -548,6 +548,46 @@ class WebSocketService {
     }
 
     // ======================================================
+    // VOICE / VIDEO CALL SIGNALING (WebRTC relay)
+    //
+    // The server relays offer/answer/ice/end between the
+    // conversation members; media itself is peer-to-peer
+    // (DTLS-SRTP encrypted) and never touches the server.
+    // ======================================================
+
+    sendCallEvent(
+        event,
+        conversationId,
+        callId,
+        extras = {},
+    ) {
+
+        if (
+            !this.socket ||
+            this.socket.readyState !== WebSocket.OPEN
+        ) {
+            return;
+        }
+
+        this.socket.send(
+
+            JSON.stringify({
+
+                event,
+
+                conversation_id: conversationId,
+
+                call_id: callId,
+
+                ...extras,
+
+            })
+
+        );
+
+    }
+
+    // ======================================================
     // PING
     // ======================================================
 

@@ -35,6 +35,14 @@ class RegisterDeviceResponse(BaseModel):
     device_id: str
     is_primary: bool
 
+    # Present exactly once per account: when the recovery key was
+    # just created by THIS registration. The code is shown on
+    # screen and emailed; the salt + wrapped blob are what gets
+    # stored server-side so any browser can unlock with the code.
+    recovery_code: str | None = None
+    recovery_salt: str | None = None
+    recovery_wrapped_key: dict | None = None
+
 
 # ==========================================================
 # Key Bundle (what a client fetches to initiate X3DH)

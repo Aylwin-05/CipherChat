@@ -1,6 +1,6 @@
 import { useAuth } from "../../context/AuthContext";
 import { useEffect, useRef, useState } from "react";
-import attachmentService from "../../services/attachmentService";
+import attachmentService, { AttachmentDecryptError } from "../../services/attachmentService";
 import ImageLightbox from "./ImageLightbox";
 
 // ==========================================================
@@ -66,7 +66,11 @@ export default function MessageBubble({
 
     const { user } = useAuth();
 
-    const [attachmentUrls, setAttachmentUrls] = useState({});
+const [attachmentUrls, setAttachmentUrls] = useState({});
+
+    const [failedAttachments, setFailedAttachments] = useState(
+        () => new Set()
+    );
 
     const [lightbox, setLightbox] = useState(null);
 
@@ -236,11 +240,11 @@ export default function MessageBubble({
 
             const urls = {};
 
-            for (const attachment of message.attachments || []) {
+for (const attachment of message.attachments || []) {
 
                 try {
 
-                    urls[attachment.id] =
+                    const blob =
                         await attachmentService.getAttachment(
                             attachment.id,
                             {
@@ -251,12 +255,49 @@ export default function MessageBubble({
 
                                 nonce:
                                     attachment.nonce,
+
+                                wrappedKeys:
+                                    attachment.wrapped_keys,
+
+                                message,
+
+                                syncBlob:
+                                    attachment.sync_blob,
                             }
                         );
 
+                    urls[attachment.id] = URL.createObjectURL(blob);
+
                 }
 
-                catch (err) {
+catch (err) {
+
+                    if (err instanceof AttachmentDecryptError) {
+
+                        // Keys for this attachment no longer
+                        // exist on this device (stale session /
+                        // re-registration): show a placeholder
+                        // instead of a broken blob and don't
+                        // retry on every mount.
+                        setFailedAttachments(previous => {
+
+                            if (previous.has(attachment.id)) {
+
+                                return previous;
+
+                            }
+
+                            const next = new Set(previous);
+
+                            next.add(attachment.id);
+
+                            return next;
+
+                        });
+
+                        continue;
+
+                    }
 
                     console.error(
                         "Attachment load failed:",
@@ -720,12 +761,61 @@ export default function MessageBubble({
 
                 {/* ATTACHMENTS */}
 
-                {message.attachments?.map((attachment) => {
+{message.attachments?.map((attachment) => {
 
                     const url =
                         attachmentUrls[attachment.id];
 
-                    if (!url) return null;
+                    if (!url) {
+
+                        if (failedAttachments.has(attachment.id)) {
+
+                            return (
+
+                                <div
+                                    key={attachment.id}
+                                    className="attachment-undecryptable"
+                                    title="The key to decrypt this attachment is no longer available on this device"
+                                >
+
+                                    <svg
+                                        width="15"
+                                        height="15"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    >
+
+                                        <rect
+                                            x="3"
+                                            y="11"
+                                            width="18"
+                                            height="11"
+                                            rx="2"
+                                            ry="2"
+                                        />
+
+                                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+
+                                    </svg>
+
+                                    <span>
+                                        Attachment can't be
+                                        decrypted on this device
+                                    </span>
+
+                                </div>
+
+                            );
+
+                        }
+
+                        return null;
+
+                    }
 
                     switch (attachment.attachment_type) {
 

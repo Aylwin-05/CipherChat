@@ -312,6 +312,100 @@ def test_ws_me_lifecycle(api_client):
         assert ev_b["deleted_for_everyone"] is True
 
 
+def test_ws_call_signaling_relay(api_client):
+    """WebRTC signaling (offer/answer/ice/end) is relayed between the
+    members of a conversation; the server only stamps the sender id."""
+    client = api_client
+    token_a, user_a = _register(client, EMAIL_A)
+    token_b, user_b = _register(client, EMAIL_B)
+
+    conv = _friend_and_conv(
+        client, token_a, token_b,
+        user_a["id"], user_b["id"],
+    )
+    conversation_id = conv["id"]
+    call_id = "call-1234"
+
+    with _connect(client, token_a) as ws_a, _connect(client, token_b) as ws_b:
+
+        ws_a.receive_json()  # connected (A)
+        ws_b.receive_json()  # connected (B)
+        _drain_presence(ws_a, str(user_b["id"]))
+        _drain_presence(ws_b, str(user_b["id"]))
+        _drain_presence(ws_b, str(user_a["id"]))
+
+        # 1) A offers a video call -> B receives it with sender id
+        ws_a.send_json({
+            "event": "call_offer",
+            "conversation_id": conversation_id,
+            "call_id": call_id,
+            "call_type": "video",
+            "sdp": "fake-sdp-offer",
+        })
+        ev = _drain(ws_b, "call_offer")
+        assert ev["call_id"] == call_id
+        assert ev["call_type"] == "video"
+        assert ev["from"] == str(user_a["id"])
+        assert ev["sdp"] == "fake-sdp-offer"
+        _drain(ws_a, "call_offer")  # sender's own echo (ignored client-side)
+
+        # 2) B answers -> A receives it
+        ws_b.send_json({
+            "event": "call_answer",
+            "conversation_id": conversation_id,
+            "call_id": call_id,
+            "to": str(user_a["id"]),
+            "sdp": "fake-sdp-answer",
+        })
+        ev = _drain(ws_a, "call_answer")
+        assert ev["call_id"] == call_id
+        assert ev["from"] == str(user_b["id"])
+        assert ev["sdp"] == "fake-sdp-answer"
+        _drain(ws_b, "call_answer")
+
+        # 3) ICE candidates flow both ways
+        ws_a.send_json({
+            "event": "call_ice",
+            "conversation_id": conversation_id,
+            "call_id": call_id,
+            "to": str(user_b["id"]),
+            "candidate": "candidate:1 1 udp 2130706431 192.168.1.5 54321 typ host",
+        })
+        ev = _drain(ws_b, "call_ice")
+        assert ev["candidate"].startswith("candidate:")
+        assert ev["from"] == str(user_a["id"])
+        _drain(ws_a, "call_ice")
+
+        # 4) A hangs up -> B receives call_end
+        ws_a.send_json({
+            "event": "call_end",
+            "conversation_id": conversation_id,
+            "call_id": call_id,
+        })
+        ev = _drain(ws_b, "call_end")
+        assert ev["call_id"] == call_id
+        assert ev["from"] == str(user_a["id"])
+        _drain(ws_a, "call_end")
+
+        # 5) Malformed signaling is rejected with a clear error
+        ws_a.send_json({
+            "event": "call_offer",
+            "conversation_id": conversation_id,
+        })
+        ev = _drain(ws_a, "error")
+        assert "call_id" in ev["message"]
+
+        ws_a.send_json({
+            "event": "call_offer",
+            "conversation_id": conversation_id,
+            "call_id": "call-2",
+        })
+        ev = _drain(ws_a, "error")
+        assert "call_type" in ev["message"]
+
+    print("CALL-RELAY: OK")
+
+
 def test_ws_me_presence_three_users(api_client):
     """Presence is user-scoped: any member of a shared conversation
     sees online/offline, and non-members never do."""

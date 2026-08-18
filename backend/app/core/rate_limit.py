@@ -53,6 +53,23 @@ class _MemoryStore:
             bucket.append(now)
             return len(bucket)
 
+    async def peek_with_ttl(
+        self,
+        key: str,
+        ttl_seconds: int,
+    ) -> tuple[int, int]:
+        """(count, seconds until the oldest entry ages out)."""
+
+        now = time.monotonic()
+        async with self._lock:
+            bucket = self._buckets[key]
+            while bucket and now - bucket[0] > ttl_seconds:
+                bucket.popleft()
+            if not bucket:
+                return 0, ttl_seconds
+            oldest = bucket[0]
+            return len(bucket), max(1, round(ttl_seconds - (now - oldest)))
+
 
 # ==========================================================
 # Redis store (multi worker)
@@ -85,6 +102,20 @@ class _RedisStore:
             await client.expire(key, ttl_seconds)
         return count
 
+    async def peek_with_ttl(
+        self,
+        key: str,
+        ttl_seconds: int,
+    ) -> tuple[int, int]:
+        client = await self._get_client()
+        count = await client.get(key)
+        if count is None:
+            return 0, ttl_seconds
+        ttl = await client.ttl(key)
+        if ttl < 0:
+            ttl = ttl_seconds
+        return int(count), max(1, ttl)
+
 
 # ==========================================================
 # Limiter
@@ -112,6 +143,20 @@ class RateLimiter:
 
         if count > limit:
             raise RateLimitExceeded(retry_after=window_seconds)
+
+    async def remaining(
+        self,
+        key: str,
+        limit: int,
+        window_seconds: int,
+    ) -> tuple[int, int]:
+        """(requests still allowed, seconds until the window resets)."""
+
+        count, retry_after = await self._store.peek_with_ttl(
+            f"rl:{key}",
+            window_seconds,
+        )
+        return max(0, limit - count), retry_after
 
 
 _limiter: RateLimiter | None = None

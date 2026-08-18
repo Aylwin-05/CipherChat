@@ -9,6 +9,7 @@
 // ==========================================================
 
 import deviceService from "./deviceService";
+import recoveryService from "./recoveryService";
 import { signalKeyStore } from "../crypto/signal/keyStore";
 import { replenishOneTimePrekeys } from "../crypto/signal/prekeyManager";
 import { b64encode } from "../crypto/signal/bytes";
@@ -19,69 +20,160 @@ import {
     buildRegisterPayload,
 } from "../crypto/signal/identity";
 
-export async function ensureDeviceRegistered({
+// ==========================================================
+// First-run device registration is NOT idempotent by itself:
+// concurrent callers (login() + the AuthProvider boot effect,
+// both doubled by React StrictMode) can each pass the "no meta
+// yet" check and register a DIFFERENT device — leaving orphaned
+// device rows on the server whose envelopes nothing decrypts.
+//
+// Guard with a shared in-flight promise (same-tab) and, when
+// available, the Web Locks API (cross-tab). Every caller after
+// the first awaits the SAME registration.
+// ==========================================================
+
+let registrationPromise = null;
+
+function withDeviceLock(fn) {
+
+    if (navigator?.locks?.request) {
+
+        return navigator.locks.request(
+            "cipherchat-device-register",
+            fn,
+        );
+
+    }
+
+    return fn();
+
+}
+
+export function ensureDeviceRegistered({
     platform = "web",
     deviceName = null,
     platformVersion = null,
     appVersion = null,
 } = {}) {
-    const existing = await signalKeyStore.getMeta();
-    if (existing?.deviceId) {
-        return {
-            deviceId: existing.deviceId,
-            isPrimary: existing.isPrimary,
-            generated: false,
-        };
+
+    if (registrationPromise) {
+
+        return registrationPromise;
+
     }
 
-    const deviceId = generateDeviceId();
+    registrationPromise = withDeviceLock(() =>
 
-    const { identity, signedPrekey } = generateDeviceIdentity();
-    const oneTimePrekeys = generateOneTimePrekeys();
+        (async () => {
 
-    // Persist private material locally BEFORE uploading anything
-    await signalKeyStore.saveIdentity({
-        deviceId,
-        identityKeyPrivate: b64encode(identity.privateKey),
-        identityKeyPublic: b64encode(identity.publicKey),
-        x25519IdentityKeyPublic: b64encode(identity.x25519Public),
-    });
-    await signalKeyStore.saveSignedPrekey({
-        keyId: signedPrekey.keyId,
-        publicKey: b64encode(signedPrekey.publicKey),
-        signature: b64encode(signedPrekey.signature),
-        privateKey: b64encode(signedPrekey.privateKey),
-    });
-    await signalKeyStore.saveOneTimePrekeys(
-        oneTimePrekeys.map((opk) => ({
-            keyId: opk.keyId,
-            publicKey: b64encode(opk.publicKey),
-            privateKey: b64encode(opk.privateKey),
-        })),
+            // Double-checked: the first caller may have completed
+            // while we were waiting on the lock.
+            const existing =
+                await signalKeyStore.getMeta();
+
+            if (existing?.deviceId) {
+
+                return {
+                    deviceId: existing.deviceId,
+                    isPrimary: existing.isPrimary,
+                    generated: false,
+                };
+
+            }
+
+            const deviceId = generateDeviceId();
+
+            const { identity, signedPrekey } = generateDeviceIdentity();
+            const oneTimePrekeys = generateOneTimePrekeys();
+
+            // Persist private material locally BEFORE uploading anything
+            await signalKeyStore.saveIdentity({
+                deviceId,
+                identityKeyPrivate: b64encode(identity.privateKey),
+                identityKeyPublic: b64encode(identity.publicKey),
+                x25519IdentityKeyPublic: b64encode(identity.x25519Public),
+            });
+            await signalKeyStore.saveSignedPrekey({
+                keyId: signedPrekey.keyId,
+                publicKey: b64encode(signedPrekey.publicKey),
+                signature: b64encode(signedPrekey.signature),
+                privateKey: b64encode(signedPrekey.privateKey),
+            });
+            await signalKeyStore.saveOneTimePrekeys(
+                oneTimePrekeys.map((opk) => ({
+                    keyId: opk.keyId,
+                    publicKey: b64encode(opk.publicKey),
+                    privateKey: b64encode(opk.privateKey),
+                })),
+            );
+
+            const payload = buildRegisterPayload({
+                deviceId,
+                platform,
+                deviceName,
+                platformVersion,
+                appVersion,
+                identity,
+                signedPrekey,
+                oneTimePrekeys,
+            });
+
+            const response = await deviceService.registerDevice(payload);
+            const isPrimary = !!response.is_primary;
+
+            await signalKeyStore.saveMeta({
+                deviceId,
+                isPrimary,
+                platform,
+                deviceName,
+            });
+
+            // The account's recovery key was created by THIS
+            // registration: unlock the sync secret right away and
+            // surface the code so the UI can show it once.
+            let recoveryCode = null;
+
+            if (response.recovery_code) {
+
+                try {
+
+                    await recoveryService.unlockFromRegistration({
+                        code: response.recovery_code,
+                        salt: response.recovery_salt,
+                        wrapped_key: response.recovery_wrapped_key,
+                    });
+
+                    recoveryCode = response.recovery_code;
+
+                }
+                catch (error) {
+
+                    console.error(
+                        "Recovery auto-unlock failed:",
+                        error
+                    );
+
+                }
+
+            }
+
+            return {
+                deviceId,
+                isPrimary,
+                generated: true,
+                recoveryCode,
+            };
+
+        })()
+
     );
 
-    const payload = buildRegisterPayload({
-        deviceId,
-        platform,
-        deviceName,
-        platformVersion,
-        appVersion,
-        identity,
-        signedPrekey,
-        oneTimePrekeys,
+    return registrationPromise.finally(() => {
+
+        registrationPromise = null;
+
     });
 
-    const response = await deviceService.registerDevice(payload);
-    const isPrimary = !!response.is_primary;
-
-    await signalKeyStore.saveMeta({
-        deviceId,
-        isPrimary,
-        platform,
-        deviceName,
-    });
-
-    return { deviceId, isPrimary, generated: true };
 }
 
 // ==========================================================

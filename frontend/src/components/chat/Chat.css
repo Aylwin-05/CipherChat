@@ -845,6 +845,22 @@
     background: var(--attachment-bg-hover);
 }
 
+/* undecryptable attachment placeholder (keys no longer on device) */
+
+.attachment-undecryptable {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    border-radius: var(--radius-sm);
+    background: var(--attachment-bg);
+    border: 1px dashed var(--border-strong);
+    color: var(--text-3);
+    font-size: 12.5px;
+    line-height: 1.35;
+    max-width: 280px;
+}
+
 /* footer (time / edited / read check) */
 
 .message-footer {
@@ -1004,6 +1020,100 @@
 .selected-file-clear:hover {
     color: var(--danger);
     background: rgba(251, 113, 133, 0.14);
+}
+
+/* ---------- attachment upload progress ---------- */
+
+.upload-progress {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 9px 12px;
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    animation: msgIn 0.2s var(--ease);
+}
+
+.upload-progress-icon {
+    flex-shrink: 0;
+    color: var(--accent-2);
+}
+
+.upload-progress-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.upload-progress-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.upload-progress-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.upload-progress-pct {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent-2);
+    flex-shrink: 0;
+}
+
+.upload-progress-track {
+    height: 4px;
+    border-radius: 4px;
+    background: var(--border);
+    overflow: hidden;
+}
+
+.upload-progress-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: var(--grad);
+    transition: width 0.15s ease;
+}
+
+.upload-progress-fill.done {
+    background: var(--success);
+}
+
+.upload-progress-sub {
+    font-size: 11px;
+    color: var(--text-3);
+}
+
+.upload-cancel-btn {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--text-3);
+    transition: color 0.15s ease, background 0.15s ease;
+}
+
+.upload-cancel-btn:hover {
+    color: var(--danger);
+    background: rgba(251, 113, 133, 0.14);
+}
+
+.upload-cancel-btn:active {
+    transform: scale(0.92);
 }
 
 .chat-input-bar {

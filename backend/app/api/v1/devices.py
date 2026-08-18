@@ -1,14 +1,20 @@
 from uuid import UUID
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 
 from app.models.user import User
 from app.repositories.device_repository import DeviceRepository
 from app.services.device_service import DeviceService
+from app.services.email_service import EmailService
+from app.services.recovery_service import create_recovery_key
 
 from app.schemas.device import (
     RegisterDeviceRequest,
@@ -19,6 +25,8 @@ from app.schemas.device import (
     DeviceListResponse,
     DeviceActionResponse,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/devices",
@@ -66,9 +74,71 @@ async def register_device(
         ],
     )
 
+    # ==========================================================
+    # Account recovery key (created exactly once per account)
+    #
+    # A fresh browser has no way to decrypt history that predates
+    # its registration — unless the account keeps a sync secret
+    # wrapped by a one-time recovery code. Created on the first
+    # registration that finds none; the code is returned exactly
+    # once (shown on screen + emailed), never stored.
+    # ==========================================================
+
+    recovery = None
+
+    # Load the user row in THIS session (the dependency-injected
+    # instance may belong to another session) and create the
+    # recovery key exactly once per account.
+    user_row = (
+        await db.execute(
+            select(User).where(User.id == current_user.id)
+        )
+    ).scalar_one_or_none()
+
+    if user_row is not None and user_row.recovery_wrapped_key is None:
+
+        recovery = create_recovery_key()
+
+        user_row.recovery_salt = recovery["salt"]
+        user_row.recovery_wrapped_key = recovery["wrapped_key"]
+
+        await db.commit()
+
+        logger.info(
+            "Recovery key created for user %s (code sent once)",
+            user_row.id,
+        )
+
+        if settings.DEBUG and settings.APP_ENV == "development":
+
+            logger.warning(
+                "[DEV] Recovery code for %s: %s",
+                user_row.email,
+                recovery["code_display"],
+            )
+
+        try:
+
+            await EmailService().send_recovery_code_email(
+                recipient_email=user_row.email,
+                code=recovery["code"],
+            )
+
+        except Exception as exc:
+
+            # The code is shown on screen too — mail is best-effort.
+            logger.warning(
+                "Recovery code email failed for %s: %s",
+                current_user.email,
+                exc,
+            )
+
     return RegisterDeviceResponse(
         device_id=device.device_id,
         is_primary=device.is_primary,
+        recovery_code=recovery["code_display"] if recovery else None,
+        recovery_salt=recovery["salt"] if recovery else None,
+        recovery_wrapped_key=recovery["wrapped_key"] if recovery else None,
     )
 
 

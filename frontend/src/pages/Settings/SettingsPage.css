@@ -236,6 +236,121 @@
     color: var(--danger);
 }
 
+/* ---------- support (recovery code re-issue) ---------- */
+
+.support-zone .settings-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.recovery-support-note {
+    font-size: 13.5px;
+    color: var(--text-2);
+    line-height: 1.55;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+}
+
+.recovery-support-error {
+    margin: 0;
+    font-size: 13px;
+    color: var(--danger);
+    line-height: 1.5;
+}
+
+.recovery-support-hint {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--text-3);
+    line-height: 1.5;
+}
+
+.recovery-support-timer {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.recovery-timer-ring {
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    padding: 3px;
+}
+
+.recovery-timer-ring > span {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--surface);
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--text-2);
+}
+
+.recovery-timer-text {
+    font-size: 13px;
+    color: var(--text-2);
+    line-height: 1.45;
+}
+
+/* ---------- enter-an-existing-code box ---------- */
+
+.recovery-unlock-box {
+    width: 100%;
+    padding-top: 4px;
+    border-top: 1px solid var(--border);
+}
+
+.recovery-unlock-box summary {
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    user-select: none;
+}
+
+.recovery-unlock-form {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.recovery-unlock-input {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    color: var(--text-1);
+    font-size: 13.5px;
+    letter-spacing: 1px;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.recovery-unlock-input:focus {
+    border-color: var(--accent);
+}
+
+.recovery-unlock-ok {
+    margin: 10px 0 0;
+    font-size: 13px;
+    color: var(--accent);
+    line-height: 1.5;
+}
+
 .logout-confirm {
     display: flex;
     flex-direction: column;

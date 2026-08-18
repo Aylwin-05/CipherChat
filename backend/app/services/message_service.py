@@ -180,6 +180,31 @@ class MessageService:
         return message
 
     # ==========================================================
+    # UPSERT SYNC ENVELOPE (cross-browser history)
+    # ==========================================================
+
+    async def upsert_sync_envelope(
+        self,
+        current_user: User,
+        message_id: UUID,
+        sync_envelope: dict,
+    ) -> Message:
+        """
+        Store (or replace) the account-key copy of a message's
+        plaintext. Only conversation participants may write; the
+        blob is opaque to the server.
+        """
+
+        message = await self.get_message(
+            current_user,
+            message_id,
+        )
+
+        message.sync_envelope = sync_envelope
+
+        return message
+
+    # ==========================================================
     # GET MESSAGES
     # ==========================================================
 
@@ -258,6 +283,7 @@ class MessageService:
         nonce: str,
         recipient_keys: list[tuple[UUID, str]] | None = None,
         envelopes: list[dict] | None = None,
+        sync_envelope: dict | None = None,
     ) -> Message:
 
         message = await self.get_message(
@@ -295,6 +321,12 @@ class MessageService:
         if envelopes is not None:
 
             edited.envelopes = envelopes or None
+
+        # Edited content is a fresh plaintext: the account-key
+        # copy must follow, or other browsers keep the stale text.
+        if sync_envelope is not None:
+
+            edited.sync_envelope = sync_envelope
 
         return edited
 
@@ -383,6 +415,10 @@ class MessageService:
             raise ValueError(
                 "Only sender can delete message."
             )
+
+        # A deleted message must not leave an account-readable
+        # sync copy behind.
+        message.sync_envelope = None
 
         return await self.message_repository.delete_for_everyone(
             message

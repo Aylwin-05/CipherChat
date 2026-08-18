@@ -40,6 +40,13 @@ class AttachmentResponse(BaseModel):
 
     nonce: str | None = None
 
+    wrapped_keys: list | None = None
+
+    # Account-key copy of the decrypted file bytes (cross-browser
+    # history): opaque to the server, readable only by browsers
+    # that unlocked the account sync secret with the recovery code.
+    sync_blob: dict | None = None
+
     created_at: datetime
 
     updated_at: datetime | None = None

@@ -658,6 +658,11 @@
         padding: 12px 10px;
     }
 
+    .upload-cancel-btn {
+        width: 38px;
+        height: 38px;
+    }
+
 }
 
 /* 16px input font keeps iOS Safari from auto-zooming */

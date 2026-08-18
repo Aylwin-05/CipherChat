@@ -120,6 +120,10 @@ class EditMessageRequest(BaseModel):
 
     envelopes: list["MessageEnvelopeInput"] = []
 
+    # Fresh account-key copy of the edited plaintext (replaces any
+    # stale copy whose ciphertext no longer matches).
+    sync_envelope: "SyncCopyInput | None" = None
+
 
 # ==========================================================
 # REACTION
@@ -169,6 +173,35 @@ class MessageEnvelopeResponse(BaseModel):
     device_id: str
 
     data: str
+
+
+# ==========================================================
+# SYNC COPY (cross-browser history)
+#
+# Shared by messages (sync_envelope) and attachments
+# (sync_blob): an account-key AES-256-GCM blob the server
+# stores opaquely.
+# ==========================================================
+
+class SyncCopyInput(BaseModel):
+    """
+    Account-key AES-GCM copy of plaintext (messages) or raw file
+    bytes (attachments). Only clients holding the account sync
+    secret (recovered via the recovery code) can read it.
+    `ciphertext` lets clients detect edited messages whose sync
+    copy is stale.
+    """
+
+    nonce: str = Field(min_length=1)
+
+    data: str = Field(min_length=1)
+
+    ciphertext: str | None = None
+
+
+class SyncCopyUpsert(BaseModel):
+
+    sync_copy: SyncCopyInput
 
 
 # ==========================================================
@@ -245,6 +278,12 @@ class MessageResponse(BaseModel):
     recipient_keys: list[RecipientKeyResponse] = []
 
     envelopes: list[MessageEnvelopeResponse] = []
+
+    # Account-key copy of the plaintext: lets a browser that
+    # registered later (and has no per-device envelope) read the
+    # message after unlocking the account sync secret. Null for
+    # messages nobody has decrypted since this feature shipped.
+    sync_envelope: dict | None = None
 
 
 # ==========================================================

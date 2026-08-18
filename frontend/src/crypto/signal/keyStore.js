@@ -158,6 +158,28 @@ export class SignalKeyStore {
     }
 
     // ------------------------------------------------------
+    // Account sync secret (cross-browser history)
+    //
+    // A separate meta record ("sync"): the 32-byte account
+    // secret that encrypts every message/attachment sync copy.
+    // Saved after unlocking with the recovery code; wiped by
+    // clearAll() so logout + re-login re-prompts for the code.
+    // ------------------------------------------------------
+
+    async saveSyncSecret(secretB64) {
+        const db = await this._db();
+        await promisify(tx(db, STORE_META, "readwrite").put({
+            id: "sync",
+            secret: secretB64,
+        }));
+    }
+
+    async getSyncSecret() {
+        const record = await this.peekMeta("sync");
+        return record?.secret ?? null;
+    }
+
+    // ------------------------------------------------------
     // Identity keys
     // ------------------------------------------------------
 

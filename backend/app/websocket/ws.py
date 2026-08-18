@@ -62,6 +62,14 @@ async def websocket_endpoint(
             await websocket.close(code=1008)
             return
 
+        # Plain snapshots: a rollback in the error handlers expires
+        # every ORM object in the session, so touching current_user
+        # in the finally/except blocks below would raise
+        # MissingGreenlet and kill the socket. These values are
+        # loaded now and never expire.
+        user_id = current_user.id
+        user_email = current_user.email
+
         websocket_service = WebSocketService(db)
 
         # ======================================================
@@ -116,6 +124,11 @@ async def websocket_endpoint(
 
         # ======================================================
         # Main Loop
+        #
+        # Error handling lives INSIDE the loop: a single bad event
+        # (bad payload, unknown event, denied access) replies with
+        # an "error" frame and the connection keeps serving the
+        # next event. Only a client disconnect stops the loop.
         # ======================================================
 
         try:
@@ -124,71 +137,92 @@ async def websocket_endpoint(
 
                 data = await websocket.receive_json()
 
-                await websocket_service.handle_event(
-                    websocket=websocket,
-                    current_user=current_user,
-                    data=data,
-                )
+                try:
 
-                # The websocket session is otherwise held open for
-                # the whole connection lifetime: any handler write
-                # (read/delivered receipts, edit, delete) would stay
-                # in an open transaction and keep its PostgreSQL row
-                # locks until the socket closes - blocking REST
-                # updates on the same message (e.g. edit) forever.
-                # Commit after every event to release them promptly.
-                await db.commit()
+                    await websocket_service.handle_event(
+                        websocket=websocket,
+                        current_user=current_user,
+                        data=data,
+                    )
+
+                    # The websocket session is otherwise held open
+                    # for the whole connection lifetime: any handler
+                    # write (read/delivered receipts, edit, delete)
+                    # would stay in an open transaction and keep its
+                    # PostgreSQL row locks until the socket closes -
+                    # blocking REST updates on the same message
+                    # (e.g. edit) forever. Commit after every event
+                    # to release them promptly.
+                    await db.commit()
+
+                except ValueError as e:
+
+                    # rollback ends the transaction AND expires
+                    # every ORM object in the session (including
+                    # current_user): re-load it so the next event
+                    # can still use it.
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
+
+                    try:
+                        fresh_user = await db.get(User, user_id)
+                        if fresh_user is not None:
+                            current_user = fresh_user
+                    except Exception:
+                        pass
+
+                    await websocket.send_json(
+                        {
+                            "event": "error",
+                            "message": str(e),
+                        }
+                    )
+
+                except Exception as e:
+
+                    logger.exception(
+                        "WebSocket error for user=%s: %s",
+                        user_email,
+                        e,
+                    )
+
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
+
+                    try:
+                        fresh_user = await db.get(User, user_id)
+                        if fresh_user is not None:
+                            current_user = fresh_user
+                    except Exception:
+                        pass
+
+                    try:
+
+                        await websocket.send_json(
+                            {
+                                "event": "error",
+                                "message": "Internal server error.",
+                            }
+                        )
+
+                    except Exception:
+                        pass
 
         except WebSocketDisconnect:
 
             logger.info(
                 "WS disconnected: user=%s",
-                current_user.email,
+                user_email,
             )
-
-        except ValueError as e:
-
-            try:
-                await db.rollback()
-            except Exception:
-                pass
-
-            await websocket.send_json(
-                {
-                    "event": "error",
-                    "message": str(e),
-                }
-            )
-
-        except Exception as e:
-
-            logger.exception(
-                "WebSocket error for user=%s: %s",
-                current_user.email,
-                e,
-            )
-
-            try:
-                await db.rollback()
-            except Exception:
-                pass
-
-            try:
-
-                await websocket.send_json(
-                    {
-                        "event": "error",
-                        "message": "Internal server error.",
-                    }
-                )
-
-            except Exception:
-                pass
 
         finally:
 
             manager.disconnect_user(
-                current_user.id,
+                user_id,
                 websocket,
             )
 
@@ -203,7 +237,7 @@ async def websocket_endpoint(
 
                 await asyncio.shield(
                     manager.broadcast_presence(
-                        current_user.id,
+                        user_id,
                         False,
                     )
                 )

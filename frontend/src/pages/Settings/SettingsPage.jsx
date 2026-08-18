@@ -1,4 +1,8 @@
-import { useRef, useState } from "react";
+import {
+    useEffect,
+    useRef,
+    useState,
+} from "react";
 
 import toast from "react-hot-toast";
 
@@ -7,6 +11,10 @@ import UserAvatar, {
 } from "../../components/UserAvatar";
 
 import userService from "../../services/userService";
+
+import recoveryService from "../../services/recoveryService";
+
+import { signalKeyStore } from "../../crypto/signal/keyStore";
 
 import { useAuth } from "../../context/AuthContext";
 
@@ -60,6 +68,187 @@ export default function SettingsPage() {
     const [theme, setThemeState] = useState(getTheme());
 
     const [confirmLogout, setConfirmLogout] = useState(false);
+
+    // ==========================================================
+    // Support: recover a lost/forgotten recovery code
+    //
+    // The request is limited to 3 per 10 minutes per email; the
+    // ring timer below mirrors that window (the server reports
+    // the remaining seconds).
+    // ==========================================================
+
+    const [recoveryBusy, setRecoveryBusy] = useState(false);
+
+    const [recoverySent, setRecoverySent] = useState(false);
+
+    const [recoveryHasSecret, setRecoveryHasSecret] = useState(false);
+
+    const [recoveryRemaining, setRecoveryRemaining] = useState(3);
+
+    const [recoveryCooldown, setRecoveryCooldown] = useState(0);
+
+    const [recoveryError, setRecoveryError] = useState(null);
+
+    const [confirmFreshKey, setConfirmFreshKey] = useState(false);
+
+    // Enter-an-existing-code box (already-logged-in unlock)
+    const [unlockCode, setUnlockCode] = useState("");
+
+    const [unlockBusy, setUnlockBusy] = useState(false);
+
+    const [unlockError, setUnlockError] = useState(null);
+
+    const [unlocked, setUnlocked] = useState(false);
+
+    useEffect(() => {
+
+        recoveryService.hasSyncSecret()
+            .then(setRecoveryHasSecret)
+            .catch(() => {});
+
+    }, []);
+
+    useEffect(() => {
+
+        if (recoveryCooldown <= 0) return;
+
+        const timer = setTimeout(
+            () => setRecoveryCooldown(
+                previous => previous - 1
+            ),
+            1000,
+        );
+
+        return () => clearTimeout(timer);
+
+    }, [recoveryCooldown]);
+
+    async function handleUnlockCode(event) {
+
+        event.preventDefault();
+
+        if (unlockBusy) return;
+
+        setUnlockBusy(true);
+
+        setUnlockError(null);
+
+        try {
+
+            await recoveryService.unlock(unlockCode);
+
+            setUnlocked(true);
+
+            setRecoveryHasSecret(true);
+
+            toast.success(
+                "History unlocked on this browser."
+            );
+
+        }
+        catch (err) {
+
+            setUnlockError(
+                err?.message ||
+                "That code didn't work. Check it and try again."
+            );
+
+        }
+        finally {
+
+            setUnlockBusy(false);
+
+        }
+
+    }
+
+    function formatCooldown(seconds) {
+
+        const m = Math.floor(seconds / 60);
+
+        const s = seconds % 60;
+
+        return `${m}:${String(s).padStart(2, "0")}`;
+
+    }
+
+    async function handleRecoverCode() {
+
+        if (
+            recoveryBusy ||
+            (
+                recoveryRemaining <= 0 &&
+                recoveryCooldown > 0
+            )
+        ) {
+            return;
+        }
+
+        setRecoveryBusy(true);
+
+        setRecoveryError(null);
+
+        setConfirmFreshKey(false);
+
+        try {
+
+            // Re-wrap the SAME secret when this browser has it
+            // (lossless), otherwise mint a fresh account key.
+            const secret =
+                await signalKeyStore.getSyncSecret();
+
+            const data =
+                await recoveryService.requestRecoveryCode(
+                    secret
+                );
+
+            setRecoverySent(true);
+
+            setRecoveryRemaining(data.remaining);
+
+            setRecoveryCooldown(data.retry_after);
+
+            toast.success(
+                "Recovery link sent — check your inbox."
+            );
+
+        }
+        catch (err) {
+
+            const retryAfter =
+                err?.response?.headers?.["retry-after"];
+
+            if (retryAfter) {
+
+                setRecoveryCooldown(Number(retryAfter));
+
+                setRecoveryRemaining(0);
+
+                setRecoveryError(
+                    "You have used all 3 requests for this " +
+                    "10-minute window. Try again when the " +
+                    "timer reaches zero."
+                );
+
+            }
+            else {
+
+                setRecoveryError(
+                    err?.response?.data?.detail ||
+                    err?.message ||
+                    "Could not request the recovery link."
+                );
+
+            }
+
+        }
+        finally {
+
+            setRecoveryBusy(false);
+
+        }
+
+    }
 
     // ==========================================================
     // Save profile (username + display name)
@@ -372,6 +561,220 @@ export default function SettingsPage() {
             </section>
 
             {/* ------- account ------- */}
+
+            <section className="settings-card support-zone">
+
+                <div className="settings-card-head">
+
+                    <h3>Support</h3>
+
+                    <p>
+                        Lost or deleted your recovery code? We can
+                        send you a new one — after confirming it
+                        is really you.
+                    </p>
+
+                </div>
+
+                {recoverySent ? (
+
+                    <div className="settings-actions">
+
+                        <div className="recovery-support-note">
+                            A recovery link has been sent to your
+                            email. Open it, enter the verification
+                            code, and your new recovery code will be
+                            shown on screen. It replaces the old one
+                            (which stops working) and restores the
+                            same synced history.
+                        </div>
+
+                    </div>
+
+                ) : !recoveryHasSecret && confirmFreshKey ? (
+
+                    <div className="settings-actions">
+
+                        <div className="logout-confirm">
+                            <span>
+                                This browser has not unlocked the sync
+                                secret yet. Requesting from here will
+                                create a <strong>new account key</strong> —
+                                history synced before this moment won&apos;t
+                                be readable on future browsers (it stays
+                                readable on browsers that already have
+                                the old key). If you have the app open on
+                                another device, request from there instead.
+                            </span>
+
+                            <div className="logout-actions">
+                                <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    onClick={() =>
+                                        setConfirmFreshKey(false)
+                                    }
+                                >
+                                    Cancel
+                                </button>
+
+                                <button
+                                    type="button"
+                                    className="btn-danger"
+                                    onClick={handleRecoverCode}
+                                    disabled={recoveryBusy}
+                                >
+                                    {recoveryBusy
+                                        ? "Sending…"
+                                        : "Request new key"}
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+
+                ) : (
+
+                    <div className="settings-actions">
+
+                        {recoveryError && (
+                            <p className="recovery-support-error">
+                                {recoveryError}
+                            </p>
+                        )}
+
+                        {recoveryCooldown > 0 ? (
+                            <div className="recovery-support-timer">
+                                <div
+                                    className="recovery-timer-ring"
+                                    style={{
+                                        background:
+                                            `conic-gradient(var(--accent) ` +
+                                            `${(recoveryCooldown / 600) * 360}deg, ` +
+                                            `rgba(127, 127, 127, 0.25) 0deg)`,
+                                    }}
+                                >
+                                    <span>
+                                        {formatCooldown(
+                                            recoveryCooldown
+                                        )}
+                                    </span>
+                                </div>
+
+                                <div className="recovery-timer-text">
+                                    {recoveryRemaining > 0
+                                        ? `${recoveryRemaining} of 3 ` +
+                                          "requests left this window " +
+                                          `(resets in ${formatCooldown(
+                                              recoveryCooldown
+                                          )})`
+                                        : "Limit reached — you can " +
+                                          "request again when the " +
+                                          "timer reaches zero"}
+                                </div>
+                            </div>
+                        ) : null}
+
+                        <button
+                            type="button"
+                            className="btn-primary settings-support-btn"
+                            onClick={() => {
+
+                                if (recoveryHasSecret) {
+
+                                    handleRecoverCode();
+
+                                }
+                                else {
+
+                                    setConfirmFreshKey(true);
+
+                                }
+
+                            }}
+                            disabled={
+                                recoveryBusy ||
+                                (
+                                    recoveryRemaining <= 0 &&
+                                    recoveryCooldown > 0
+                                )
+                            }
+                        >
+                            {recoveryBusy
+                                ? "Sending…"
+                                : "Recover my recovery code"}
+                        </button>
+
+                        {!recoveryHasSecret && !confirmFreshKey && (
+                            <p className="recovery-support-hint">
+                                This browser hasn&apos;t unlocked the sync
+                                secret, so requesting here creates a new
+                                account key. Request from a browser that
+                                already has your history to keep it intact.
+                            </p>
+                        )}
+
+                        {!recoveryHasSecret && (
+                            <div className="recovery-unlock-box">
+                                <details>
+                                    <summary>
+                                        Already have your code? Unlock
+                                        this browser
+                                    </summary>
+
+                                    <form
+                                        className="recovery-unlock-form"
+                                        onSubmit={handleUnlockCode}
+                                    >
+                                        <input
+                                            type="text"
+                                            className="recovery-unlock-input"
+                                            placeholder="XXXXXX-XXXXXX-XXXXXX-XXXXXX"
+                                            value={unlockCode}
+                                            onChange={event =>
+                                                setUnlockCode(
+                                                    event.target.value.toUpperCase()
+                                                )
+                                            }
+                                            spellCheck={false}
+                                        />
+
+                                        <button
+                                            type="submit"
+                                            className="btn-ghost"
+                                            disabled={
+                                                unlockBusy ||
+                                                unlockCode.length < 20
+                                            }
+                                        >
+                                            {unlockBusy
+                                                ? "Unlocking…"
+                                                : "Unlock"}
+                                        </button>
+                                    </form>
+
+                                    {unlockError && (
+                                        <p className="recovery-support-error">
+                                            {unlockError}
+                                        </p>
+                                    )}
+
+                                    {unlocked && (
+                                        <p className="recovery-unlock-ok">
+                                            This browser is now unlocked —
+                                            the full history is readable
+                                            here.
+                                        </p>
+                                    )}
+                                </details>
+                            </div>
+                        )}
+
+                    </div>
+
+                )}
+
+            </section>
 
             <section className="settings-card danger-zone">
 

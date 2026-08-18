@@ -12,6 +12,7 @@ from app.api.v1.attachments import (
 )
 from app.api.v1.users import router as users_router
 from app.api.v1.devices import router as devices_router
+from app.api.v1.recovery import router as recovery_router
 
 api_router = APIRouter()
 
@@ -32,6 +33,12 @@ api_router.include_router(users_router)
 # ==========================================================
 
 api_router.include_router(devices_router)
+
+# ==========================================================
+# Recovery (account sync secret unlock material)
+# ==========================================================
+
+api_router.include_router(recovery_router)
 
 # ==========================================================
 # Friends

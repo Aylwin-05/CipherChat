@@ -3,6 +3,7 @@ import {
     useRef,
     useState,
 } from "react";
+import toast from "react-hot-toast";
 
 import VoiceRecorder from "./VoiceRecorder";
 
@@ -97,10 +98,17 @@ export default function ChatInput({
     const [selectedFile, setSelectedFile] =
         useState(null);
 
+    // Attachment upload progress: null while idle, otherwise
+    // { progress: number|null (null = still encrypting), fileName }
+    const [sending, setSending] = useState(null);
+
     const timeoutRef =
         useRef(null);
 
     const fileInputRef =
+        useRef(null);
+
+    const abortRef =
         useRef(null);
 
     // Prefill the input when entering edit mode
@@ -171,6 +179,16 @@ export default function ChatInput({
     // Send / Edit
     // ==========================================================
 
+    function handleCancelUpload() {
+
+        // Cancels at ANY point of the send: aborts an
+        // in-flight upload, or interrupts the pre-relay hold
+        // phase (sendMessage then throws ERR_CANCELED, cleans
+        // up the backend message and never relays it).
+        abortRef.current?.abort();
+
+    }
+
     async function handleSend() {
 
         if (
@@ -195,16 +213,98 @@ export default function ChatInput({
 
         }
 
-        await onSend(
-            text,
-            selectedFile,
-        );
+        //------------------------------------------------------
+        // Attachments: wire a progress callback + abort
+        // controller into the upload so the user can watch it
+        // and cancel mid-flight.
+        //------------------------------------------------------
 
-        setText("");
+        // Keep the progress panel on screen for at least this
+        // long so the user has time to react (fast uploads
+        // would otherwise flash by in milliseconds).
+        const MIN_PROGRESS_VISIBLE_MS = 5000;
 
-        setSelectedFile(null);
+        const startedAt =
+            Date.now();
 
-        stopTyping();
+        const controller =
+            new AbortController();
+
+        abortRef.current = controller;
+
+        if (selectedFile) {
+
+            setSending({
+                progress: 0,
+                fileName: selectedFile.name,
+            });
+
+        }
+
+        try {
+
+            await onSend(
+                text,
+                selectedFile,
+                {
+                    onProgress: (progress) => {
+
+                        setSending(current =>
+                            current
+                                ? {
+                                    ...current,
+                                    progress,
+                                    done: progress === 100,
+                                }
+                                : current
+                        );
+
+                    },
+
+                    signal: controller.signal,
+
+                    // The send flow holds the "Sent" panel for
+                    // the rest of the minimum visibility window
+                    // before the message actually relays.
+                    holdUntil:
+                        startedAt +
+                        MIN_PROGRESS_VISIBLE_MS,
+                },
+            );
+
+        }
+        catch (error) {
+
+            if (
+                error?.code ===
+                    "ERR_CANCELED"
+            ) {
+
+                toast(
+                    "Upload cancelled",
+                );
+
+            }
+            else {
+
+                throw error;
+
+            }
+
+        }
+        finally {
+
+            abortRef.current = null;
+
+            setText("");
+
+            setSelectedFile(null);
+
+            stopTyping();
+
+            setSending(null);
+
+        }
 
     }
 
@@ -407,6 +507,117 @@ export default function ChatInput({
 
             )}
 
+            {/* UPLOAD PROGRESS BAR (with cancel) */}
+
+            {sending && (
+
+                <div className="upload-progress">
+
+                    <svg
+                        className="upload-progress-icon"
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    >
+                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                    </svg>
+
+                    <div className="upload-progress-body">
+
+                        <div className="upload-progress-top">
+
+                            <span className="upload-progress-name">
+
+                                {sending.done
+                                    ? `Sent ${sending.fileName}`
+                                    : `Sending ${sending.fileName}`}
+
+                            </span>
+
+                            <span className="upload-progress-pct">
+
+                                {sending.done
+                                    ? "100%"
+                                    : sending.progress == null
+                                        ? "…"
+                                        : `${sending.progress}%`}
+
+                            </span>
+
+                        </div>
+
+                        <div className="upload-progress-track">
+
+                            <div
+                                className={
+                                    sending.done
+                                        ? "upload-progress-fill done"
+                                        : "upload-progress-fill"
+                                }
+                                style={{
+                                    width: `${
+                                        sending.done
+                                            ? 100
+                                            : (sending.progress ?? 0)
+                                    }%`,
+                                }}
+                            />
+
+                        </div>
+
+                        <div className="upload-progress-sub">
+
+                            {sending.done
+
+                                ? "Sent"
+
+                                : sending.progress == null
+
+                                    ? "Encrypting & preparing…"
+
+                                    : `${100 - sending.progress}% remaining`}
+
+                        </div>
+
+                    </div>
+
+                    <button
+
+                        type="button"
+
+                        className="upload-cancel-btn"
+
+                        aria-label="Cancel send"
+
+                        title="Cancel send"
+
+                        onClick={handleCancelUpload}
+
+                    >
+
+                        <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.4"
+                            strokeLinecap="round"
+                        >
+                            <path d="M18 6 6 18M6 6l12 12" />
+                        </svg>
+
+                    </button>
+
+                </div>
+
+            )}
+
             <div className="chat-input-bar">
 
                 {/* Voice Recorder */}
@@ -492,7 +703,8 @@ export default function ChatInput({
                     disabled={
                         editTarget
                             ? !text.trim()
-                            : !text.trim() && !selectedFile
+                            : (!text.trim() && !selectedFile) ||
+                                Boolean(sending)
                     }
 
                     onClick={handleSend}

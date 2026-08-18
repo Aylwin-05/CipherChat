@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import Dashboard from "../pages/Dashboard/Dashboard";
 import Login from "../pages/Login/Login";
 import OTP from "../pages/OTP/OTP";
+import RecoverPage from "../pages/Recover/RecoverPage";
 import ProtectedRoute from "./ProtectedRoute";
 
 export default function AppRoutes() {
@@ -27,6 +28,11 @@ export default function AppRoutes() {
             <Route
                 path="/otp"
                 element={<OTP />}
+            />
+
+            <Route
+                path="/recover"
+                element={<RecoverPage />}
             />
 
             <Route

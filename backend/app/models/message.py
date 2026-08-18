@@ -141,6 +141,23 @@ class Message(Base):
     )
 
     # ==========================================================
+    # Account sync copy (cross-browser history)
+    #
+    # Any device that decrypts this message stores an AES-256-GCM
+    # copy of the plaintext wrapped by the account sync secret
+    # ({"nonce": b64, "data": b64, "ciphertext": str}). A browser
+    # that registers later — with no per-device envelope of its
+    # own — can still read the message after unlocking the sync
+    # secret with the recovery code. `ciphertext` lets clients
+    # detect edited messages whose sync copy is stale.
+    # ==========================================================
+
+    sync_envelope: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    # ==========================================================
     # Metadata
     # ==========================================================
 

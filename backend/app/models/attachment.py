@@ -4,6 +4,7 @@ from sqlalchemy import (
     BigInteger,
     DateTime,
     ForeignKey,
+    JSON,
     String,
     func,
 )
@@ -125,6 +126,25 @@ class Attachment(Base):
 
     nonce: Mapped[str | None] = mapped_column(
         String,
+        nullable=True,
+    )
+
+    # Per-device Signal envelopes wrapping the file's AES key
+    # (mirrors message envelopes): one entry per recipient
+    # device, so every device of the account can decrypt
+    # received attachments. Legacy RSA fields above remain as
+    # the fallback for the original device + own sends.
+    wrapped_keys: Mapped[list | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    # Account-key copy of the decrypted file bytes (cross-browser
+    # history): written by any device that successfully decrypts
+    # the file, readable by every browser that unlocked the
+    # account sync secret with the recovery code.
+    sync_blob: Mapped[dict | None] = mapped_column(
+        JSON,
         nullable=True,
     )
     

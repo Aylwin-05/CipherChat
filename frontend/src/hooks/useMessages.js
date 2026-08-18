@@ -18,6 +18,7 @@ import {
 } from "../services/signalService";
 import {
     encryptForDevices,
+    encryptBytesForDevices,
     decryptMessage as signalDecryptMessage,
 } from "../services/signalChatService";
 import {
@@ -42,6 +43,10 @@ import {
     encryptGroupMessage,
     decryptGroupMessage,
 } from "../utils/groupEncryption";
+import {
+    encryptSyncText,
+    decryptSyncText,
+} from "../crypto/syncCrypto";
 
 // ==========================================================
 // Reaction list updater
@@ -189,6 +194,89 @@ export default function useMessages(
     }, [conversation?.id]);
 
     //------------------------------------------------------
+    // Account sync copy helpers (cross-browser history)
+    //
+    // ensureSyncCopy: after THIS device decrypts (or has
+    // cached) a message, re-encrypt the plaintext with the
+    // account sync secret and store the copy server-side, so
+    // browsers that register later can read it too. Idempotent:
+    // a copy whose ciphertext matches the message is current.
+    //
+    // trySyncDecrypt: fallback read path for messages with NO
+    // decryptable per-device envelope here (old history on a
+    // new browser): read the account-key copy instead.
+    //------------------------------------------------------
+
+    async function ensureSyncCopy(message, plaintext, conversationId) {
+
+        try {
+
+            if (!(await signalKeyStore.getSyncSecret())) return;
+
+            if (
+                message?.sync_envelope?.ciphertext ===
+                message?.ciphertext
+            ) return;
+
+            const envelope = await encryptSyncText(
+                plaintext,
+                message?.ciphertext ?? null,
+            );
+
+            if (!envelope) return;
+
+            await messageService.saveSyncEnvelope(
+                message.id,
+                envelope,
+            );
+
+        }
+        catch (error) {
+
+            console.debug(
+                "[SYNC-COPY] write failed",
+                message?.id,
+                error
+            );
+
+        }
+
+    }
+
+    async function trySyncDecrypt(message, conversationId) {
+
+        try {
+
+            if (!(await signalKeyStore.getSyncSecret())) return null;
+
+            if (!message?.sync_envelope?.data) return null;
+
+            const plaintext =
+                await decryptSyncText(message.sync_envelope);
+
+            if (plaintext == null) return null;
+
+            // Remember it locally too, so the next open of this
+            // chat is a plain cache hit.
+            await signalKeyStore.savePlaintext(
+                conversationId,
+                message.id,
+                plaintext,
+                message.ciphertext,
+            );
+
+            return plaintext;
+
+        }
+        catch {
+
+            return null;
+
+        }
+
+    }
+
+    //------------------------------------------------------
     // Decrypt an incoming message (Signal first, RSA fallback)
     //------------------------------------------------------
 
@@ -249,6 +337,15 @@ export default function useMessages(
             )
         ) {
 
+            // Backfill: this browser has the plaintext but the
+            // message has no account-key copy yet — share it so
+            // every other browser of this account can read it.
+            void ensureSyncCopy(
+                message,
+                cachedRecord.plaintext,
+                conversationId,
+            );
+
             return cachedRecord.plaintext;
 
         }
@@ -268,6 +365,40 @@ export default function useMessages(
             // (e.g. history on a device registered later).
             if (envelopes.length && !myEnvelope) {
 
+                // No envelope for THIS device (e.g. history on a
+                // device registered later). The account-key copy
+                // (if any) still lets us read it.
+                const syncPlain =
+                    await trySyncDecrypt(
+                        message,
+                        conversationId,
+                    );
+
+                if (syncPlain !== null) return syncPlain;
+
+                // DEBUG-PLACEHOLDER
+                console.debug(
+                    "[PLACEHOLDER] group",
+                    JSON.stringify({
+                        id: message.id,
+                        conversation_id: conversationId,
+                        sender_id: message.sender_id,
+                        me: user.id,
+                        myDeviceId,
+                        envelope_devices: envelopes.map((e) => e.device_id),
+                        cache: cachedRecord
+                            ? {
+                                ciphertext_match:
+                                    cachedRecord.ciphertext === message.ciphertext,
+                                plaintext_len:
+                                    (cachedRecord.plaintext ?? "").length,
+                              }
+                            : null,
+                        ciphertext_len:
+                            (message.ciphertext ?? "").length,
+                    })
+                );
+
                 return message.sender_id === user.id
                     ? "[Sent from another device]"
                     : "[Encrypted for another device]";
@@ -286,6 +417,16 @@ export default function useMessages(
 
             }
             catch (error) {
+
+                // Device envelope failed — the account-key copy may
+                // still decrypt.
+                const syncPlain =
+                    await trySyncDecrypt(
+                        message,
+                        conversationId,
+                    );
+
+                if (syncPlain !== null) return syncPlain;
 
                 console.error(
                     "Failed to decrypt group message:",
@@ -314,6 +455,16 @@ export default function useMessages(
             }
             catch (error) {
 
+                // Session failure — the account-key copy (if any)
+                // still lets us read the message.
+                const syncPlain =
+                    await trySyncDecrypt(
+                        message,
+                        conversationId,
+                    );
+
+                if (syncPlain !== null) return syncPlain;
+
                 console.error(
                     "Failed to decrypt device envelope:",
                     error
@@ -330,8 +481,40 @@ export default function useMessages(
             // The message has per-device copies but none for
             // THIS device (e.g. old history on a browser that
             // registered after the message was sent). It was
-            // never meant to be decryptable here.
+            // never meant to be decryptable here — unless the
+            // account-key copy exists.
             //--------------------------------------------------
+
+            const syncPlain =
+                await trySyncDecrypt(
+                    message,
+                    conversationId,
+                );
+
+            if (syncPlain !== null) return syncPlain;
+
+            // DEBUG-PLACEHOLDER
+            console.debug(
+                "[PLACEHOLDER] dm",
+                JSON.stringify({
+                    id: message.id,
+                    conversation_id: conversationId,
+                    sender_id: message.sender_id,
+                    me: user.id,
+                    myDeviceId,
+                    envelope_devices: envelopes.map((e) => e.device_id),
+                    cache: cachedRecord
+                        ? {
+                            ciphertext_match:
+                                cachedRecord.ciphertext === message.ciphertext,
+                            plaintext_len:
+                                (cachedRecord.plaintext ?? "").length,
+                          }
+                        : null,
+                    ciphertext_len:
+                        (message.ciphertext ?? "").length,
+                })
+            );
 
             return message.sender_id === user.id
                 ? "[Sent from another device]"
@@ -370,6 +553,14 @@ export default function useMessages(
             }
             catch {
 
+                const syncPlain =
+                    await trySyncDecrypt(
+                        message,
+                        conversationId,
+                    );
+
+                if (syncPlain !== null) return syncPlain;
+
                 return "[Unable to decrypt]";
 
             }
@@ -399,6 +590,14 @@ export default function useMessages(
             );
 
         }
+
+        // Share with the account: every other browser can read
+        // this message once it unlocks the sync secret.
+        void ensureSyncCopy(
+            message,
+            plaintext,
+            conversationId,
+        );
 
         return plaintext;
 
@@ -901,32 +1100,39 @@ export default function useMessages(
                                 "image"
                             ) {
 
-                                try {
+try {
 
-                                    const imageUrl =
-                                        await attachmentService.getAttachment(
-                                            event.attachment.id,
-                                            {
-                                                wrappedKey:
-                                                    event.sender_id === user?.id
-                                                        ? event.attachment.encrypted_key_sender
-                                                        : event.attachment.encrypted_key_receiver,
+                            const imageBlob =
+                                await attachmentService.getAttachment(
+                                    event.attachment.id,
+                                    {
+                                        wrappedKey:
+                                            event.sender_id === user?.id
+                                                ? event.attachment.encrypted_key_sender
+                                                : event.attachment.encrypted_key_receiver,
 
-                                                nonce:
-                                                    event.attachment.nonce,
-                                            }
-                                        );
+                                        nonce:
+                                            event.attachment.nonce,
 
-                                    setImageUrls(previous => ({
+                                        wrappedKeys:
+                                            event.attachment.wrapped_keys,
 
-                                        ...previous,
+                                        message: event,
+                                    }
+                                );
 
-                                        [event.attachment.id]:
-                                            imageUrl,
+                            const imageUrl = URL.createObjectURL(imageBlob);
 
-                                    }));
+                            setImageUrls(previous => ({
 
-                                }
+                                ...previous,
+
+                                [event.attachment.id]:
+                                    imageUrl,
+
+                            }));
+
+                        }
 
                                 catch (error) {
 
@@ -1278,7 +1484,7 @@ export default function useMessages(
 
                         try {
 
-                            const imageUrl =
+                            const imageBlob =
                                 await attachmentService.getAttachment(
                                     attachment.id,
                                     {
@@ -1289,8 +1495,15 @@ export default function useMessages(
 
                                         nonce:
                                             attachment.nonce,
+
+                                        wrappedKeys:
+                                            attachment.wrapped_keys,
+
+                                        message,
                                     }
                                 );
+
+                            const imageUrl = URL.createObjectURL(imageBlob);
 
                             setImageUrls(previous => ({
 
@@ -1304,6 +1517,18 @@ export default function useMessages(
                         }
 
                         catch (error) {
+
+                            if (
+                                error?.name ===
+                                "AttachmentDecryptError"
+                            ) {
+
+                                // Keys for this attachment are
+                                // gone on this device; the
+                                // bubble renders a placeholder.
+                                continue;
+
+                            }
 
                             console.error(
                                 "Image download failed",
@@ -1350,8 +1575,14 @@ export default function useMessages(
         const {
             replyToId = null,
             isForwarded = false,
-
+            onProgress = null,
+            signal = null,
+            holdUntil = 0,
         } = options;
+
+        // Hoisted so the catch block can clean up an orphaned
+        // backend message when an upload is cancelled.
+        let savedMessage = null;
 
         try {
 
@@ -1415,6 +1646,12 @@ export default function useMessages(
                         saved.id,
                         plaintext,
                         saved.ciphertext,
+                    );
+
+                    void ensureSyncCopy(
+                        saved,
+                        plaintext,
+                        conversation.id,
                     );
 
                 }
@@ -1483,7 +1720,7 @@ export default function useMessages(
                 "3. Sending to backend..."
             );
 
-            const saved =
+            savedMessage =
                 await messageService.sendMessage(
                     conversation.id,
                     encrypted,
@@ -1493,7 +1730,7 @@ export default function useMessages(
 
             console.log(
                 "Backend response:",
-                saved
+                savedMessage
             );
 
             //--------------------------------------------------
@@ -1526,7 +1763,7 @@ export default function useMessages(
                     );
 
                 const myPublicKey =
-                    getPrivateKey();
+                    getPublicKey();
 
                 const theirPublicKey =
                     (
@@ -1557,9 +1794,23 @@ export default function useMessages(
                     ),
                 ]);
 
+                // Per-device Signal envelopes of the file's AES
+                // key: every recipient device can unwrap its own
+                // copy (this sender's device is skipped — no
+                // (me, me) ratchet — and keeps using the RSA
+                // self-wrap above).
+                const wrappedKeys =
+                    await encryptBytesForDevices({
+                        conversationId:
+                            conversation.id,
+                        bytes:
+                            new Uint8Array(rawKey),
+                        devices: allDevices,
+                    });
+
                 uploaded =
                     await messageService.uploadAttachment(
-                        saved.id,
+                        savedMessage.id,
                         encryptedFileBlob,
                         {
                             encrypted_key_sender:
@@ -1570,6 +1821,13 @@ export default function useMessages(
 
                             nonce:
                                 arrayBufferToBase64(iv),
+
+                            wrapped_keys:
+                                wrappedKeys,
+                        },
+                        {
+                            onProgress,
+                            signal,
                         }
                     );
 
@@ -1578,6 +1836,8 @@ export default function useMessages(
                     uploaded
                 );
 
+                onProgress?.(100);
+
             }
 
             //--------------------------------------------------
@@ -1585,7 +1845,7 @@ export default function useMessages(
             //--------------------------------------------------
 
             const localMessage = {
-                ...saved,
+                ...savedMessage,
                 content: plaintext,
                 attachments:
                     file && uploaded
@@ -1604,9 +1864,15 @@ export default function useMessages(
 
                 await signalKeyStore.savePlaintext(
                     conversation.id,
-                    saved.id,
+                    savedMessage.id,
                     plaintext,
-                    saved.ciphertext,
+                    savedMessage.ciphertext,
+                );
+
+                void ensureSyncCopy(
+                    savedMessage,
+                    plaintext,
+                    conversation.id,
                 );
 
             }
@@ -1619,24 +1885,101 @@ export default function useMessages(
 
             }
 
-            websocketService.sendMessage({
-                id: saved.id,
-                conversation_id: saved.conversation_id,
-                sender_id: saved.sender_id,
-                ciphertext: saved.ciphertext,
-                encrypted_key_sender: saved.encrypted_key_sender,
-                encrypted_key_receiver: saved.encrypted_key_receiver,
-                nonce: saved.nonce,
-                crypto_version: saved.crypto_version,
-                message_type: saved.message_type,
-                reply_to_id: saved.reply_to_id,
-                is_forwarded: saved.is_forwarded,
-                expires_at: saved.expires_at,
-                created_at: saved.created_at,
+            const relayPayload = {
+                id: savedMessage.id,
+                conversation_id: savedMessage.conversation_id,
+                sender_id: savedMessage.sender_id,
+                ciphertext: savedMessage.ciphertext,
+                encrypted_key_sender: savedMessage.encrypted_key_sender,
+                encrypted_key_receiver: savedMessage.encrypted_key_receiver,
+                nonce: savedMessage.nonce,
+                crypto_version: savedMessage.crypto_version,
+                message_type: savedMessage.message_type,
+                reply_to_id: savedMessage.reply_to_id,
+                is_forwarded: savedMessage.is_forwarded,
+                expires_at: savedMessage.expires_at,
+                created_at: savedMessage.created_at,
                 attachments: localMessage.attachments,
-                recipient_keys: saved.recipient_keys ?? [],
-                envelopes: saved.envelopes ?? [],
-            });
+                recipient_keys: savedMessage.recipient_keys ?? [],
+                envelopes: savedMessage.envelopes ?? [],
+            };
+
+            //--------------------------------------------------
+            // Hold before relaying: the "Sent" panel stays on
+            // screen at least until holdUntil, and the message
+            // only reaches the peer once the hold ends. Cancel
+            // during the hold aborts the send entirely (the
+            // orphan message is removed in the catch block).
+            // Text sends have no panel and relay immediately.
+            //--------------------------------------------------
+
+            if (file && holdUntil > 0) {
+
+                const holdMs =
+                    Math.max(
+                        0,
+                        holdUntil - Date.now()
+                    );
+
+                if (!signal?.aborted) {
+
+                    await new Promise(
+                        resolve => {
+
+                            const onAbort =
+                                () => {
+
+                                    clearTimeout(
+                                        timer
+                                    );
+
+                                    resolve();
+
+                                };
+
+                            signal?.addEventListener(
+                                "abort",
+                                onAbort,
+                                { once: true },
+                            );
+
+                            const timer =
+                                setTimeout(() => {
+
+                                    signal?.removeEventListener(
+                                        "abort",
+                                        onAbort
+                                    );
+
+                                    resolve();
+
+                                }, holdMs);
+
+                        }
+                    );
+
+                }
+
+                if (signal?.aborted) {
+
+                    await messageService.deleteForEveryone(
+                        savedMessage.id
+                    );
+
+                    const cancelError =
+                        new Error(
+                            "Upload cancelled"
+                        );
+
+                    cancelError.code = "ERR_CANCELED";
+
+                    throw cancelError;
+
+                }
+
+            }
+
+            websocketService.sendMessage(relayPayload);
 
             if (error) setError(null);
 
@@ -1652,10 +1995,85 @@ export default function useMessages(
 
         catch (error) {
 
+            //--------------------------------------------------
+            // User cancelled an attachment upload: the backend
+            // message was created before the upload, so remove
+            // that orphan so the peer never sees an empty
+            // message. No error banner — cancellation is not
+            // an error.
+            //--------------------------------------------------
+
+            if (error?.code === "ERR_CANCELED") {
+
+                // Drop the optimistic bubble the send flow may
+                // have added before the hold phase.
+                if (savedMessage?.id) {
+
+                    setMessages(previous =>
+                        previous.filter(
+                            message =>
+                                message.id !==
+                                savedMessage.id
+                        )
+                    );
+
+                }
+
+                try {
+
+                    if (savedMessage?.id) {
+
+                        await messageService.deleteForEveryone(
+                            savedMessage.id
+                        );
+
+                    }
+
+                }
+                catch (cleanupError) {
+
+                    console.error(
+                        "Failed to remove cancelled "
+                        + "attachment message:",
+                        cleanupError
+                    );
+
+                }
+
+                // Let the caller (ChatInput) surface the
+                // cancellation in its own UI.
+                throw error;
+
+            }
+
             console.error(
                 "Failed to send message",
                 error
             );
+
+            // The backend message was created before the
+            // attachment step; remove the orphan so a failed
+            // send never resurfaces as a phantom message
+            // (e.g. "[Sent from another device]" on reload).
+            if (savedMessage?.id) {
+
+                try {
+
+                    await messageService.deleteForEveryone(
+                        savedMessage.id
+                    );
+
+                }
+                catch (cleanupError) {
+
+                    console.error(
+                        "Failed to remove failed send message:",
+                        cleanupError
+                    );
+
+                }
+
+            }
 
             setError(error);
 
@@ -1806,6 +2224,20 @@ export default function useMessages(
                     messageId,
                     newPlaintext,
                     encrypted.ciphertext,
+                );
+
+                // The edited content is fresh plaintext: replace
+                // the account-key copy so every browser shows the
+                // new text (stale copies are detected via the
+                // ciphertext fingerprint).
+                void ensureSyncCopy(
+                    {
+                        id: messageId,
+                        ciphertext: encrypted.ciphertext,
+                        sync_envelope: null,
+                    },
+                    newPlaintext,
+                    conversation.id,
                 );
 
             }
@@ -1980,6 +2412,26 @@ export default function useMessages(
                         true,
                     );
 
+                try {
+
+                    await signalKeyStore.savePlaintext(
+                        targetConversation.id,
+                        saved.id,
+                        plaintext,
+                        saved.ciphertext,
+                    );
+
+                }
+
+                catch (error) {
+
+                    console.error(
+                        "Failed to cache forwarded message:",
+                        error
+                    );
+
+                }
+
                 // The recipient's socket must see it in real
                 // time, exactly like a normal send.
                 websocketService.sendMessage({
@@ -2000,25 +2452,6 @@ export default function useMessages(
                     recipient_keys: saved.recipient_keys ?? [],
                     envelopes: saved.envelopes ?? [],
                 });
-
-                try {
-
-                    await signalKeyStore.savePlaintext(
-                        targetConversation.id,
-                        saved.id,
-                        plaintext,
-                    );
-
-                }
-
-                catch (error) {
-
-                    console.error(
-                        "Failed to cache forwarded message:",
-                        error
-                    );
-
-                }
 
                 results.push({
                     conversation:

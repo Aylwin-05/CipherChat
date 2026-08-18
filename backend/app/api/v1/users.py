@@ -53,7 +53,14 @@ async def get_my_profile(
     Return the authenticated user's profile.
     """
 
-    return current_user
+    profile = UserResponse.model_validate(current_user)
+
+    return profile.model_copy(
+        update={
+            "has_recovery_key":
+                current_user.recovery_wrapped_key is not None,
+        }
+    )
 
 
 # ==========================================================

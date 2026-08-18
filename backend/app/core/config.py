@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     ALLOWED_HOSTS: str = "*"
 
     # ======================================================
+    # Frontend (link emails point back to the app)
+    # ======================================================
+
+    FRONTEND_URL: str = "http://localhost:5173"
+
+    # ======================================================
     # Redis (rate limiting; falls back to in-memory)
     # ======================================================
 

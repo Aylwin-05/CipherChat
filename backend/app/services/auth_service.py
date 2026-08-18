@@ -24,7 +24,7 @@ class AuthService:
     """
 
     OTP_EXPIRY_MINUTES = 5
-    MAX_ATTEMPTS = 5
+    MAX_ATTEMPTS = 10
 
     def __init__(
         self,
@@ -44,7 +44,8 @@ class AuthService:
     ) -> bool:
 
         await self.repository.delete_expired_otps()
-        await self.repository.delete_existing_otps(email)
+        # Delete used OTPs older than 24 hours to prevent accumulation
+        await self.repository.delete_old_used_otps(email)
 
         otp = SecurityUtils.generate_otp()
 
@@ -130,6 +131,13 @@ class AuthService:
 
         await self.repository.mark_otp_used(
             otp_record
+        )
+
+        await self.repository.commit()
+
+        logger.info(
+            "OTP verified and marked used: email=%s",
+            email,
         )
 
         # =====================================================

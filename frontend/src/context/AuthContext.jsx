@@ -7,11 +7,16 @@ import {
 
 import authService from "../services/authService";
 import keyService from "../services/keyService";
+import recoveryService from "../services/recoveryService";
 import {
     ensureDeviceRegistered,
     replenishPreKeys,
     wipeDeviceData,
 } from "../services/signalService";
+
+import {
+    clearSyncKeyCache,
+} from "../crypto/syncCrypto";
 
 import {
     generateIdentityKeys,
@@ -34,6 +39,45 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true);
 
     const [accessToken, setAccessToken] = useState(null);
+
+    // Recovery code state:
+    //  - recoveryCode: code just created by THIS registration
+    //    (show once so the user can save it)
+    //  - needsRecoveryEntry: the account HAS a recovery key but
+    //    this browser hasn't unlocked the sync secret yet
+    const [recoveryCode, setRecoveryCode] = useState(null);
+
+    const [needsRecoveryEntry, setNeedsRecoveryEntry] = useState(false);
+
+    // ==========================================================
+    // Recovery reconciliation after login/boot
+    //
+    // A fresh registration that created the account's recovery
+    // key already auto-unlocked the sync secret; the code must
+    // still be shown once. An existing account whose key this
+    // browser never unlocked prompts for the code.
+    // ==========================================================
+
+    async function reconcileRecovery(profile, registrationResult) {
+
+        if (registrationResult?.recoveryCode) {
+
+            setRecoveryCode(registrationResult.recoveryCode);
+
+            return;
+
+        }
+
+        if (
+            profile?.has_recovery_key &&
+            !(await recoveryService.hasSyncSecret())
+        ) {
+
+            setNeedsRecoveryEntry(true);
+
+        }
+
+    }
 
     // ==========================================================
     // Initialize Authentication
@@ -76,6 +120,8 @@ export function AuthProvider({ children }) {
 
                 await replenishPreKeys();
 
+                return result;
+
             }
 
             catch (error) {
@@ -84,6 +130,8 @@ export function AuthProvider({ children }) {
                     "Signal device setup failed:",
                     error
                 );
+
+                return null;
 
             }
 
@@ -100,7 +148,17 @@ export function AuthProvider({ children }) {
 
                     if (active) setUser(profile);
 
-                    await ensureCryptoSetup();
+                    const result =
+                        await ensureCryptoSetup();
+
+                    if (active) {
+
+                        await reconcileRecovery(
+                            profile,
+                            result,
+                        );
+
+                    }
 
                     return;
 
@@ -118,7 +176,13 @@ export function AuthProvider({ children }) {
 
                 setUser(profile);
 
-                await ensureCryptoSetup();
+                const result =
+                    await ensureCryptoSetup();
+
+                await reconcileRecovery(
+                    profile,
+                    result,
+                );
 
             }
 
@@ -160,10 +224,28 @@ export function AuthProvider({ children }) {
 
         try {
 
+            // --------------------------------------------------
+            // Set access token in memory first
+            // --------------------------------------------------
+
             authService.login(accessToken);
+
+            // --------------------------------------------------
+            // Also save to localStorage so it persists across tabs/restarts
+            // --------------------------------------------------
 
             const profile =
                 await authService.loadCurrentUser();
+
+            // Save both the user profile AND the access token
+            // to localStorage for maximum persistence
+            authService.saveUser(profile);
+
+            // Also explicitly store the token for this session
+            localStorage.setItem(
+                "access_token",
+                accessToken
+            );
 
             setUser(profile);
 
@@ -224,6 +306,11 @@ export function AuthProvider({ children }) {
                     result.isPrimary
                         ? "(primary)"
                         : "(secondary)"
+                );
+
+                await reconcileRecovery(
+                    profile,
+                    result,
                 );
 
             }
@@ -294,12 +381,40 @@ export function AuthProvider({ children }) {
     };
 
     // ==========================================================
+    // Recovery code actions
+    // ==========================================================
+
+    const submitRecoveryCode = async (code) => {
+
+        await recoveryService.unlock(code);
+
+        setNeedsRecoveryEntry(false);
+
+        return true;
+
+    };
+
+    const dismissRecoveryEntry = () => {
+
+        setNeedsRecoveryEntry(false);
+
+    };
+
+    const dismissRecoveryCode = () => {
+
+        setRecoveryCode(null);
+
+    };
+
+    // ==========================================================
     // Logout
     // ==========================================================
 
     const logout = () => {        // Wipe the local Signal key store (and best-effort
         // remove the device from the server). Fire-and-forget:
         // logout must not block on the network.
+
+        clearSyncKeyCache();
 
         wipeDeviceData()
             .catch((error) =>
@@ -327,6 +442,11 @@ export function AuthProvider({ children }) {
                 login,
                 logout,
                 updateUser,
+                recoveryCode,
+                needsRecoveryEntry,
+                submitRecoveryCode,
+                dismissRecoveryEntry,
+                dismissRecoveryCode,
                 isAuthenticated: !!user,
             }}
         >

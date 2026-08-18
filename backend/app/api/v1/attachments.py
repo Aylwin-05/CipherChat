@@ -1,5 +1,6 @@
 from uuid import UUID
 from datetime import datetime
+import json
 from pathlib import Path
 from fastapi import (
     APIRouter,
@@ -29,6 +30,7 @@ from app.schemas.attachment import (
     AttachmentResponse,
     UploadResponse,
 )
+from app.schemas.message import SyncCopyUpsert
 from app.services.attachment_service import AttachmentService
 from app.websocket.connection_manager import manager
 
@@ -61,6 +63,8 @@ async def upload_attachment(
     encrypted_key_receiver: str | None = Form(None),
 
     nonce: str | None = Form(None),
+
+    wrapped_keys: str | None = Form(None),
 
     current_user: User = Depends(get_current_user),
 
@@ -119,6 +123,13 @@ async def upload_attachment(
                 detail="Missing encryption nonce.",
             )
     try:
+
+        parsed_wrapped_keys = (
+            json.loads(wrapped_keys)
+            if wrapped_keys
+            else None
+        )
+
         attachment = await attachment_service.upload_attachment(
             message.id,
             file,
@@ -126,6 +137,7 @@ async def upload_attachment(
             encrypted_key_sender=encrypted_key_sender,
             encrypted_key_receiver=encrypted_key_receiver,
             nonce=nonce,
+            wrapped_keys=parsed_wrapped_keys,
         )
 
     except Exception as e:
@@ -192,6 +204,12 @@ async def upload_attachment(
 
                 "nonce":
                     attachment.nonce,
+
+                "wrapped_keys":
+                    attachment.wrapped_keys or [],
+
+                "sync_blob":
+                    attachment.sync_blob,
 
                 "download_url":
                     f"/api/v1/attachments/{attachment.id}",
@@ -286,6 +304,88 @@ async def download_attachment(
         filename=attachment.original_name,
         media_type=attachment.mime_type,
     )
+
+
+# ==========================================================
+# Upsert Sync Blob (cross-browser history)
+#
+# Any device that successfully decrypts a file stores an
+# account-key copy of the raw bytes here, so browsers that
+# register later can read it after unlocking the sync secret.
+# ==========================================================
+
+@router.put(
+    "/{attachment_id}/sync-blob",
+    response_model=AttachmentResponse,
+    dependencies=[
+        rate_limit("attachments.sync", 300, 60),
+    ],
+)
+async def upsert_sync_blob(
+    attachment_id: UUID,
+    request: SyncCopyUpsert,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+
+    attachment_repository = AttachmentRepository(db)
+    message_repository = MessageRepository(db)
+    conversation_repository = ConversationRepository(db)
+
+    attachment_service = AttachmentService(
+        attachment_repository,
+    )
+
+    attachment = await attachment_service.get_attachment(
+        attachment_id
+    )
+
+    if attachment is None:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Attachment not found.",
+        )
+
+    message = await message_repository.get_by_id(
+        attachment.message_id
+    )
+
+    if message is None:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Message not found.",
+        )
+
+    participants = (
+        await conversation_repository.get_participants(
+            message.conversation_id
+        )
+    )
+
+    allowed = any(
+        participant.user_id == current_user.id
+        for participant in participants
+    )
+
+    if not allowed:
+
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied.",
+        )
+
+    attachment.sync_blob = {
+        "nonce": request.sync_copy.nonce,
+        "data": request.sync_copy.data,
+    }
+
+    await db.commit()
+
+    await db.refresh(attachment)
+
+    return attachment
 
 
 # ==========================================================

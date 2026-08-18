@@ -1,5 +1,7 @@
 from uuid import UUID
 
+import logging
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -10,6 +12,7 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+logger = logging.getLogger(__name__)
 from app.core.rate_limit import (
     RateLimitExceeded,
     get_limiter,
@@ -92,7 +95,7 @@ def _extract_refresh_token(
     "/send-otp",
     response_model=MessageResponse,
     dependencies=[
-        rate_limit("otp.send.ip", 10, 600),
+        rate_limit("otp.send.ip", 50, 600),
     ],
 )
 async def send_otp(
@@ -142,7 +145,7 @@ async def send_otp(
     "/verify-otp",
     response_model=TokenResponse,
     dependencies=[
-        rate_limit("otp.verify.ip", 20, 600),
+        rate_limit("otp.verify.ip", 50, 600),
     ],
 )
 async def verify_otp(
@@ -171,6 +174,11 @@ async def verify_otp(
         )
 
     user = result["user"]
+    logger.info(
+        "OTP verified successfully: user=%s email=%s",
+        user.id,
+        user.email,
+    )
 
     access_token = jwt.create_access_token(
         user_id=str(user.id),

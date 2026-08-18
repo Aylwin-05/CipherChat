@@ -30,6 +30,11 @@ class UserResponse(BaseModel):
 
     last_seen: datetime | None = None
 
+    # True when the account has a recovery key (a recovery code
+    # was already issued). A browser that has not unlocked the
+    # sync secret prompts the user for the code on login.
+    has_recovery_key: bool = False
+
     created_at: datetime
 
 

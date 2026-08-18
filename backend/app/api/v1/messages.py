@@ -24,6 +24,7 @@ from app.schemas.message import (
     ReactionRequest,
     ReactionResponse,
     SendMessageRequest,
+    SyncCopyUpsert,
 )
 from app.services.attachment_service import AttachmentService
 from app.services.message_service import MessageService
@@ -54,6 +55,8 @@ def serialize_message(message):
         "encrypted_key_sender": attachment.encrypted_key_sender,
         "encrypted_key_receiver": attachment.encrypted_key_receiver,
         "nonce": attachment.nonce,
+        "wrapped_keys": attachment.wrapped_keys or [],
+        "sync_blob": attachment.sync_blob,
     }
     for attachment in message.attachments]
 
@@ -112,6 +115,8 @@ def serialize_message(message):
         else [],
 
         envelopes=message.envelopes or [],
+
+        sync_envelope=message.sync_envelope,
     )
 
 
@@ -257,6 +262,13 @@ async def edit_message(
                 for env in request.envelopes
             ]
             if request.envelopes
+            else None,
+            sync_envelope={
+                "nonce": request.sync_envelope.nonce,
+                "data": request.sync_envelope.data,
+                "ciphertext": request.sync_envelope.ciphertext,
+            }
+            if request.sync_envelope
             else None,
         )
 
@@ -412,6 +424,73 @@ async def get_messages(
         ]
 
     except ValueError as e:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+
+# ==========================================================
+# UPSERT SYNC ENVELOPE (cross-browser history)
+#
+# Any device that has decrypted a message — and holds the
+# account sync secret — stores an account-key copy of the
+# plaintext here, so browsers that register later can read the
+# message after unlocking the secret with the recovery code.
+# ==========================================================
+
+@router.put(
+    "/{message_id}/sync-envelope",
+    response_model=MessageResponse,
+    dependencies=[
+        rate_limit("messages.sync", 300, 60),
+    ],
+)
+async def upsert_sync_envelope(
+    message_id: UUID,
+    request: SyncCopyUpsert,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+
+    message_repository = MessageRepository(db)
+    conversation_repository = ConversationRepository(db)
+    attachment_repository = AttachmentRepository(db)
+
+    attachment_service = AttachmentService(
+        attachment_repository
+    )
+
+    service = MessageService(
+        message_repository,
+        conversation_repository,
+        attachment_service,
+    )
+
+    try:
+
+        message = await service.upsert_sync_envelope(
+            current_user=current_user,
+            message_id=message_id,
+            sync_envelope={
+                "nonce": request.sync_copy.nonce,
+                "data": request.sync_copy.data,
+                "ciphertext": request.sync_copy.ciphertext,
+            },
+        )
+
+        await db.commit()
+
+        message = await message_repository.reload_with_relations(
+            message.id
+        )
+
+        return serialize_message(message)
+
+    except ValueError as e:
+
+        await db.rollback()
 
         raise HTTPException(
             status_code=400,

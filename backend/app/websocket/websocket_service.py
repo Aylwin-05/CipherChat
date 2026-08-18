@@ -1,3 +1,5 @@
+import logging
+
 from uuid import UUID
 
 from fastapi import WebSocket
@@ -124,6 +126,18 @@ class WebSocketService:
             "edit": self.handle_edit,
 
             "delete": self.handle_delete,
+
+            # Voice/video call signaling (WebRTC). The server only
+            # relays SDP/ICE between conversation members - media
+            # flows peer-to-peer and is encrypted by DTLS-SRTP, so
+            # the backend never sees call content.
+            "call_offer": self.handle_call,
+
+            "call_answer": self.handle_call,
+
+            "call_ice": self.handle_call,
+
+            "call_end": self.handle_call,
 
             "ping": self.handle_ping,
 
@@ -278,6 +292,10 @@ class WebSocketService:
                         "envelopes",
                         [],
                     ),
+                "sync_envelope":
+                    data.get(
+                        "sync_envelope"
+                    ),
             },
         )
             # ======================================================
@@ -356,6 +374,13 @@ class WebSocketService:
                     for env in data["envelopes"]
                 ]
 
+            # Edited content is a fresh plaintext: replace the
+            # account-key copy so other browsers don't keep the
+            # stale text.
+            if data.get("sync_envelope"):
+
+                message.sync_envelope = data["sync_envelope"]
+
         message.edited = True
         message.updated_at = datetime.now(
             timezone.utc
@@ -396,6 +421,8 @@ class WebSocketService:
                 else [],
 
                 "envelopes": message.envelopes or [],
+
+                "sync_envelope": message.sync_envelope,
 
                 "updated_at":
                     message.updated_at.isoformat(),
@@ -532,6 +559,73 @@ class WebSocketService:
                     else None,
             },
         )
+    # ======================================================
+    # VOICE / VIDEO CALL SIGNALING (WebRTC relay)
+    #
+    # The server is a dumb relay: it validates the conversation
+    # membership (already done by the dispatcher), stamps the
+    # sender id on the event and broadcasts it to every member.
+    # Media itself is P2P (DTLS-SRTP encrypted) and never
+    # touches the server.
+    # ======================================================
+
+    async def handle_call(
+        self,
+        conversation_id: UUID,
+        current_user: User,
+        data: dict,
+    ):
+
+        event = data.get("event")
+
+        if not data.get("call_id"):
+
+            raise ValueError(
+                "Missing field 'call_id'."
+            )
+
+        if event == "call_offer" and not data.get("call_type"):
+
+            raise ValueError(
+                "Missing field 'call_type'."
+            )
+
+        payload = {
+
+            "event": event,
+
+            "conversation_id": str(conversation_id),
+
+            "call_id": data["call_id"],
+
+            "from": str(current_user.id),
+
+        }
+
+        # Optional addressing: "to" lets callers target one peer
+        # (ICE candidates, answers); when absent the event goes
+        # to every member.
+        if data.get("to"):
+
+            payload["to"] = str(data["to"])
+
+        if data.get("call_type"):
+
+            payload["call_type"] = data["call_type"]
+
+        if data.get("sdp"):
+
+            payload["sdp"] = data["sdp"]
+
+        if data.get("candidate"):
+
+            payload["candidate"] = data["candidate"]
+
+        await manager.broadcast(
+            conversation_id,
+            payload,
+        )
+
     # ======================================================
     # TYPING
     # ======================================================

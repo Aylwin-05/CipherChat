@@ -9,6 +9,7 @@ from sqlalchemy import (
     Text,
     Uuid,
 )
+from sqlalchemy.types import JSON
 from sqlalchemy.orm import (
     Mapped,
     mapped_column,
@@ -112,6 +113,28 @@ class User(Base, TimestampMixin):
         DateTime(timezone=True),
         nullable=True,
         comment="Last active timestamp.",
+    )
+
+    # ==========================================================
+    # Account recovery code (cross-browser history sync)
+    #
+    # The recovery code is shown once (and emailed) when the
+    # account's first recovery key is created. The account sync
+    # secret it unlocks is NEVER stored server-side: only the
+    # code-wrapped AES-GCM blob survives, so a stolen database
+    # cannot decrypt the per-message sync copies without the code.
+    # ==========================================================
+
+    recovery_salt: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="PBKDF2 salt (hex) for the recovery-code wrap.",
+    )
+
+    recovery_wrapped_key: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="JSON blob: AES-256-GCM(account sync secret, code-derived key).",
     )
 
     # ==========================================================
