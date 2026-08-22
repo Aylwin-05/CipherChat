@@ -84,10 +84,6 @@ class WebSocketService {
 
             }
 
-            console.log(
-                "WebSocket connected"
-            );
-
             this.reconnectAttempts = 0;
 
             this._startHeartbeat();

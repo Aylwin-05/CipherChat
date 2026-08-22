@@ -10,17 +10,26 @@ import { useAuth } from "./AuthContext";
 import { useChatSocket } from "./ChatSocketContext";
 
 import websocketService from "../services/websocketService";
+import api from "../api/api";
+
+import {
+    supportsFrameEncryption,
+    deriveCallKeyPair,
+    buildWorkerOptions,
+} from "../crypto/callCrypto";
 
 import IncomingCallModal from "../components/call/IncomingCallModal";
 import ActiveCallOverlay from "../components/call/ActiveCallOverlay";
 
 const CallContext = createContext(null);
 
-const ICE_SERVERS = [
+const FALLBACK_ICE_SERVERS = [
     {
         urls: "stun:stun.l.google.com:19302",
     },
 ];
+
+const FRAME_WORKER_PATH = "/frameEncryptionWorker.js";
 
 function emptyCall() {
 
@@ -37,6 +46,8 @@ function emptyCall() {
         peerName: "Unknown",
 
         status: "idle", // ringing | connecting | in-call | ended
+
+        e2ee: false,
 
     };
 
@@ -76,6 +87,29 @@ export function CallProvider({ children }) {
     const callRef = useRef(call);
 
     const incomingRef = useRef(incomingCall);
+
+    const iceServersRef = useRef(FALLBACK_ICE_SERVERS);
+
+    // Fetch ICE/TURN config once (falls back to public STUN).
+    useEffect(() => {
+
+        let cancelled = false;
+
+        api.get("/call/config")
+            .then(response => {
+                if (!cancelled) {
+                    iceServersRef.current =
+                        response.data?.ice_servers ??
+                        FALLBACK_ICE_SERVERS;
+                }
+            })
+            .catch(() => {});
+
+        return () => {
+            cancelled = true;
+        };
+
+    }, []);
 
     useEffect(() => {
 
@@ -209,10 +243,10 @@ export function CallProvider({ children }) {
     // WebRTC peer setup shared by caller + callee
     //=====================================================
 
-    async function setupPeer(stream, onTrack, onStateChange) {
+    async function setupPeer(stream, onTrack, onStateChange, keys = null) {
 
         const peer = new RTCPeerConnection({
-            iceServers: ICE_SERVERS,
+            iceServers: iceServersRef.current,
         });
 
         peer.onicecandidate =
@@ -236,7 +270,110 @@ export function CallProvider({ children }) {
 
         }
 
+        if (keys && supportsFrameEncryption()) {
+
+            await attachFrameEncryption(
+                peer,
+                keys,
+            );
+
+        }
+
         return peer;
+
+    }
+
+    // ======================================================
+    // Insertable-stream frame encryption
+    //
+    // Encrypts every outgoing audio/video frame with the
+    // per-call send key and decrypts incoming frames with the
+    // recv key. Both keys are derived locally from the account
+    // sync secret — never transmitted.
+    // ======================================================
+
+    async function attachFrameEncryption(peer, keys) {
+
+        const worker = new Worker(
+            FRAME_WORKER_PATH
+        );
+
+        for (const sender of peer.getSenders()) {
+
+            try {
+
+                const streams =
+                    await sender.createEncodedStreams();
+
+                const transform =
+                    new RTCRtpScriptTransform(
+                        worker,
+                        buildWorkerOptions(
+                            "encrypt",
+                            keys.sendKey,
+                        ),
+                    );
+
+                streams.readable
+                    .pipeThrough(transform)
+                    .pipeTo(streams.writable)
+                    .catch(() => {});
+
+            }
+            catch (e) {
+
+                console.warn(
+                    "Sender encryption unavailable:",
+                    e,
+                );
+
+            }
+
+        }
+
+        const originalOnTrack = peer.ontrack;
+
+        peer.ontrack = async (event) => {
+
+            try {
+
+                const receiver =
+                    event.receiver ?? event.track?.receiver;
+
+                if (receiver?.createEncodedStreams) {
+
+                    const streams =
+                        await receiver.createEncodedStreams();
+
+                    const transform =
+                        new RTCRtpScriptTransform(
+                            worker,
+                            buildWorkerOptions(
+                                "decrypt",
+                                keys.recvKey,
+                            ),
+                        );
+
+                    streams.readable
+                        .pipeThrough(transform)
+                        .pipeTo(streams.writable)
+                        .catch(() => {});
+
+                }
+
+            }
+            catch (e) {
+
+                console.warn(
+                    "Receiver decryption unavailable:",
+                    e,
+                );
+
+            }
+
+            originalOnTrack?.(event);
+
+        };
 
     }
 
@@ -267,6 +404,22 @@ export function CallProvider({ children }) {
 
             const callId = crypto.randomUUID();
 
+            let callKeys = null;
+
+            let e2ee = false;
+
+            if (supportsFrameEncryption()) {
+
+                callKeys =
+                    await deriveCallKeyPair(
+                        callId,
+                        true,
+                    );
+
+                e2ee = Boolean(callKeys);
+
+            }
+
             callRef.current = {
                 conversationId,
                 callId,
@@ -274,6 +427,7 @@ export function CallProvider({ children }) {
                 peerId,
                 peerName,
                 status: "ringing",
+                e2ee,
             };
 
             setCall(callRef.current);
@@ -285,6 +439,7 @@ export function CallProvider({ children }) {
                         setRemoteStream(event.streams[0] ?? null);
                     },
                     () => {},
+                    callKeys,
                 );
 
             peer.onconnectionstatechange = () => {
@@ -374,6 +529,22 @@ export function CallProvider({ children }) {
 
             setIncomingCall(null);
 
+            let callKeys = null;
+
+            let e2ee = false;
+
+            if (supportsFrameEncryption()) {
+
+                callKeys =
+                    await deriveCallKeyPair(
+                        incoming.callId,
+                        false,
+                    );
+
+                e2ee = Boolean(callKeys);
+
+            }
+
             callRef.current = {
                 conversationId: incoming.conversationId,
                 callId: incoming.callId,
@@ -381,6 +552,7 @@ export function CallProvider({ children }) {
                 peerId: incoming.from,
                 peerName: incoming.peerName,
                 status: "connecting",
+                e2ee,
             };
 
             setCall(callRef.current);
@@ -391,6 +563,7 @@ export function CallProvider({ children }) {
                     setRemoteStream(event.streams[0] ?? null);
                 },
                 () => {},
+                callKeys,
             );
 
             peer.onconnectionstatechange = () => {

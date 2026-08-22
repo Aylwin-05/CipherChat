@@ -42,6 +42,56 @@ class AddGroupMembersRequest(BaseModel):
 
 
 # ==========================================================
+# Update Group (name / description, admin only)
+# ==========================================================
+
+class UpdateGroupRequest(BaseModel):
+
+    name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+    )
+
+    description: str | None = Field(
+        default=None,
+        max_length=500,
+    )
+
+
+# ==========================================================
+# Remove Group Member (admin only)
+# ==========================================================
+
+class RemoveGroupMemberRequest(BaseModel):
+
+    user_id: UUID
+
+
+# ==========================================================
+# Promote / Demote Admin (admin only)
+# ==========================================================
+
+class SetGroupAdminRequest(BaseModel):
+
+    user_id: UUID
+
+    is_admin: bool = True
+
+
+# ==========================================================
+# Join Group via Invite Link
+# ==========================================================
+
+class JoinGroupWithLinkRequest(BaseModel):
+
+    token: str = Field(
+        min_length=1,
+        max_length=128,
+    )
+
+
+# ==========================================================
 # Update Conversation Settings (pin / archive / mute)
 # ==========================================================
 
@@ -115,6 +165,10 @@ class ConversationResponse(BaseModel):
     conversation_type: str = "private"
 
     name: str | None = None
+
+    avatar_url: str | None = None
+
+    description: str | None = None
 
     participant_count: int | None = None
 

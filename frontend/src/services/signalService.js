@@ -12,6 +12,7 @@ import deviceService from "./deviceService";
 import recoveryService from "./recoveryService";
 import { signalKeyStore } from "../crypto/signal/keyStore";
 import { replenishOneTimePrekeys } from "../crypto/signal/prekeyManager";
+import { clearKeyPair } from "../crypto/keyStorage";
 import { b64encode } from "../crypto/signal/bytes";
 import {
     generateDeviceIdentity,
@@ -54,6 +55,7 @@ export function ensureDeviceRegistered({
     deviceName = null,
     platformVersion = null,
     appVersion = null,
+    email = null,
 } = {}) {
 
     if (registrationPromise) {
@@ -141,6 +143,7 @@ export function ensureDeviceRegistered({
                         code: response.recovery_code,
                         salt: response.recovery_salt,
                         wrapped_key: response.recovery_wrapped_key,
+                        email,
                     });
 
                     recoveryCode = response.recovery_code;
@@ -230,11 +233,22 @@ export async function replenishPreKeys(options = {}) {
 // Best effort: remove the device from the server first (the
 // primary device cannot be removed server-side), then always
 // wipe every trace of key material from this browser.
+//
+// preserveSyncSecret: logout on the SAME browser keeps the
+// account sync secret so the next login does not re-prompt
+// for the recovery code — history stays unlocked locally.
 // ==========================================================
 
-export async function wipeDeviceData({ removeFromServer = true } = {}) {
+export async function wipeDeviceData({
+    removeFromServer = true,
+    preserveSyncSecret = false,
+} = {}) {
 
     const meta = await signalKeyStore.getMeta();
+
+    const syncRecord = preserveSyncSecret
+        ? await signalKeyStore.getSyncRecord()
+        : null;
 
     if (removeFromServer && meta?.deviceId) {
 
@@ -254,5 +268,19 @@ export async function wipeDeviceData({ removeFromServer = true } = {}) {
     }
 
     await signalKeyStore.clearAll();
+
+    // The account RSA key pair must not survive logout — it
+    // decrypts history and must not linger in any script-readable
+    // storage once the session is gone.
+    await clearKeyPair();
+
+    if (syncRecord?.secret) {
+
+        await signalKeyStore.saveSyncSecret(
+            syncRecord.secret,
+            syncRecord.email,
+        );
+
+    }
 
 }

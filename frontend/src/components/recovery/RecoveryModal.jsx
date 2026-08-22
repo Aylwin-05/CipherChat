@@ -11,7 +11,7 @@ import "./RecoveryModal.css";
 //
 // 1. "show-code": the account's recovery code was JUST created
 //    by this browser's registration — display it once (it is
-//    also emailed), and the sync secret is already unlocked.
+//    never emailed), and the sync secret is already unlocked.
 //
 // 2. "enter-code": this account already has a recovery key but
 //    this browser hasn't unlocked the sync secret — the user
@@ -100,7 +100,7 @@ export default function RecoveryModal({
                             This code restores your encrypted message
                             history on <strong>any new browser</strong>.
                             Keep it somewhere safe — it is shown only
-                            once (a copy was also emailed to you).
+                            once and never emailed.
                         </p>
 
                         <div className="recovery-code-box">

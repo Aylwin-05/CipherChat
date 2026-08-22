@@ -52,6 +52,15 @@ export default function RecoverPage() {
 
     const [copied, setCopied] = useState(false);
 
+    // "Already have your code?" — unlock straight from this page
+    // (the session is usually still live: the emailed link opened
+    // in the same tab, so no reload is needed afterwards).
+    const [unlockCode, setUnlockCode] = useState("");
+
+    const [unlockBusy, setUnlockBusy] = useState(false);
+
+    const [unlockError, setUnlockError] = useState(null);
+
     // OTP resend cooldown (mirror of the login OTP page)
     useEffect(() => {
 
@@ -163,6 +172,7 @@ export default function RecoverPage() {
                 code: data.code,
                 salt: data.salt,
                 wrapped_key: data.wrapped_key,
+                email,
             });
 
             setRecovered(data);
@@ -229,6 +239,74 @@ export default function RecoverPage() {
         catch {
 
             toast.error("Could not copy — select and copy manually.");
+
+        }
+
+    }
+
+    // --------------------------------------------------
+    // "Already have your code?" — unlock right here
+    // --------------------------------------------------
+
+    async function handleUnlockCode(event) {
+
+        event.preventDefault();
+
+        if (unlockBusy) return;
+
+        if (unlockCode.length < 20) {
+
+            setUnlockError(
+                "Enter the full code (4 groups of 6 characters)."
+            );
+
+            return;
+
+        }
+
+        setUnlockBusy(true);
+
+        setUnlockError(null);
+
+        try {
+
+            await recoveryService.unlock(
+                unlockCode,
+                email || undefined,
+            );
+
+            toast.success(
+                "History unlocked on this browser."
+            );
+
+            navigate("/dashboard", {
+                replace: true,
+            });
+
+        }
+        catch (err) {
+
+            if (err?.response?.status === 401) {
+
+                setUnlockError(
+                    "Sign in to your account first, then enter " +
+                    "your code here."
+                );
+
+            }
+            else {
+
+                setUnlockError(
+                    err?.message ||
+                    "That code didn't work. Check it and try again."
+                );
+
+            }
+
+        }
+        finally {
+
+            setUnlockBusy(false);
 
         }
 
@@ -434,6 +512,51 @@ export default function RecoverPage() {
                                 future browser.
                             </p>
                         </>
+                    )}
+
+                    {stage !== "done" && (
+                        <div className="recovery-unlock-box">
+                            <details>
+                                <summary>
+                                    Already have your code? Enter it here
+                                </summary>
+
+                                <form
+                                    className="recovery-unlock-form"
+                                    onSubmit={handleUnlockCode}
+                                >
+                                    <input
+                                        type="text"
+                                        className="recovery-unlock-input"
+                                        placeholder="XXXXXX-XXXXXX-XXXXXX-XXXXXX"
+                                        value={unlockCode}
+                                        onChange={event =>
+                                            setUnlockCode(
+                                                event.target.value.toUpperCase()
+                                            )
+                                        }
+                                        spellCheck={false}
+                                        autoComplete="off"
+                                    />
+
+                                    <button
+                                        type="submit"
+                                        className="btn-ghost recovery-unlock-submit"
+                                        disabled={unlockBusy}
+                                    >
+                                        {unlockBusy
+                                            ? "Unlocking…"
+                                            : "Unlock"}
+                                    </button>
+                                </form>
+
+                                {unlockError && (
+                                    <p className="form-error recovery-unlock-error">
+                                        {unlockError}
+                                    </p>
+                                )}
+                            </details>
+                        </div>
                     )}
 
                 </div>

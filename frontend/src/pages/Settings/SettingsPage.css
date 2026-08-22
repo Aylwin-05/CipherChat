@@ -379,3 +379,154 @@
         gap: 14px;
     }
 }
+
+/* ------- notifications row ------- */
+
+.settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 6px 0;
+}
+
+.settings-row-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.settings-row-text strong {
+    font-size: 15px;
+}
+
+.settings-row-text small {
+    font-size: 13px;
+    color: var(--color-text-secondary, #667781);
+    line-height: 1.4;
+}
+
+.settings-row-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.settings-field-error {
+    margin: 0;
+    font-size: 13px;
+    color: #f87171;
+}
+
+/* ------- app lock toggle switch ------- */
+
+.switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.switch input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.switch-track {
+    display: block;
+    width: 46px;
+    height: 26px;
+    border-radius: 999px;
+    background: var(--color-border, rgba(127, 127, 127, 0.4));
+    transition: background 0.2s ease;
+}
+
+.switch-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    transition: transform 0.2s ease;
+}
+
+.switch input:checked + .switch-track {
+    background: var(--accent, #7c5cff);
+}
+
+.switch input:checked + .switch-track .switch-thumb {
+    transform: translateX(20px);
+}
+
+.switch input:disabled + .switch-track {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* ------- privacy ------- */
+
+.privacy-select {
+    min-width: 170px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border, rgba(127, 127, 127, 0.3));
+    background: var(--color-surface-2, #f5f6f8);
+    color: var(--color-text, #111b21);
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.privacy-select:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+/* ------- blocked users ------- */
+
+.blocked-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.blocked-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--color-surface-2, #f5f6f8);
+}
+
+.blocked-avatar {
+    width: 40px;
+    height: 40px;
+    font-size: 17px;
+    flex-shrink: 0;
+}
+
+.blocked-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.blocked-meta strong {
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.blocked-meta small {
+    font-size: 13px;
+    color: var(--color-text-secondary, #667781);
+}

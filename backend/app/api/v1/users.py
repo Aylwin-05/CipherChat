@@ -18,9 +18,14 @@ from app.core.file_config import (
     AVATAR_EXTENSIONS,
     MAX_AVATAR_SIZE,
 )
+from app.core.magic_sniff import (
+    HEADER_SIZE,
+    sniff_header,
+)
 from app.core.enums import FriendRequestStatus
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
+from app.dependencies.rate_limit import rate_limit
 from app.models.user import User
 from app.repositories.friend_repository import FriendRepository
 from app.repositories.user_repository import UserRepository
@@ -96,6 +101,9 @@ async def update_my_profile(
 @router.get(
     "/search",
     response_model=list[SearchUserResponse],
+    dependencies=[
+        rate_limit("users.search", 30, 60),
+    ],
 )
 async def search_users(
     q: str = Query(
@@ -103,6 +111,7 @@ async def search_users(
         min_length=1,
         description="Search by email",
     ),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     repository = UserRepository(db)
@@ -191,6 +200,13 @@ async def upload_avatar(
             detail="Empty file.",
         )
 
+    # The extension is only a claim: the bytes must match.
+    if not sniff_header(extension, content[:HEADER_SIZE]):
+        raise HTTPException(
+            status_code=400,
+            detail="File content does not match its declared type.",
+        )
+
     # --------------------------------------------------------
     # Replace any previous avatar for this user
     # --------------------------------------------------------
@@ -244,6 +260,33 @@ async def get_avatar(
 
     if target_user.id != current_user.id:
 
+        from app.core.enums import FriendRequestStatus
+        from app.repositories.block_repository import BlockRepository
+        from app.repositories.friend_repository import FriendRepository
+        from app.services.block_service import BlockService
+
+        block_repository = BlockRepository(db)
+
+        if await block_repository.block_exists(
+            current_user.id,
+            target_user.id,
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail="Not found.",
+            )
+
+        block_service = BlockService(
+            block_repository,
+            FriendRepository(db),
+        )
+
+        privacy = await block_service.get_privacy(
+            target_user
+        )
+
+        level = privacy["profile_photo"]
+
         friend_repository = FriendRepository(db)
 
         friendship = await friend_repository.get_existing_friendship(
@@ -256,7 +299,13 @@ async def get_avatar(
             and friendship.status == FriendRequestStatus.ACCEPTED.value
         )
 
-        if not is_friend:
+        if level == "nobody":
+            raise HTTPException(
+                status_code=404,
+                detail="Not found.",
+            )
+
+        if level == "my_contacts" and not is_friend:
             raise HTTPException(
                 status_code=404,
                 detail="Not found.",

@@ -47,6 +47,103 @@ function SendIcon() {
 }
 
 // ==========================================================
+// Emoji picker (self-contained, no external dependency)
+// ==========================================================
+
+const EMOJI_CATEGORIES = [
+    {
+        label: "Smileys",
+        emojis: [
+            "😀", "😄", "😁", "😆", "😅", "😂", "🤣", "😊",
+            "😇", "🙂", "😉", "😍", "🥰", "😘", "😋", "😎",
+            "🤩", "🥳", "😏", "😜", "🤪", "😢", "😭", "😤",
+            "😠", "🤯", "😳", "🥺", "😱", "🤔", "🤫", "😴",
+        ],
+    },
+    {
+        label: "Gestures",
+        emojis: [
+            "👍", "👎", "👏", "🙌", "🙏", "🤝", "💪", "👌",
+            "✌️", "🤞", "👋", "✋", "🤙", "👀", "🧠", "💯",
+        ],
+    },
+    {
+        label: "Hearts",
+        emojis: [
+            "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍",
+            "💖", "💘", "💝", "💔", "🔥", "✨", "⭐", "🎉",
+        ],
+    },
+    {
+        label: "Animals",
+        emojis: [
+            "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼",
+            "🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐔",
+        ],
+    },
+    {
+        label: "Food",
+        emojis: [
+            "🍎", "🍌", "🍉", "🍇", "🍓", "🍕", "🍔", "🍟",
+            "🌮", "🍣", "🍩", "🍪", "🍰", "☕", "🍺", "🥤",
+        ],
+    },
+    {
+        label: "Activity",
+        emojis: [
+            "⚽", "🏀", "🏈", "⚾", "🎾", "🏐", "🎱", "🏓",
+            "🎮", "🎸", "🎹", "🎤", "🎬", "🎯", "🏆", "🚴",
+        ],
+    },
+    {
+        label: "Travel",
+        emojis: [
+            "🚗", "🚕", "🚌", "🚁", "✈️", "🚀", "⛵", "🚲",
+            "🏖️", "🏔️", "🌋", "🏝️", "🌅", "🌈", "🌙", "☀️",
+        ],
+    },
+    {
+        label: "Symbols",
+        emojis: [
+            "✅", "❌", "❗", "❓", "💡", "📌", "🔔", "🔒",
+            "🚫", "⚠️", "♻️", "💰", "📱", "💻", "📷", "🎁",
+        ],
+    },
+];
+
+function EmojiPicker({ onPick }) {
+    return (
+        <div className="emoji-picker">
+            {EMOJI_CATEGORIES.map(category => (
+                <div
+                    key={category.label}
+                    className="emoji-category"
+                >
+                    <span className="emoji-category-label">
+                        {category.label}
+                    </span>
+                    <div className="emoji-grid">
+                        {category.emojis.map(emoji => (
+                            <button
+                                key={emoji}
+                                type="button"
+                                className="emoji-btn"
+                                aria-label={emoji}
+                                onClick={() =>
+                                    onPick(emoji)
+                                }
+                            >
+                                {emoji}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+// ==========================================================
 // Quote / Edit preview snippet for a message
 // ==========================================================
 
@@ -98,6 +195,9 @@ export default function ChatInput({
     const [selectedFile, setSelectedFile] =
         useState(null);
 
+    const [viewOnce, setViewOnce] =
+        useState(false);
+
     // Attachment upload progress: null while idle, otherwise
     // { progress: number|null (null = still encrypting), fileName }
     const [sending, setSending] = useState(null);
@@ -110,6 +210,43 @@ export default function ChatInput({
 
     const abortRef =
         useRef(null);
+
+    const [emojiOpen, setEmojiOpen] =
+        useState(false);
+
+    const emojiRef =
+        useRef(null);
+
+    // Close the emoji picker when clicking elsewhere
+    useEffect(() => {
+
+        if (!emojiOpen) return;
+
+        function closeEmoji(event) {
+
+            if (
+                emojiRef.current &&
+                !emojiRef.current.contains(event.target)
+            ) {
+
+                setEmojiOpen(false);
+
+            }
+
+        }
+
+        document.addEventListener(
+            "mousedown",
+            closeEmoji,
+        );
+
+        return () =>
+            document.removeEventListener(
+                "mousedown",
+                closeEmoji,
+            );
+
+    }, [emojiOpen]);
 
     // Prefill the input when entering edit mode
     useEffect(() => {
@@ -172,6 +309,23 @@ export default function ChatInput({
     function handleVoiceRecorded(file) {
 
         setSelectedFile(file);
+
+    }
+
+    // ==========================================================
+    // Emoji picker
+    // ==========================================================
+
+    function handleEmojiPick(emoji) {
+
+        setText(current => current + emoji);
+
+        setEmojiOpen(false);
+
+        // Keep focus in the input so typing continues
+        document
+            .querySelector(".chat-input-field")
+            ?.focus();
 
     }
 
@@ -263,6 +417,8 @@ export default function ChatInput({
 
                     signal: controller.signal,
 
+                    viewOnce,
+
                     // The send flow holds the "Sent" panel for
                     // the rest of the minimum visibility window
                     // before the message actually relays.
@@ -299,6 +455,8 @@ export default function ChatInput({
             setText("");
 
             setSelectedFile(null);
+
+            setViewOnce(false);
 
             stopTyping();
 
@@ -479,6 +637,60 @@ export default function ChatInput({
 
                         type="button"
 
+                        className={`view-once-toggle ${
+                            viewOnce ? "active" : ""
+                        }`}
+
+                        title={viewOnce
+                            ? "View once: on (media disappears after the recipient opens it)"
+                            : "Send as view-once media"}
+
+                        aria-label="Toggle view once"
+
+                        onClick={() =>
+                            setViewOnce(v => !v)
+                        }
+
+                    >
+
+                        {viewOnce ? (
+                            <svg
+                                width="15"
+                                height="15"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
+                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                                <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+                                <line x1="1" y1="1" x2="23" y2="23" />
+                            </svg>
+                        ) : (
+                            <svg
+                                width="15"
+                                height="15"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                <circle cx="12" cy="12" r="3" />
+                            </svg>
+                        )}
+
+                    </button>
+
+                    <button
+
+                        type="button"
+
                         className="selected-file-clear"
 
                         aria-label="Remove attachment"
@@ -619,6 +831,61 @@ export default function ChatInput({
             )}
 
             <div className="chat-input-bar">
+
+                {/* Emoji Picker (with panel) */}
+
+                {!editTarget && (
+
+                    <div
+                        ref={emojiRef}
+                        className="emoji-wrap"
+                    >
+
+                        {emojiOpen && (
+
+                            <EmojiPicker
+                                onPick={handleEmojiPick}
+                            />
+
+                        )}
+
+                        <button
+
+                            type="button"
+
+                            className={`icon-btn ${
+                                emojiOpen ? "active" : ""
+                            }`}
+
+                            aria-label="Emoji"
+
+                            onClick={() =>
+                                setEmojiOpen(open => !open)
+                            }
+
+                        >
+
+                            <svg
+                                width="20"
+                                height="20"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
+                                <circle cx="12" cy="12" r="10" />
+                                <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                                <line x1="9" y1="9" x2="9.01" y2="9" />
+                                <line x1="15" y1="9" x2="15.01" y2="9" />
+                            </svg>
+
+                        </button>
+
+                    </div>
+
+                )}
 
                 {/* Voice Recorder */}
 

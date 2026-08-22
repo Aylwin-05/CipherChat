@@ -109,7 +109,16 @@ export default function ConversationItem({
 
             <div className="conv-avatar">
 
-                {isGroup ? (
+                {isGroup && conversation.avatar_url ? (
+
+                    <img
+                        src={conversation.avatar_url}
+                        alt={groupName}
+                        className="conv-group-avatar-img"
+                        title={groupName}
+                    />
+
+                ) : isGroup ? (
 
                     <div
                         className="conv-group-avatar"
@@ -208,7 +217,11 @@ export default function ConversationItem({
                                 ""
                             } members`
                             : conversation.last_message
-                                ? "Encrypted message"
+                                ? conversation.last_message
+                                      .message_type === "system"
+                                    ? conversation.last_message
+                                          .ciphertext
+                                    : "Encrypted message"
                                 : "No messages yet"}
 
                     </p>

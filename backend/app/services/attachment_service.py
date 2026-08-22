@@ -28,6 +28,10 @@ from app.core.file_config import (
     MAX_ARCHIVE_SIZE,
     MAX_ENCRYPTED_SIZE,
 )
+from app.core.magic_sniff import (
+    HEADER_SIZE,
+    sniff_header,
+)
 
 from app.models.attachment import Attachment
 from app.repositories.attachment_repository import AttachmentRepository
@@ -162,6 +166,7 @@ class AttachmentService:
     async def validate_file(
         self,
         file: UploadFile,
+        encrypted: bool = False,
     ) -> tuple[str, str, int]:
 
         if not file.filename:
@@ -189,11 +194,34 @@ class AttachmentService:
 
         size = 0
 
+        header = b""
+
         while chunk := await file.read(64 * 1024):
 
             size += len(chunk)
 
+            if len(header) < HEADER_SIZE:
+
+                header += chunk[: HEADER_SIZE - len(header)]
+
         await file.seek(0)
+
+        # The extension is only a claim: the actual bytes must
+        # match. Encrypted uploads are ciphertext (random bytes)
+        # and exempt — they are never served inline, so sniffing
+        # would only cause false rejects.
+        if not encrypted and not sniff_header(
+            extension,
+            header,
+        ):
+
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "File content does not match its "
+                    "declared type."
+                ),
+            )
 
         max_size = self.max_allowed_size(
             attachment_type
@@ -286,10 +314,15 @@ class AttachmentService:
     nonce: str | None = None,
 
     wrapped_keys: list | None = None,
+
+    view_once: bool = False,
     ) -> Attachment:
 
         extension, attachment_type, size = (
-            await self.validate_file(file)  
+            await self.validate_file(
+                file,
+                encrypted=encrypted,
+            )
         )
 
         filename = None
@@ -332,6 +365,8 @@ class AttachmentService:
                 nonce=nonce,
 
                 wrapped_keys=wrapped_keys,
+
+                view_once=view_once,
             )
 
             return await self.repository.create_attachment(

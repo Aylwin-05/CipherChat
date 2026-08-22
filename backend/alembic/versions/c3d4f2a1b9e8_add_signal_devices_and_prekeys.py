@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 
 # revision identifiers, used by Alembic.
@@ -18,6 +19,17 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _has_table(name: str) -> bool:
+    """Check table existence before dropping legacy tables.
+
+    The legacy prekey tables were removed in this revision but are
+    never created by any migration in the chain, so a greenfield
+    `alembic upgrade head` must not fail on them.
+    """
+    bind = op.get_bind()
+    return inspect(bind).has_table(name)
+
+
 def upgrade() -> None:
     """Upgrade schema: replace legacy prekey tables with device model."""
 
@@ -25,10 +37,14 @@ def upgrade() -> None:
     # Drop legacy design tables (pre-device architecture)
     # ==========================================================
 
-    op.drop_table('ratchet_sessions')
-    op.drop_table('signed_prekeys')
-    op.drop_table('one_time_prekeys')
-    op.drop_table('prekey_bundles')
+    for legacy_table in (
+        'ratchet_sessions',
+        'signed_prekeys',
+        'one_time_prekeys',
+        'prekey_bundles',
+    ):
+        if _has_table(legacy_table):
+            op.drop_table(legacy_table)
 
     # ==========================================================
     # Devices

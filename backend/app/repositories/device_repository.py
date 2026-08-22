@@ -70,6 +70,26 @@ class DeviceRepository(BaseRepository):
         )
         return list(result.scalars().all())
 
+    async def get_owners_by_device_ids(
+        self,
+        device_ids: list[str],
+    ) -> dict[str, UUID]:
+        """Map device_id -> owning user_id for the given device ids."""
+        if not device_ids:
+            return {}
+        result = await self.execute(
+            select(
+                Device.device_id,
+                Device.user_id,
+            ).where(
+                Device.device_id.in_(device_ids)
+            )
+        )
+        return {
+            row.device_id: row.user_id
+            for row in result.all()
+        }
+
     async def get_primary_device(
         self,
         user_id: UUID,
@@ -112,6 +132,27 @@ class DeviceRepository(BaseRepository):
             .where(Device.id == device_pk)
             .values(is_active=False)
             .execution_options(synchronize_session=False)
+        )
+
+    async def delete_device_prekeys(
+        self,
+        device_pk: UUID,
+    ):
+        """Drop all prekeys of a removed device.
+
+        Public key material of a gone device is useless and must
+        not linger: nothing may start a handshake with it again.
+        """
+        from sqlalchemy import delete
+        await self.db.execute(
+            delete(OneTimePreKey).where(
+                OneTimePreKey.device_id == device_pk
+            )
+        )
+        await self.db.execute(
+            delete(SignedPreKey).where(
+                SignedPreKey.device_id == device_pk
+            )
         )
 
     async def count_active_devices(
@@ -224,6 +265,54 @@ class DeviceRepository(BaseRepository):
             )
             .execution_options(synchronize_session=False)
         )
+
+    async def reserve_one_time_prekeys(
+        self,
+        device_pk: UUID,
+        limit: int = 1,
+    ) -> list[OneTimePreKey]:
+        """Atomically claim unconsumed one-time prekeys for serving.
+
+        A conditional UPDATE (WHERE consumed = false) makes the
+        claim race-free: concurrent bundle requests can never be
+        handed the same prekey twice.
+
+        SELECT ... FOR UPDATE SKIP LOCKED ensures that if two
+        concurrent requests read the same unconsumed prekey, only
+        one will succeed in consuming it; the other will skip it
+        and receive rowcount=0.
+        """
+        from datetime import datetime, timezone
+        result = await self.db.execute(
+            select(OneTimePreKey)
+            .where(
+                OneTimePreKey.device_id == device_pk,
+                OneTimePreKey.consumed.is_(False),
+            )
+            .order_by(OneTimePreKey.key_id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        rows = list(result.scalars().all())
+
+        reserved = []
+        for row in rows:
+            claimed = await self.db.execute(
+                update(OneTimePreKey)
+                .where(
+                    OneTimePreKey.id == row.id,
+                    OneTimePreKey.consumed.is_(False),
+                )
+                .values(
+                    consumed=True,
+                    consumed_at=datetime.now(timezone.utc),
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if claimed.rowcount == 1:
+                reserved.append(row)
+
+        return reserved
 
     async def get_next_one_time_prekey_id(
         self,

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import and_, delete, func, select
@@ -6,6 +7,7 @@ from app.models.conversation import Conversation
 from app.models.conversation_participant import (
     ConversationParticipant,
 )
+from app.models.group_invite_link import GroupInviteLink
 from app.models.user import User
 from app.repositories.base_repository import BaseRepository
 
@@ -286,6 +288,93 @@ class ConversationRepository(BaseRepository):
                     ConversationParticipant.user_id
                     == user_id,
                 )
+            )
+        )
+
+        await self.db.flush()
+
+    # ==========================================================
+    # Group Invite Links
+    # ==========================================================
+
+    async def add_invite_link(
+        self,
+        link: GroupInviteLink,
+    ) -> GroupInviteLink:
+
+        return await self.create(link)
+
+    async def get_active_invite_link(
+        self,
+        conversation_id: UUID,
+    ) -> GroupInviteLink | None:
+        """Most recent non-revoked, non-expired link, if any."""
+
+        result = await self.execute(
+            select(GroupInviteLink)
+            .where(
+                GroupInviteLink.conversation_id
+                == conversation_id,
+                GroupInviteLink.revoked
+                == False,  # noqa: E712
+            )
+            .order_by(
+                GroupInviteLink.created_at.desc()
+            )
+            .limit(1)
+        )
+
+        link = result.scalar_one_or_none()
+
+        if link is None:
+            return None
+
+        # DB drivers may return naive datetimes (e.g. SQLite);
+        # normalize to naive UTC so the comparison is valid.
+        expires_at = link.expires_at
+
+        if expires_at is not None:
+
+            if expires_at.tzinfo is not None:
+                expires_at = (
+                    expires_at.astimezone(timezone.utc)
+                    .replace(tzinfo=None)
+                )
+
+            now = (
+                datetime.now(timezone.utc)
+                .replace(tzinfo=None)
+            )
+
+            if expires_at <= now:
+                return None
+
+        return link
+
+    async def get_invite_link_by_token(
+        self,
+        token: str,
+    ) -> GroupInviteLink | None:
+
+        result = await self.execute(
+            select(GroupInviteLink).where(
+                GroupInviteLink.token == token,
+                GroupInviteLink.revoked
+                == False,  # noqa: E712
+            )
+        )
+
+        return result.scalar_one_or_none()
+
+    async def revoke_invite_links(
+        self,
+        conversation_id: UUID,
+    ) -> None:
+
+        await self.db.execute(
+            delete(GroupInviteLink).where(
+                GroupInviteLink.conversation_id
+                == conversation_id
             )
         )
 

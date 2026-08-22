@@ -206,7 +206,11 @@ export default function MessageInfoPanel({
                         {message.is_forwarded && (
                             <div className="msg-info-meta-row">
                                 <span>Forwarded</span>
-                                <span>Yes</span>
+                                <span>
+                                    {message.forwarded_count >= 5
+                                        ? "Many times"
+                                        : message.forwarded_count || "Yes"}
+                                </span>
                             </div>
                         )}
 

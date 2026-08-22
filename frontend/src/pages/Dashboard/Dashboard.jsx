@@ -10,8 +10,11 @@ import FriendsPage from "../../components/friends/FriendsPage";
 import SettingsPage from "../Settings/SettingsPage";
 import DeleteConversationModal from "../../components/chat/DeleteConversationModal";
 import RecoveryModal from "../../components/recovery/RecoveryModal";
+import LockScreen from "../../components/lock/LockScreen";
 
 import conversationService from "../../services/conversationService";
+
+import appLock from "../../utils/appLock";
 
 import { useAuth } from "../../context/AuthContext";
 import {
@@ -61,6 +64,39 @@ function DashboardInner() {
         currentPage,
         setCurrentPage,
     ] = useState("chats");
+
+    //------------------------------------------------------
+    // App lock (local PIN gate). When configured, the app
+    // stays locked until the PIN is entered in this tab.
+    // The check is async (IndexedDB), so it resolves in an
+    // effect instead of the state initializer.
+    //------------------------------------------------------
+
+    const [appLocked, setAppLocked] = useState(false);
+
+    useEffect(() => {
+
+        let cancelled = false;
+
+        appLock.isConfigured()
+            .then(configured => {
+
+                if (
+                    !cancelled &&
+                    configured &&
+                    !appLock.isUnlocked()
+                ) {
+                    setAppLocked(true);
+                }
+
+            })
+            .catch(() => {});
+
+        return () => {
+            cancelled = true;
+        };
+
+    }, []);
 
     //------------------------------------------------------
     // Incoming two-party delete request: auto-open the
@@ -238,6 +274,16 @@ function DashboardInner() {
 
         <div className="app-shell">
 
+            {appLocked && (
+
+                <LockScreen
+                    onUnlocked={() =>
+                        setAppLocked(false)
+                    }
+                />
+
+            )}
+
             <Sidebar
 
                 currentPage={currentPage}
@@ -303,6 +349,10 @@ function DashboardInner() {
                                     }
 
                                     onGroupCreated={
+                                        handleGroupCreated
+                                    }
+
+                                    onJoined={
                                         handleGroupCreated
                                     }
 

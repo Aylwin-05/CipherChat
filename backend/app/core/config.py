@@ -49,6 +49,7 @@ class Settings(BaseSettings):
 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    TWO_FA_TOKEN_EXPIRE_MINUTES: int = 10
 
     # ======================================================
     # Cookies (refresh token transport)
@@ -98,11 +99,76 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str
     SMTP_FROM_NAME: str
 
+    # ======================================================
+    # WebRTC calls (STUN/TURN ICE servers)
+    #
+    # STUN is free and public; TURN is needed when both peers
+    # sit behind symmetric NATs. When TURN_URLS is empty the
+    # API only returns the public STUN server (calls may fail
+    # for restricted networks). Format: "turn:host:3478?transport=udp"
+    # (comma-separated for multiple relays).
+    # ======================================================
+
+    TURN_URLS: str = ""
+    TURN_USERNAME: str = ""
+    TURN_PASSWORD: str = ""
+
 
 @lru_cache
 def get_settings():
 
-    return Settings()
+    instance = Settings()
+
+    if instance.APP_ENV == "production":
+
+        problems = []
+
+        if instance.DEBUG:
+            problems.append(
+                "DEBUG must be false in production"
+            )
+
+        if (
+            not instance.SECRET_KEY
+            or instance.SECRET_KEY == "CHANGE_ME"
+            or len(instance.SECRET_KEY) < 32
+        ):
+            problems.append(
+                "SECRET_KEY must be a random value of at least "
+                "32 characters (generate one with "
+                "`python -c \"import secrets; "
+                "print(secrets.token_urlsafe(48))\"`)"
+            )
+
+        if (
+            not instance.MASTER_KEY
+            or instance.MASTER_KEY == "CHANGE_ME"
+        ):
+            problems.append(
+                "MASTER_KEY must be set (generate one with "
+                "`python -c \"from cryptography.fernet import "
+                "Fernet; print(Fernet.generate_key().decode())\"`)"
+            )
+
+        if instance.ALLOWED_HOSTS == "*":
+            problems.append(
+                "ALLOWED_HOSTS must be pinned to real hostnames "
+                "in production"
+            )
+
+        if not instance.COOKIE_SECURE:
+            problems.append(
+                "COOKIE_SECURE must be true in production "
+                "(HTTPS only)"
+            )
+
+        if problems:
+            raise RuntimeError(
+                "Invalid production configuration:\n  - "
+                + "\n  - ".join(problems)
+            )
+
+    return instance
 
 
 settings = get_settings()

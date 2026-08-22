@@ -17,6 +17,10 @@ logger = logging.getLogger("app.websocket.connection_manager")
 # every send and drop the socket if it cannot keep up.
 SEND_TIMEOUT_SECONDS = 3.0
 
+# How long a ringing call_offer stays pending for offline members
+# before it is dropped (matches a typical ring duration).
+PENDING_CALL_TTL_SECONDS = 45
+
 
 async def _send_payload(
     websocket: WebSocket,
@@ -53,12 +57,24 @@ class ConnectionManager:
         # own session still holds an open transaction.
         self.user_members: dict[UUID, set[UUID]] = {}
 
+        # user_id -> set of user_ids they blocked (either direction
+        # of a block hides presence and blocks message delivery,
+        # WhatsApp-style). Loaded once per connect like user_members.
+        self.user_blocked: dict[UUID, set[UUID]] = {}
+        self.user_blocked_by: dict[UUID, set[UUID]] = {}
+
         # user_id -> time.monotonic() of their most recent connect.
         # Presence snapshots only report peers who were ALREADY
         # online when the snapshot's user connected: peers that
         # connect later announce themselves in their own connect
         # broadcast, so echoing them here would be a duplicate.
         self.user_connected_at: dict[UUID, float] = {}
+
+        # call_id -> pending call_offer. Kept for PENDING_CALL_TTL so
+        # a member whose socket was down (background tab, reconnect
+        # gap) still receives the ringing offer when they (re)connect
+        # instead of losing the call silently. Removed on call_end.
+        self.pending_calls: dict[str, dict] = {}
 
     # ==========================================================
     # Connect
@@ -158,6 +174,28 @@ class ConnectionManager:
 
         self.user_members[user_id] = member_ids
 
+        from app.models.block import Block
+
+        blocked_result = await db.execute(
+            select(Block.blocked_id).where(
+                Block.blocker_id == user_id
+            )
+        )
+
+        self.user_blocked[user_id] = set(
+            blocked_result.scalars().all()
+        )
+
+        blocked_by_result = await db.execute(
+            select(Block.blocker_id).where(
+                Block.blocked_id == user_id
+            )
+        )
+
+        self.user_blocked_by[user_id] = set(
+            blocked_by_result.scalars().all()
+        )
+
         logger.debug(
             "WS members cached: user=%s members=%d",
             user_id,
@@ -232,6 +270,142 @@ class ConnectionManager:
 
         return peers
 
+    async def _blocked_peers(
+        self,
+        user_id: UUID,
+    ) -> set[UUID]:
+        """
+        User ids the given user must not interact with: everyone
+        they blocked plus everyone who blocked them.
+        """
+
+        blocked = self.user_blocked.get(user_id)
+        blocked_by = self.user_blocked_by.get(user_id)
+
+        if blocked is None or blocked_by is None:
+
+            from app.models.block import Block
+
+            async with AsyncSessionLocal() as db:
+
+                blocked_result = await db.execute(
+                    select(Block.blocked_id).where(
+                        Block.blocker_id == user_id
+                    )
+                )
+
+                blocked_by_result = await db.execute(
+                    select(Block.blocker_id).where(
+                        Block.blocked_id == user_id
+                    )
+                )
+
+                blocked = set(
+                    blocked_result.scalars().all()
+                )
+
+                blocked_by = set(
+                    blocked_by_result.scalars().all()
+                )
+
+                self.user_blocked[user_id] = blocked
+                self.user_blocked_by[user_id] = blocked_by
+
+        return blocked | blocked_by
+
+    # ==========================================================
+    # Block cache
+    # ==========================================================
+
+    def invalidate_blocks(self, user_id: UUID) -> None:
+        """Drop the cached block sets so the next relay re-reads them.
+
+        Called by the block/unblock endpoints: without this, a block
+        (or unblock) made while both users' sockets stay connected
+        kept silently filtering relays (messages AND calls) until the
+        next reconnect.
+        """
+
+        self.user_blocked.pop(user_id, None)
+        self.user_blocked_by.pop(user_id, None)
+
+    # ==========================================================
+    # Pending calls
+    # ==========================================================
+
+    async def deliver_pending_calls(self, user_id: UUID) -> None:
+        """Deliver ringing call offers the user missed while offline.
+
+        Runs right after a socket (re)connects: every pending offer
+        for a conversation the user belongs to is replayed, so an
+        incoming call is never lost to a reconnect gap or a closed
+        browser tab. Offers expire after PENDING_CALL_TTL_SECONDS
+        (or when the caller hangs up).
+        """
+
+        self._sweep_pending_calls()
+
+        if not self.pending_calls:
+            return
+
+        for call_id, pending in list(self.pending_calls.items()):
+
+            members = await self._member_ids(
+                UUID(pending["conversation_id"])
+            )
+
+            if user_id in members:
+
+                await self.send_to_user(
+                    user_id,
+                    pending["payload"],
+                )
+
+    def store_pending_call(
+        self,
+        conversation_id: UUID,
+        payload: dict,
+    ) -> None:
+        """Remember a ringing call_offer for offline members."""
+
+        self._sweep_pending_calls()
+
+        self.pending_calls[payload["call_id"]] = {
+            "conversation_id": str(conversation_id),
+            "payload": payload,
+            "expires_at": (
+                time.monotonic()
+                + PENDING_CALL_TTL_SECONDS
+            ),
+        }
+
+    def drop_pending_call(self, call_id: str) -> None:
+        """Forget a call that ended, was declined or was answered."""
+
+        self.pending_calls.pop(call_id, None)
+
+    def connected_user_ids(self) -> set[UUID]:
+        """Users with at least one live socket (push fallback target)."""
+
+        return set(self.user_connections.keys())
+
+    def _sweep_pending_calls(self) -> None:
+        """Drop offers whose ring window already elapsed."""
+
+        if not self.pending_calls:
+            return
+
+        now = time.monotonic()
+
+        expired = [
+            call_id
+            for call_id, pending in self.pending_calls.items()
+            if pending["expires_at"] < now
+        ]
+
+        for call_id in expired:
+            self.pending_calls.pop(call_id, None)
+
     # ==========================================================
     # Broadcast to a Conversation
     #
@@ -244,10 +418,19 @@ class ConnectionManager:
         self,
         conversation_id: UUID,
         message: dict,
+        exclude_user_ids: set[UUID] | None = None,
     ):
         member_ids = await self._member_ids(
             conversation_id
         )
+
+        if exclude_user_ids:
+
+            member_ids = [
+                member_id
+                for member_id in member_ids
+                if member_id not in exclude_user_ids
+            ]
 
         for member_id in member_ids:
             await self.send_to_user(
@@ -309,7 +492,12 @@ class ConnectionManager:
     ):
         peers = await self._peers_for(user_id)
 
+        hidden = await self._blocked_peers(user_id)
+
         for peer_id in peers:
+            if peer_id in hidden:
+                continue
+
             await self.send_to_user(
                 peer_id,
                 {
@@ -332,7 +520,12 @@ class ConnectionManager:
         if connected_at is None:
             return
 
+        hidden = await self._blocked_peers(user_id)
+
         for peer_id in peers:
+            if peer_id in hidden:
+                continue
+
             if not self.is_online(peer_id):
                 continue
 

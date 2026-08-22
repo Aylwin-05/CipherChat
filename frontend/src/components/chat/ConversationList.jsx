@@ -4,6 +4,8 @@ import "./ConversationList.css";
 
 import ConversationItem from "./ConversationItem";
 import GroupModal from "./GroupModal";
+import JoinGroupModal from "./JoinGroupModal";
+import StatusStrip from "../story/StatusStrip";
 
 import { useChatSocket } from "../../context/ChatSocketContext";
 
@@ -19,6 +21,8 @@ export default function ConversationList({
 
     onGroupCreated,
 
+    onJoined,
+
 }) {
 
     const {
@@ -30,6 +34,9 @@ export default function ConversationList({
         useState(false);
 
     const [groupModalOpen, setGroupModalOpen] =
+        useState(false);
+
+    const [joinModalOpen, setJoinModalOpen] =
         useState(false);
 
     if (loading) {
@@ -44,7 +51,9 @@ export default function ConversationList({
 
                 </div>
 
-                <div className="conv-list-body">
+            <StatusStrip />
+
+            <div className="conv-list-body">
 
                     {[0, 1, 2, 3, 4, 5].map((index) => (
 
@@ -149,6 +158,29 @@ export default function ConversationList({
                     <h2 className="conv-title">Chats</h2>
 
                     <div className="conv-header-actions">
+
+                        <button
+                            type="button"
+                            className="conv-new-group-btn"
+                            title="Join group via link"
+                            onClick={() =>
+                                setJoinModalOpen(true)
+                            }
+                        >
+                            <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
+                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                            </svg>
+                        </button>
 
                         <button
                             type="button"
@@ -335,6 +367,22 @@ export default function ConversationList({
 
                     onCreate={(group) =>
                         onGroupCreated?.(group)
+                    }
+
+                />
+
+            )}
+
+            {joinModalOpen && (
+
+                <JoinGroupModal
+
+                    onClose={() =>
+                        setJoinModalOpen(false)
+                    }
+
+                    onJoined={(group) =>
+                        onJoined?.(group)
                     }
 
                 />

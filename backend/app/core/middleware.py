@@ -12,6 +12,7 @@ SECURITY_HEADERS = {
         "camera=(), microphone=(), geolocation=()"
     ),
     "Cross-Origin-Opener-Policy": "same-origin",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
 }
 
 CSP_HEADER = (

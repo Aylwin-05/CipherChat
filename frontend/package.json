@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node --test \"tests/signal/*.test.js\""
+    "test": "node --test all.test.js"
   },
   "devDependencies": {
     "fake-indexeddb": "^6.2.5",

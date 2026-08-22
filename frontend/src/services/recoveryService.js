@@ -10,8 +10,9 @@ import {
 // ==========================================================
 // Account recovery code
 //
-// The recovery code is issued exactly once (shown on screen +
-// emailed) when the account's first recovery key is created.
+// The recovery code is issued exactly once (shown on screen,
+// never emailed) when the account's first recovery key is
+// created.
 // Logging in on a NEW browser can't read old history — the
 // per-device envelopes for it never included this device — so
 // the browser asks for the code, fetches the wrapped sync
@@ -38,7 +39,7 @@ const recoveryService = {
     // Unlock with the recovery code (new browser login)
     // ======================================================
 
-    async unlock(code) {
+    async unlock(code, email = null) {
 
         const response = await api.get(
             "/recovery/unlock"
@@ -58,7 +59,7 @@ const recoveryService = {
 
         }
 
-        await signalKeyStore.saveSyncSecret(secret);
+        await signalKeyStore.saveSyncSecret(secret, email);
 
         clearSyncKeyCache();
 
@@ -75,6 +76,7 @@ const recoveryService = {
         code,
         salt,
         wrapped_key,
+        email = null,
     }) {
 
         const secret = unwrapSyncSecret(
@@ -91,7 +93,7 @@ const recoveryService = {
 
         }
 
-        await signalKeyStore.saveSyncSecret(secret);
+        await signalKeyStore.saveSyncSecret(secret, email);
 
         clearSyncKeyCache();
 

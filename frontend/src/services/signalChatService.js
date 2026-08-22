@@ -28,6 +28,50 @@ import { b64decode } from "../crypto/signal/bytes.js";
 export class SignalChatError extends Error {}
 
 const PEER_MAP_ID = "peer-map";
+const PIN_MAP_ID = "identity-pins";
+
+// ==========================================================
+// Identity key pinning (TOFU)
+//
+// The server could serve a swapped identity key for a peer's
+// device (compromised server / MITM). Every bundle we fetch is
+// therefore checked against the identity keys we pinned the
+// FIRST time we saw that device; a changed key aborts the
+// session instead of silently encrypting to the attacker.
+// Pins live in the local key store and are wiped on logout.
+// ==========================================================
+
+async function verifyAndPinDevices({ keyStore, devices }) {
+    if (!devices?.length) return;
+
+    const pins = (await keyStore.peekMeta(PIN_MAP_ID)) ?? { devices: {} };
+    let changed = false;
+
+    for (const device of devices) {
+        const deviceId = device.device_id;
+        const served = device.identity_key;
+        if (!deviceId || !served) continue;
+
+        const pinned = pins.devices[deviceId];
+
+        if (pinned !== undefined && pinned !== served) {
+            throw new SignalChatError(
+                `Identity key changed for device "${deviceId}" — ` +
+                "possible interception. Wipe local data and verify " +
+                "the contact out of band before continuing.",
+            );
+        }
+
+        if (pinned === undefined) {
+            pins.devices[deviceId] = served;
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        await keyStore.saveMeta({ id: PIN_MAP_ID, ...pins });
+    }
+}
 
 // ==========================================================
 // Session manager bound to the local device
@@ -137,6 +181,10 @@ export async function encryptForConversation({
             ? remoteDevices
             : (remoteDevices.devices ?? []));
 
+    if (deviceList) {
+        await verifyAndPinDevices({ keyStore, devices: deviceList });
+    }
+
     const remoteDeviceId = await resolveRemoteDevice(
         keyStore,
         conversationId,
@@ -201,6 +249,8 @@ export async function encryptBytesForDevices({
 }) {
     const { manager, identity } = await getSignalSessionManager(keyStore);
     const our = await localDevice(keyStore);
+
+    await verifyAndPinDevices({ keyStore, devices });
 
     const envelopes = [];
 
@@ -340,6 +390,19 @@ export async function decryptEnvelopeBytes({
     }
 
     if (envelope.type === "prekey") {
+
+        // The sender's identity arrives inside the handshake:
+        // enforce TOFU pinning here too (the sender's bundle may
+        // have been seen before with a DIFFERENT identity key).
+        const pins = (await keyStore.peekMeta(PIN_MAP_ID)) ?? { devices: {} };
+        const pinned = pins.devices[envelope.deviceId];
+        const served = envelope.x3dhInfo?.identity_key ?? null;
+        if (pinned !== undefined && served !== null && pinned !== served) {
+            throw new SignalChatError(
+                `Identity key changed for device "${envelope.deviceId}" — ` +
+                "possible interception.",
+            );
+        }
 
         const spkId = envelope.x3dhInfo?.signed_prekey_id ?? null;
         const spk = spkId != null ? await keyStore.getSignedPrekey(spkId) : null;

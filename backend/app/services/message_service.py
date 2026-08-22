@@ -10,6 +10,9 @@ from app.models.user import User
 from app.repositories.conversation_repository import (
     ConversationRepository,
 )
+from app.repositories.device_repository import (
+    DeviceRepository,
+)
 from app.repositories.message_repository import (
     MessageRepository,
 )
@@ -37,10 +40,12 @@ class MessageService:
         message_repository: MessageRepository,
         conversation_repository: ConversationRepository,
         attachment_service: AttachmentService,
+        device_repository: DeviceRepository,
     ):
         self.message_repository = message_repository
         self.conversation_repository = conversation_repository
         self.attachment_service = attachment_service
+        self.device_repository = device_repository
 
     # ==========================================================
     # INTERNAL
@@ -69,6 +74,78 @@ class MessageService:
             )
 
     # ==========================================================
+    # GROUP KEY ROTATION
+    #
+    # Every group message uses a FRESH AES key wrapped for the
+    # CURRENT members. If the sender's membership view is stale
+    # (e.g. an admin removed a member elsewhere), a removed
+    # member's devices must NOT receive the key for any message
+    # sent after their removal. The server is authoritative:
+    # each wrapped copy must target a current member.
+    # ==========================================================
+
+    async def _validate_group_recipients(
+        self,
+        conversation_id: UUID,
+        recipient_keys: list[tuple[UUID, str]] | None,
+        envelopes: list[dict] | None,
+    ) -> None:
+
+        if not recipient_keys and not envelopes:
+            return
+
+        conversation = (
+            await self.conversation_repository.get_by_id(
+                conversation_id
+            )
+        )
+
+        if (
+            conversation is None
+            or conversation.conversation_type != "group"
+        ):
+            return
+
+        member_ids = {
+            participant.user_id
+            for participant
+            in await self.conversation_repository.get_participants(
+                conversation_id
+            )
+        }
+
+        if recipient_keys:
+
+            for user_id, _ in recipient_keys:
+
+                if user_id not in member_ids:
+                    raise ValueError(
+                        "Group membership changed: refresh the "
+                        "group and re-send."
+                    )
+
+        if envelopes:
+
+            owners = (
+                await self.device_repository.get_owners_by_device_ids(
+                    [
+                        entry["device_id"]
+                        for entry in envelopes
+                    ]
+                )
+            )
+
+            for entry in envelopes:
+
+                owner = owners.get(entry["device_id"])
+
+                if owner is None or owner not in member_ids:
+                    raise ValueError(
+                        "Group membership changed: refresh the "
+                        "group and re-send."
+                    )
+
+    # ==========================================================
     # SEND ENCRYPTED MESSAGE
     # ==========================================================
 
@@ -83,6 +160,7 @@ class MessageService:
         message_type: str = "text",
         reply_to_id: UUID | None = None,
         is_forwarded: bool = False,
+        forwarded_count: int = 0,
         attachment_ids: list[UUID] | None = None,
         recipient_keys: list[tuple[UUID, str]] | None = None,
         envelopes: list[dict] | None = None,
@@ -91,6 +169,12 @@ class MessageService:
         await self._validate_participant(
             current_user,
             conversation_id,
+        )
+
+        await self._validate_group_recipients(
+            conversation_id,
+            recipient_keys,
+            envelopes,
         )
 
         if reply_to_id:
@@ -143,6 +227,8 @@ class MessageService:
 
             is_forwarded=is_forwarded,
 
+            forwarded_count=forwarded_count,
+
             expires_at=expires_at,
 
             envelopes=envelopes,
@@ -156,13 +242,10 @@ class MessageService:
         # member at send time; store each wrapped copy.
         if recipient_keys:
 
-            for user_id, encrypted_key in recipient_keys:
-
-                await self.message_repository.add_recipient_key(
-                    message.id,
-                    user_id,
-                    encrypted_key,
-                )
+            await self.message_repository.replace_recipient_keys(
+                message.id,
+                recipient_keys,
+            )
 
         # Attach uploaded files to this message
         if attachment_ids:
@@ -219,10 +302,24 @@ class MessageService:
             conversation_id,
         )
 
-        return await self.message_repository.get_conversation_messages(
+        messages = await self.message_repository.get_conversation_messages(
             conversation_id,
             current_user.id,
         )
+
+        # Personal star flags for this user
+        starred_ids = (
+            await self.message_repository.get_starred_message_ids(
+                conversation_id,
+                current_user.id,
+            )
+        )
+
+        for message in messages:
+
+            message.is_starred = message.id in starred_ids
+
+        return messages
 
     # ==========================================================
     # GET SINGLE MESSAGE
@@ -246,6 +343,14 @@ class MessageService:
         await self._validate_participant(
             current_user,
             message.conversation_id,
+        )
+
+        message.is_starred = (
+            await self.message_repository.get_star(
+                message_id,
+                current_user.id,
+            )
+            is not None
         )
 
         return message
@@ -300,6 +405,12 @@ class MessageService:
             raise ValueError(
                 "Message has already been deleted."
             )
+
+        await self._validate_group_recipients(
+            message.conversation_id,
+            recipient_keys,
+            envelopes,
+        )
 
         edited = await self.message_repository.edit_payload(
             message,
@@ -397,6 +508,129 @@ class MessageService:
         }
 
     # ==========================================================
+    # STARS (per-user, personal)
+    # ==========================================================
+
+    async def set_star(
+        self,
+        current_user: User,
+        message_id: UUID,
+        starred: bool,
+    ) -> dict:
+
+        message = await self.get_message(
+            current_user,
+            message_id,
+        )
+
+        if message.deleted_for_everyone:
+            raise ValueError(
+                "Message has been deleted."
+            )
+
+        star = await self.message_repository.get_star(
+            message_id,
+            current_user.id,
+        )
+
+        if starred and star is None:
+
+            await self.message_repository.add_star(
+                message_id,
+                current_user.id,
+            )
+
+        elif not starred and star is not None:
+
+            await self.message_repository.remove_star(
+                star
+            )
+
+        return {
+            "message_id": str(message.id),
+            "starred": starred,
+        }
+
+    async def get_starred_messages(
+        self,
+        current_user: User,
+        conversation_id: UUID | None = None,
+    ):
+
+        if conversation_id is not None:
+
+            await self._validate_participant(
+                current_user,
+                conversation_id,
+            )
+
+        messages = await self.message_repository.get_starred_messages(
+            current_user.id,
+            conversation_id,
+        )
+
+        for message in messages:
+
+            message.is_starred = True
+
+        return messages
+
+    # ==========================================================
+    # VIEW ONCE MEDIA
+    #
+    # WhatsApp-style: the recipient can open the media exactly
+    # one time. Reporting "opened" makes the server delete the
+    # file + attachment rows and flag the message, so nothing
+    # survives on the backend afterwards.
+    # ==========================================================
+
+    async def mark_view_once_opened(
+        self,
+        current_user: User,
+        message_id: UUID,
+    ) -> dict:
+
+        message = await self.get_message(
+            current_user,
+            message_id,
+        )
+
+        if message.sender_id == current_user.id:
+            raise ValueError(
+                "Only the recipient can open view-once media."
+            )
+
+        already_opened = message.view_once_opened
+
+        if not already_opened:
+
+            view_once_attachments = [
+                attachment
+                for attachment in (message.attachments or [])
+                if attachment.view_once
+            ]
+
+            if not view_once_attachments:
+                raise ValueError(
+                    "This message has no view-once media."
+                )
+
+            for attachment in view_once_attachments:
+
+                await self.attachment_service.delete_attachment(
+                    attachment.id
+                )
+
+            message.view_once_opened = True
+
+        return {
+            "message_id": str(message.id),
+            "conversation_id": str(message.conversation_id),
+            "view_once_opened": True,
+            "already_opened": already_opened,
+        }
+
+    # ==========================================================
     # DELETE
     # ==========================================================
 
@@ -412,9 +646,34 @@ class MessageService:
         )
 
         if message.sender_id != current_user.id:
-            raise ValueError(
-                "Only sender can delete message."
+
+            # WhatsApp-style group moderation: a group admin may
+            # delete any member's message.
+            conversation = (
+                await self.conversation_repository.get_by_id(
+                    message.conversation_id
+                )
             )
+
+            participant = (
+                await self.conversation_repository.get_participant(
+                    message.conversation_id,
+                    current_user.id,
+                )
+            )
+
+            is_group_admin = (
+                conversation is not None
+                and conversation.conversation_type == "group"
+                and participant is not None
+                and bool(participant.is_admin)
+            )
+
+            if not is_group_admin:
+                raise ValueError(
+                    "Only the sender or a group admin can "
+                    "delete this message."
+                )
 
         # A deleted message must not leave an account-readable
         # sync copy behind.

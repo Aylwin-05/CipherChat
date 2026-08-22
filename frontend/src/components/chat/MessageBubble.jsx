@@ -1,5 +1,6 @@
 import { useAuth } from "../../context/AuthContext";
 import { useEffect, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import attachmentService, { AttachmentDecryptError } from "../../services/attachmentService";
 import ImageLightbox from "./ImageLightbox";
 
@@ -49,17 +50,31 @@ function messageSnippet(message) {
 
 }
 
+// WhatsApp-style label for view-once cards.
+function viewOnceKind(attachment) {
+
+    if (attachment?.attachment_type === "image") return "Photo";
+
+    if (attachment?.attachment_type === "video") return "Video";
+
+    return "Media";
+
+}
+
 export default function MessageBubble({
     message,
     onDelete,
     onReply,
     onEdit,
-    onForward,
+onForward,
     onInfo,
     onToggleReaction,
+    onToggleStar,
     repliedMessage,
     repliedDisplayName = "",
-    groupInfo = {},
+groupInfo = {},
+    isGroupAdmin = false,
+    onViewOnceOpened,
     menuOpen = false,
     onToggleMenu,
 }) {
@@ -78,7 +93,11 @@ const [attachmentUrls, setAttachmentUrls] = useState({});
 
     const [menuUp, setMenuUp] = useState(false);
 
+    const [copied, setCopied] = useState(false);
+
     const menuRef = useRef(null);
+
+    const viewOnceUrlRef = useRef(null);
 
     // Keep the latest onToggleMenu without re-registering
     // the outside-click listener on every render.
@@ -242,6 +261,17 @@ const [attachmentUrls, setAttachmentUrls] = useState({});
 
 for (const attachment of message.attachments || []) {
 
+                // View-once media is NEVER fetched automatically —
+                // not even by the sender (WhatsApp-style: nobody
+                // gets a preview). The recipient fetches exactly
+                // once, on tap, and reporting it closed deletes
+                // the file server-side.
+                if (attachment.view_once) {
+
+                    continue;
+
+                }
+
                 try {
 
                     const blob =
@@ -249,7 +279,7 @@ for (const attachment of message.attachments || []) {
                             attachment.id,
                             {
                                 wrappedKey:
-                                    message.sender_id === user?.id
+                                    String(message.sender_id) === String(user?.id)
                                         ? attachment.encrypted_key_sender
                                         : attachment.encrypted_key_receiver,
 
@@ -359,9 +389,65 @@ catch (err) {
 
     if (!message) return null;
 
-    const isMine =
+const isMine =
         String(user?.id) ===
         String(message.sender_id);
+
+    // ----------------------------------------------------------
+    // View-once media: fetch + decrypt on demand (recipient only)
+    // ----------------------------------------------------------
+
+    async function openViewOnce(attachment) {
+
+        try {
+
+            const blob =
+                await attachmentService.getAttachment(
+                    attachment.id,
+                    {
+                        wrappedKey:
+                            String(message.sender_id) === String(user?.id)
+                                ? attachment.encrypted_key_sender
+                                : attachment.encrypted_key_receiver,
+
+                        nonce:
+                            attachment.nonce,
+
+                        wrappedKeys:
+                            attachment.wrapped_keys,
+
+                        message,
+
+                        syncBlob:
+                            attachment.sync_blob,
+                    }
+                );
+
+            viewOnceUrlRef.current =
+                URL.createObjectURL(blob);
+
+            setLightbox({
+                attachment,
+                url: viewOnceUrlRef.current,
+                viewOnce: true,
+            });
+
+        }
+        catch (err) {
+
+            console.error(
+                "View-once media load failed:",
+                err
+            );
+
+            toast.error(
+                "Could not open this media. It may have "
+                + "already been viewed or deleted."
+            );
+
+        }
+
+    }
 
     const deleted =
         message.deleted_for_everyone;
@@ -384,8 +470,13 @@ catch (err) {
     const canEdit =
         isMine && isText;
 
-    const canForward =
+const canForward =
         isText;
+
+    // WhatsApp-style: the sender, or any group admin, can
+    // delete a message for everyone.
+    const canDeleteEveryone =
+        isMine || isGroupAdmin;
 
     // --------------------------------------------------------
     // Reactions: grouped chips with counts
@@ -480,11 +571,13 @@ catch (err) {
 
                 {/* FORWARDED LABEL */}
 
-                {message.is_forwarded && !deleted && (
+{message.is_forwarded && !deleted && (
 
                     <span className="message-forwarded">
 
-                        Forwarded
+                        {message.forwarded_count >= 5
+                            ? "Forwarded many times"
+                            : "Forwarded"}
 
                     </span>
 
@@ -617,9 +710,46 @@ catch (err) {
                                     }}
                                 >
 
-                                    Reply
+Reply
 
                                 </button>
+
+                                {isText && (
+
+                                    <button
+                                        type="button"
+                                        className="bubble-menu-item"
+                                        onClick={() => {
+
+                                            onToggleMenuRef.current?.(false);
+
+                                            navigator.clipboard
+                                                .writeText(content)
+                                                .then(() => {
+
+                                                    setCopied(true);
+
+                                                    setTimeout(
+                                                        () =>
+                                                            setCopied(false),
+                                                        1500,
+                                                    );
+
+                                                })
+                                                .catch(() => {
+                                                    // clipboard blocked
+                                                });
+
+                                        }}
+                                    >
+
+                                        {copied
+                                            ? "Copied"
+                                            : "Copy"}
+
+                                    </button>
+
+                                )}
 
                                 {canEdit && (
 
@@ -641,7 +771,7 @@ catch (err) {
 
                                 )}
 
-                                {canForward && (
+{canForward && (
 
                                     <button
                                         type="button"
@@ -661,6 +791,28 @@ catch (err) {
 
                                 )}
 
+                                {!deleted && (
+
+                                    <button
+                                        type="button"
+                                        className="bubble-menu-item"
+                                        onClick={() => {
+
+                                            onToggleMenuRef.current?.(false);
+
+                                            onToggleStar?.(message);
+
+                                        }}
+                                    >
+
+                                        {message.is_starred
+                                            ? "Unstar"
+                                            : "Star"}
+
+                                    </button>
+
+                                )}
+
                                 <button
                                     type="button"
                                     className="bubble-menu-item"
@@ -673,7 +825,7 @@ catch (err) {
 
                                 </button>
 
-                                {isMine && (
+{canDeleteEveryone && (
 
                                     <button
                                         type="button"
@@ -766,6 +918,124 @@ catch (err) {
                     const url =
                         attachmentUrls[attachment.id];
 
+                    // --------------------------------------------------
+                    // View-once media states (WhatsApp-style: a card
+                    // for everyone — never an inline preview)
+                    // --------------------------------------------------
+
+                    if (attachment.view_once) {
+
+                        // Opened: the server has already deleted
+                        // the file — both sides see the same card.
+                        if (message.view_once_opened) {
+
+                            return (
+
+                                <div
+                                    key={attachment.id}
+                                    className="view-once-card opened"
+                                >
+
+                                    <svg
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    >
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                                        <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+                                        <line x1="1" y1="1" x2="23" y2="23" />
+                                    </svg>
+
+                                    <span>
+                                        {viewOnceKind(attachment)}
+                                        {" · Opened"}
+                                    </span>
+
+                                </div>
+
+                            );
+
+                        }
+
+                        // Recipient, not yet opened: tap to view.
+                        if (!isMine) {
+
+                            return (
+
+                                <button
+                                    key={attachment.id}
+                                    type="button"
+                                    className="view-once-card"
+                                    onClick={() =>
+                                        openViewOnce(attachment)
+                                    }
+                                >
+
+                                    <svg
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    >
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                        <circle cx="12" cy="12" r="3" />
+                                    </svg>
+
+                                    <span>
+                                        View once · Tap to open
+                                    </span>
+
+                                </button>
+
+                            );
+
+                        }
+
+                        // Sender, not yet opened: static card —
+                        // no preview, nothing to tap.
+                        return (
+
+                            <div
+                                key={attachment.id}
+                                className="view-once-card mine"
+                            >
+
+                                <svg
+                                    width="18"
+                                    height="18"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                >
+                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                                    <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+                                    <line x1="1" y1="1" x2="23" y2="23" />
+                                </svg>
+
+                                <span>
+                                    View once · {viewOnceKind(attachment)}
+                                </span>
+
+                            </div>
+
+                        );
+
+                    }
+
                     if (!url) {
 
                         if (failedAttachments.has(attachment.id)) {
@@ -819,20 +1089,25 @@ catch (err) {
 
                     switch (attachment.attachment_type) {
 
-                        case "image":
+case "image":
 
                             return (
 
-                                <img
+                                <div
                                     key={attachment.id}
-                                    src={url}
-                                    alt={attachment.original_name}
-                                    className="chat-image"
-                                    onClick={() => setLightbox({
-                                        attachment,
-                                        url,
-                                    })}
-                                />
+                                >
+
+                                    <img
+                                        src={url}
+                                        alt={attachment.original_name}
+                                        className="chat-image"
+                                        onClick={() => setLightbox({
+                                            attachment,
+                                            url,
+                                        })}
+                                    />
+
+                                </div>
 
                             );
 
@@ -851,16 +1126,21 @@ catch (err) {
 
                             );
 
-                        case "video":
+case "video":
 
                             return (
 
-                                <video
+                                <div
                                     key={attachment.id}
-                                    controls
-                                    src={url}
-                                    className="chat-video"
-                                />
+                                >
+
+                                    <video
+                                        controls
+                                        src={url}
+                                        className="chat-video"
+                                    />
+
+                                </div>
 
                             );
 
@@ -1032,12 +1312,37 @@ catch (err) {
 
             </div>
 
-            <ImageLightbox
+<ImageLightbox
                 attachment={lightbox?.attachment}
                 url={lightbox?.url}
-                onClose={() =>
-                    setLightbox(null)
-                }
+                viewOnce={lightbox?.viewOnce}
+                onClose={() => {
+
+                    const wasViewOnce =
+                        Boolean(lightbox?.viewOnce);
+
+                    setLightbox(null);
+
+                    if (wasViewOnce) {
+
+                        // The recipient has now seen the media:
+                        // destroy it server-side and tell the
+                        // sender in real time.
+                        if (viewOnceUrlRef.current) {
+
+                            URL.revokeObjectURL(
+                                viewOnceUrlRef.current
+                            );
+
+                            viewOnceUrlRef.current = null;
+
+                        }
+
+                        onViewOnceOpened?.(message.id);
+
+                    }
+
+                }}
             />
 
         </div>

@@ -21,6 +21,10 @@ export default function OTP() {
     const email =
         location.state?.email || "";
 
+    // -------------------------------------------------
+    // OTP stage
+    // -------------------------------------------------
+
     const [otp, setOtp] =
         useState("");
 
@@ -40,23 +44,44 @@ export default function OTP() {
     const [resending, setResending] =
         useState(false);
 
-    useEffect(() => {
+    // -------------------------------------------------
+    // Two-step verification (PIN) stage
+    //
+    // When the account has 2FA enabled, verify-otp answers
+    // with { two_fa_required, two_fa_token, email } instead
+    // of tokens. The PIN stage completes the login.
+    // -------------------------------------------------
 
-        if (secondsLeft <= 0) return;
+    const [pinChallenge, setPinChallenge] =
+        useState(null);
 
-        const timer =
-            setTimeout(() => {
+    const [pin, setPin] =
+        useState("");
 
-                setSecondsLeft(previous =>
-                    previous - 1
-                );
+    const [pinBusy, setPinBusy] =
+        useState(false);
 
-            }, 1000);
+    // "Forgot PIN?" mode: the email OTP becomes the recovery
+    // proof — resetTwoFA disables 2FA and logs the user in.
+    const [forgotMode, setForgotMode] =
+        useState(false);
 
-        return () =>
-            clearTimeout(timer);
+    const [resetOtp, setResetOtp] =
+        useState("");
 
-    }, [secondsLeft]);
+    // -------------------------------------------------
+    // Shared login helper (access token + redirect)
+    // -------------------------------------------------
+
+    async function completeLogin(accessToken) {
+
+        await login(accessToken);
+
+        navigate("/dashboard", {
+            replace: true,
+        });
+
+    }
 
     // -------------------------------------------------
     // OTP Verification
@@ -82,45 +107,22 @@ export default function OTP() {
 
             setLoading(true);
 
-            // -------------------------------------------------
-            // 1. Verify OTP with backend
-            // -------------------------------------------------
-
             const response =
                 await authService.verifyOTP(
                     email,
                     otp
                 );
 
-            // LOG EVERYTHING - for debugging
-            console.log("=== OTP VERIFY DEBUG ===");
-            console.log("Full response:", response);
-            console.log("response.access_token:", response?.access_token);
-            console.log("response.user:", response?.user);
-            console.log("response type:", typeof response);
-            console.log("=======================");
-
             // -------------------------------------------------
-            // 2. Check response - backend returns TokenResponse
-            //    with access_token, refresh_token, user (NOT {success: bool})
+            // 2FA challenge: move to the PIN stage
             // -------------------------------------------------
 
-            if (!response?.access_token) {
+            if (response?.two_fa_required) {
 
-                const errorMsg =
-                    response?.detail ||
-                    response?.message ||
-                    "Invalid OTP."
+                setPinChallenge({
+                    twoFaToken: response.two_fa_token,
+                });
 
-                setError(errorMsg);
-
-                // Show toast with error details
-                toast.error(errorMsg);
-
-                // Show detailed error in console
-                console.error("OTP verification failed response:", response);
-
-                // Reset OTP field
                 setOtp("");
 
                 return;
@@ -128,57 +130,29 @@ export default function OTP() {
             }
 
             // -------------------------------------------------
-            // 3. Log in with the access token
+            // Regular login: backend returned tokens
             // -------------------------------------------------
 
-            // Save user and token to localStorage for persistence
-            await login(response.access_token);
+            if (!response?.access_token) {
 
-            // Also explicitly store in localStorage
-            localStorage.setItem(
-                "access_token",
+                const errorMsg =
+                    response?.detail ||
+                    response?.message ||
+                    "Invalid OTP.";
+
+                setError(errorMsg);
+
+                toast.error(errorMsg);
+
+                setOtp("");
+
+                return;
+
+            }
+
+            await completeLogin(
                 response.access_token
             );
-
-            // Set user in localStorage for session restoration
-            const userData = {
-
-                id: response.user?.id,
-
-                email: response.user?.email,
-
-                username: response.user?.username,
-
-                display_name: response.user?.display_name,
-
-                avatar_url: response.user?.avatar_url,
-
-                is_verified: response.user?.is_verified
-
-            };
-
-            localStorage.setItem(
-
-                "user",
-
-                JSON.stringify(userData)
-
-            );
-
-            // -------------------------------------------------
-            // 4. Redirect to dashboard
-            // -------------------------------------------------
-
-            // Wait a moment for session to establish, then redirect
-            setTimeout(() => {
-
-                navigate("/dashboard", {
-
-                    replace: true,
-
-                });
-
-            }, 3000);
 
         }
 
@@ -186,28 +160,18 @@ export default function OTP() {
 
             console.error("OTP verify error:", err);
 
-            setError(
+            const errorMsg =
 
                 err.response?.data?.detail ||
 
                 err.message ||
 
-                "Invalid OTP."
+                "Invalid OTP.";
 
-            );
+            setError(errorMsg);
 
-            // Show toast with error details
-            toast.error(
+            toast.error(errorMsg);
 
-                setError?.()
-
-                    ? setError()
-
-                    : "Invalid OTP. Please try again."
-
-            );
-
-            // Reset OTP field
             setOtp("");
 
         }
@@ -219,6 +183,171 @@ export default function OTP() {
         }
 
     };
+
+    // -------------------------------------------------
+    // PIN Verification (second factor)
+    // -------------------------------------------------
+
+    const handleVerifyPin = async (e) => {
+
+        e.preventDefault();
+
+        setError("");
+
+        if (pin.length !== 6) {
+
+            setError(
+                "PIN must be 6 digits."
+            );
+
+            return;
+
+        }
+
+        try {
+
+            setPinBusy(true);
+
+            const response =
+                await authService.verifyTwoFA(
+                    pinChallenge.twoFaToken,
+                    pin
+                );
+
+            await completeLogin(
+                response.access_token
+            );
+
+        }
+
+        catch (err) {
+
+            console.error("PIN verify error:", err);
+
+            const errorMsg =
+
+                err.response?.data?.detail ||
+
+                err.message ||
+
+                "Incorrect PIN.";
+
+            setError(errorMsg);
+
+            toast.error(errorMsg);
+
+            setPin("");
+
+        }
+
+        finally {
+
+            setPinBusy(false);
+
+        }
+
+    };
+
+    // -------------------------------------------------
+    // Forgot PIN: resend an OTP, then reset 2FA with it
+    // -------------------------------------------------
+
+    async function handleEnterForgotMode() {
+
+        setError("");
+
+        setForgotMode(true);
+
+        setSecondsLeft(RESEND_COOLDOWN);
+
+        try {
+
+            await authService.sendOTP(
+                email
+            );
+
+            toast.success(
+                "A code has been sent to your email."
+            );
+
+        }
+
+        catch (err) {
+
+            setError(
+                err.response?.data?.detail ||
+                err.message ||
+                "Unable to send a code."
+            );
+
+        }
+
+    }
+
+    async function handleResetWithOtp(e) {
+
+        e.preventDefault();
+
+        setError("");
+
+        if (resetOtp.length !== 6) {
+
+            setError(
+                "OTP must be 6 digits."
+            );
+
+            return;
+
+        }
+
+        try {
+
+            setPinBusy(true);
+
+            const response =
+                await authService.resetTwoFA(
+                    email,
+                    resetOtp
+                );
+
+            toast.success(
+                "Two-step verification turned off. " +
+                "You can set a new PIN in Settings."
+            );
+
+            await completeLogin(
+                response.access_token
+            );
+
+        }
+
+        catch (err) {
+
+            console.error("2FA reset error:", err);
+
+            const errorMsg =
+
+                err.response?.data?.detail ||
+
+                err.message ||
+
+                "Unable to reset your PIN.";
+
+            setError(errorMsg);
+
+            toast.error(errorMsg);
+
+            setResetOtp("");
+
+        }
+
+        finally {
+
+            setPinBusy(false);
+
+        }
+
+    }
 
     // -------------------------------------------------
     // Resend OTP (only after the cooldown ends)
@@ -248,7 +377,16 @@ export default function OTP() {
                 "A new code has been sent."
             );
 
-            setOtp("");
+            if (forgotMode) {
+
+                setResetOtp("");
+
+            }
+            else {
+
+                setOtp("");
+
+            }
 
             setSecondsLeft(
                 RESEND_COOLDOWN
@@ -270,11 +408,11 @@ export default function OTP() {
 
             toast.error(
 
-                setError?.()
+                err.response?.data?.detail ||
 
-                    ? setError()
+                err.message ||
 
-                    : "Unable to resend OTP."
+                "Unable to resend OTP."
 
             );
 
@@ -287,48 +425,6 @@ export default function OTP() {
         }
 
     }
-
-    // -------------------------------------------------
-    // Load user on page mount - restore session from localStorage
-    // -------------------------------------------------
-
-    useEffect(() => {
-
-        // Check if user is already logged in (session persisted)
-        const storedUser = localStorage.getItem("user");
-
-        if (storedUser) {
-
-            try {
-
-                const user = JSON.parse(storedUser);
-
-                // Restore user state - this will also set accessToken via AuthContext
-                login(JSON.stringify(user));
-
-                // Redirect to dashboard if on OTP page
-                if (location.pathname === "/otp") {
-
-                    navigate("/dashboard", {
-
-                        replace: true,
-
-                    });
-
-                }
-
-            } catch (error) {
-
-                console.error("Failed to restore session:", error);
-
-                // Clear invalid stored user
-                localStorage.removeItem("user");
-
-            }
-
-        }
-
-    }, [location.pathname]);
 
     // -------------------------------------------------
     // Resend cooldown timer
@@ -351,6 +447,241 @@ export default function OTP() {
             clearTimeout(timer);
 
     }, [secondsLeft]);
+
+    // =====================================================
+    // PIN stage (2FA) — shown instead of the OTP form
+    // =====================================================
+
+    if (pinChallenge) {
+
+        return (
+
+            <div className="auth-bg">
+
+                <div className="auth-orbs" aria-hidden="true">
+
+                    <div className="orb orb-a" />
+
+                    <div className="orb orb-b" />
+
+                    <div className="orb orb-c" />
+
+                </div>
+
+                <div className="auth-card-wrap otp-wrap">
+
+                    <div className="auth-card">
+
+                        <button
+                            type="button"
+                            className="otp-back"
+                            onClick={() => {
+
+                                setPinChallenge(null);
+
+                                setForgotMode(false);
+
+                                setResetOtp("");
+
+                                setPin("");
+
+                            }}
+                        >
+                            ← Back to OTP
+                        </button>
+
+                        <h1>
+
+                            {
+
+                                forgotMode
+
+                                    ? "Reset your PIN"
+
+                                    : "Enter your PIN"
+
+                            }
+
+                        </h1>
+
+                        <p className="auth-tagline">
+
+                            {
+
+                                forgotMode
+
+                                    ? "Verify your email to turn "
+                                      + "two-step verification off "
+                                      + "for"
+
+                                    : "Two-step verification is on "
+                                      + "for"
+
+                            }
+
+                        </p>
+
+                        <div className="otp-email">
+
+                            {email || "your email"}
+
+                        </div>
+
+                        {!forgotMode && (
+
+                            <form onSubmit={handleVerifyPin}>
+
+                                <div className="field otp-field">
+
+                                    <input
+                                        type="password"
+                                        maxLength={6}
+                                        placeholder="••••••"
+                                        value={pin}
+                                        onChange={(e) =>
+                                            setPin(
+                                                e.target.value.replace(/\D/g, "")
+                                            )
+                                        }
+                                        inputMode="numeric"
+                                        autoFocus
+                                    />
+
+                                </div>
+
+                                {
+
+                                    error && (
+
+                                        <div className="form-error">
+
+                                            {error}
+
+                                        </div>
+
+                                    )
+
+                                }
+
+                                <button
+                                    type="submit"
+                                    className="btn-primary auth-submit"
+                                    disabled={pinBusy}
+                                >
+
+                                    {
+
+                                        pinBusy
+
+                                            ? "Checking…"
+
+                                            : "Verify & Enter"
+
+                                    }
+
+                                </button>
+
+                            </form>
+
+                        )}
+
+                        {forgotMode && (
+
+                            <form onSubmit={handleResetWithOtp}>
+
+                                <div className="field otp-field">
+
+                                    <input
+                                        type="text"
+                                        maxLength={6}
+                                        placeholder="••••••"
+                                        value={resetOtp}
+                                        onChange={(e) =>
+                                            setResetOtp(
+                                                e.target.value.replace(/\D/g, "")
+                                            )
+                                        }
+                                        inputMode="numeric"
+                                        autoFocus
+                                    />
+
+                                </div>
+
+                                {
+
+                                    error && (
+
+                                        <div className="form-error">
+
+                                            {error}
+
+                                        </div>
+
+                                    )
+
+                                }
+
+                                <button
+                                    type="submit"
+                                    className="btn-primary auth-submit"
+                                    disabled={pinBusy}
+                                >
+
+                                    {
+
+                                        pinBusy
+
+                                            ? "Resetting…"
+
+                                            : "Verify & Turn Off 2FA"
+
+                                    }
+
+                                </button>
+
+                                <p className="otp-forgot-hint">
+
+                                    Enter the 6-digit code sent to
+                                    your email. This disables
+                                    two-step verification so you can
+                                    log in and set a new PIN.
+
+                                </p>
+
+                            </form>
+
+                        )}
+
+                        {!forgotMode && (
+
+                            <div className="otp-forgot">
+
+                                <button
+                                    type="button"
+                                    className="btn-ghost otp-resend-btn"
+                                    onClick={handleEnterForgotMode}
+                                    disabled={resending}
+                                >
+                                    Forgot your PIN?
+                                </button>
+
+                            </div>
+
+                        )}
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        );
+
+    }
+
+    // =====================================================
+    // OTP stage (default)
+    // =====================================================
 
     return (
 

@@ -7,14 +7,7 @@ from app.models.device import (
 )
 from app.models.user import User
 from app.repositories.device_repository import DeviceRepository
-from app.services.encryption_service import EncryptionService
-from app.crypto.signal.primitives import (
-    b64encode,
-    b64decode,
-    x25519_private_to_bytes,
-    x25519_public_to_bytes,
-)
-from app.crypto.signal.x3dh import generate_x25519_keypair
+from app.services.recovery_service import create_recovery_key
 
 
 # Default number of one-time prekeys to keep available
@@ -25,10 +18,10 @@ class DeviceService:
     """
     Manages devices and their Signal Protocol key material.
 
-    Key generation happens on the client; the server stores the PUBLIC
-    key material and the ENCRYPTED private key material (Fernet with
-    MASTER_KEY) so it can complete X3DH responder steps on behalf of
-    a device that is offline.
+    Key generation happens entirely on the client; the server
+    stores ONLY the public key material (identity, signed prekey,
+    one-time prekeys). Private halves live in the device's local
+    key store, so the server can never decrypt handshakes.
     """
 
     def __init__(self, repository: DeviceRepository):
@@ -49,20 +42,36 @@ class DeviceService:
         app_version: str | None = None,
         identity_key_public: str,                # b64 Ed25519 public
         identity_key_x25519: str,                # b64 X25519 public
-        identity_key_private_encrypted: str,     # b64 Fernet(Ed25519 priv)
         signed_prekey_public: str,               # b64 X25519 public
-        signed_prekey_private_encrypted: str,    # b64 Fernet(X25519 priv)
         signed_prekey_id: int,
         signed_prekey_signature: str,            # b64 Ed25519 sig
-        one_time_prekeys: list[dict],            # [{key_id, public_key, private_key_encrypted}]
-    ) -> Device:
-        """Register (or re-register) a device with its key material."""
+        one_time_prekeys: list[dict],            # [{key_id, public_key}]
+    ) -> tuple[Device, dict | None]:
+        """Register (or re-register) a device with its PUBLIC key material.
+
+        Private key material never leaves the client.
+
+        The FIRST device registered on an account also mints the
+        recovery key (code + wrapped sync secret). The code is
+        returned exactly once — in this call's result — and never
+        stored server-side.
+        """
 
         existing = await self.repository.get_by_device_id(device_id)
+        recovery_info: dict | None = None
         if existing is not None:
+
+            # A device_id is client-chosen ("web-<uuid>") but must be
+            # bound to the account that created it. Overwriting key
+            # material of another user's device would let anyone
+            # hijack that device's identity (permanent MITM).
+            if existing.user_id != user.id:
+                raise PermissionError(
+                    "This device is registered to another account."
+                )
+
             existing.identity_key_public = identity_key_public
             existing.identity_key_x25519 = identity_key_x25519
-            existing.identity_key_private_encrypted = identity_key_private_encrypted
             existing.is_active = True
             existing.platform = platform
             existing.device_name = device_name
@@ -83,9 +92,24 @@ class DeviceService:
                 is_active=True,
                 identity_key_public=identity_key_public,
                 identity_key_x25519=identity_key_x25519,
-                identity_key_private_encrypted=identity_key_private_encrypted,
             )
             await self.repository.create_device(device)
+
+            # First device on the account -> mint the recovery key
+            # (unless one already exists). The plaintext code lives
+            # only in this return value; server keeps salt + blob.
+            if (
+                user.recovery_salt is None
+                and user.recovery_wrapped_key is None
+            ):
+                recovery = create_recovery_key()
+                user.recovery_salt = recovery["salt"]
+                user.recovery_wrapped_key = recovery["wrapped_key"]
+                recovery_info = {
+                    "code": recovery["code"],
+                    "salt": recovery["salt"],
+                    "wrapped_key": recovery["wrapped_key"],
+                }
 
         # Signed prekey (the latest id from the client replaces the old one)
         existing_spk = await self.repository.get_signed_prekey(
@@ -97,25 +121,23 @@ class DeviceService:
                     device_id=device.id,
                     key_id=signed_prekey_id,
                     public_key=signed_prekey_public,
-                    private_key_encrypted=signed_prekey_private_encrypted,
                     signature=signed_prekey_signature,
                 )
             )
 
-        # One-time prekeys (batch upload)
+        # One-time prekeys (batch upload, public halves only)
         for opk in one_time_prekeys:
             await self.repository.create_one_time_prekey(
                 OneTimePreKey(
                     device_id=device.id,
                     key_id=opk["key_id"],
                     public_key=opk["public_key"],
-                    private_key_encrypted=opk["private_key_encrypted"],
                 )
             )
 
         await self.repository.commit()
         await self.repository.refresh(device)
-        return device
+        return device, recovery_info
 
     # ==========================================================
     # One-Time PreKey upload (client-generated batch)
@@ -146,7 +168,6 @@ class DeviceService:
                 device_id=device.id,
                 key_id=opk["key_id"],
                 public_key=opk["public_key"],
-                private_key_encrypted=opk["private_key_encrypted"],
             )
             await self.repository.create_one_time_prekey(row)
             stored.append(row)
@@ -177,7 +198,10 @@ class DeviceService:
                 continue
             spk = spks[0]
 
-            opks = await self.repository.get_unconsumed_one_time_prekeys(
+            # One-time prekeys are single-use: serving one consumes
+            # it (atomic conditional UPDATE), so two handshakes can
+            # never be built on the same prekey.
+            opks = await self.repository.reserve_one_time_prekeys(
                 device.id, limit=1
             )
             opk_data = None
@@ -199,131 +223,63 @@ class DeviceService:
                 "one_time_prekeys": [opk_data] if opk_data else [],
             })
 
+        await self.repository.commit()
         return {"user_id": str(user_id), "devices": devices_data}
 
     # ===========================================================
     # One-Time PreKey replenishment
     # ===========================================================
 
-    async def replenish_one_time_prekeys(
-        self,
-        device: Device,
-    ) -> list[dict]:
-        """
-        Top the device's unconsumed OPK supply back to the target and
-        return the newly generated prekeys (with encrypted private keys)
-        so the client can keep them in its secure local store.
-        """
-        opks = await self.repository.get_unconsumed_one_time_prekeys(
-            device.id, limit=ONE_TIME_PREKEY_TARGET
-        )
-        current_count = len(opks)
-        if current_count >= ONE_TIME_PREKEY_TARGET:
-            return []
-
-        needed = ONE_TIME_PREKEY_TARGET - current_count
-        next_id = await self.repository.get_next_one_time_prekey_id(device.id)
-
-        generated = []
-        for _ in range(needed):
-            priv, pub = generate_x25519_keypair()
-            priv_bytes = x25519_private_to_bytes(priv)
-            pub_bytes = x25519_public_to_bytes(pub)
-
-            encrypted_private = b64encode(
-                EncryptionService.get_fernet().encrypt(priv_bytes)
-            )
-
-            row = OneTimePreKey(
-                device_id=device.id,
-                key_id=next_id,
-                public_key=b64encode(pub_bytes),
-                private_key_encrypted=encrypted_private,
-            )
-            await self.repository.create_one_time_prekey(row)
-
-            generated.append({
-                "key_id": next_id,
-                "public_key": b64encode(pub_bytes),
-                "private_key_encrypted": encrypted_private,
-            })
-            next_id += 1
-
-        await self.repository.commit()
-        return generated
-
     async def replenish_one_time_prekeys_for_user(
         self,
         user_id: UUID,
     ) -> list[dict]:
-        """Replenish all active devices of a user."""
+        """Report the OPK supply across all active devices of a user.
+
+        The server never generates prekeys (private halves must stay
+        client-side); the client tops up via /prekeys/upload.
+        """
         devices = await self.repository.get_by_user_id(user_id)
         total = []
         for device in devices:
-            total.extend(await self.replenish_one_time_prekeys(device))
+            opks = await self.repository.get_unconsumed_one_time_prekeys(
+                device.id, limit=ONE_TIME_PREKEY_TARGET
+            )
+            total.append({
+                "device_id": device.device_id,
+                "count": len(opks),
+            })
         return total
-
-    # ================================================================
-    # Consume a one-time prekey (after successful X3DH as responder)
-    # ================================================================
-
-    async def consume_one_time_prekey(
-        self,
-        device: Device,
-        key_id: int,
-        consumed_by_device_pk: UUID,
-    ):
-        opk = await self.repository.get_one_time_prekey(
-            device.id, key_id
-        )
-        if opk is None or opk.consumed:
-            return
-        await self.repository.mark_one_time_prekey_consumed(
-            opk.id, consumed_by_device_pk
-        )
-        await self.repository.commit()
 
     # ================================================================
     # Helpers
     # ================================================================
 
-    @staticmethod
-    def encrypt_key(raw: bytes) -> str:
-        """Encrypt private key material with the server master key."""
-        return b64encode(EncryptionService.get_fernet().encrypt(raw))
-
-    @staticmethod
-    def decrypt_key(encrypted_b64: str) -> bytes:
-        return EncryptionService.get_fernet().decrypt(
-            b64decode(encrypted_b64)
-        )
-
-    async def get_device_signed_prekey_with_private(
+    async def get_device_signed_prekey(
         self,
         device: Device,
         key_id: int,
     ):
-        """Fetch a signed prekey row plus its decrypted private bytes."""
+        """Fetch a signed prekey row (public material)."""
         spk = await self.repository.get_signed_prekey(device.id, key_id)
         if spk is None:
             return None
         return {
             "key_id": spk.key_id,
             "public_key": spk.public_key,
-            "private_key": self.decrypt_key(spk.private_key_encrypted),
+            "signature": spk.signature,
         }
 
-    async def get_device_one_time_prekey_with_private(
+    async def get_device_one_time_prekey(
         self,
         device: Device,
         key_id: int,
     ):
-        """Fetch an OPK row plus its decrypted private bytes."""
+        """Fetch an OPK row (public material)."""
         opk = await self.repository.get_one_time_prekey(device.id, key_id)
         if opk is None:
             return None
         return {
             "key_id": opk.key_id,
             "public_key": opk.public_key,
-            "private_key": self.decrypt_key(opk.private_key_encrypted),
         }

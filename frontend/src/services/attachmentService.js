@@ -233,7 +233,7 @@ async getAttachment(
                     const rawKey =
                         await unwrapFileKey(
                             wrappedKey,
-                            getPrivateKey()
+                            await getPrivateKey()
                         );
 
                     blob =

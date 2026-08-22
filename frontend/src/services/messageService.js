@@ -29,6 +29,7 @@ const messageService = {
         encrypted,
         replyToId = null,
         isForwarded = false,
+        forwardedCount = 0,
     ) {
 
         const response =
@@ -65,6 +66,9 @@ const messageService = {
 
                     is_forwarded:
                         isForwarded,
+
+                    forwarded_count:
+                        forwardedCount,
 
                     recipient_keys:
                         encrypted.recipient_keys || [],
@@ -187,6 +191,59 @@ const messageService = {
     },
 
     // ======================================================
+    // Star / Unstar Message (per-user, personal)
+    // ======================================================
+
+    async toggleStar(messageId, starred) {
+
+        const response =
+            await api.put(
+                `/messages/${messageId}/star`,
+                {
+                    starred,
+                }
+            );
+
+        return response.data;
+
+    },
+
+    // ======================================================
+    // View-once media: recipient reports it as opened
+    // ======================================================
+
+    async markViewOnceOpened(messageId) {
+
+        const response =
+            await api.post(
+                `/messages/${messageId}/view-once-opened`
+            );
+
+        return response.data;
+
+    },
+
+    // ======================================================
+    // Get Starred Messages (optionally per conversation)
+    // ======================================================
+
+    async getStarredMessages(conversationId) {
+
+        const response =
+            await api.get(
+                "/messages/starred",
+                {
+                    params: conversationId
+                        ? { conversation_id: conversationId }
+                        : {},
+                }
+            );
+
+        return response.data;
+
+    },
+
+    // ======================================================
     // Delete For Me (any participant)
     // ======================================================
 
@@ -218,6 +275,7 @@ const messageService = {
         {
             onProgress = null,
             signal = null,
+            viewOnce = false,
         } = {},
     ) {
 
@@ -227,6 +285,15 @@ const messageService = {
             "file",
             file
         );
+
+        if (viewOnce) {
+
+            formData.append(
+                "view_once",
+                "true"
+            );
+
+        }
 
         if (encryption) {
 

@@ -47,6 +47,10 @@ class AttachmentResponse(BaseModel):
     # that unlocked the account sync secret with the recovery code.
     sync_blob: dict | None = None
 
+    # WhatsApp-style "view once": media is deleted from the
+    # server after the recipient opens it once.
+    view_once: bool = False
+
     created_at: datetime
 
     updated_at: datetime | None = None

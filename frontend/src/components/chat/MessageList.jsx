@@ -70,6 +70,9 @@ export default function MessageList({
     onForward,
     onInfo,
     onToggleReaction,
+    onToggleStar,
+    isGroupAdmin = false,
+    onViewOnceOpened,
     otherUser,
     conversationId,
     highlightMessageId,
@@ -468,6 +471,33 @@ export default function MessageList({
 
                         const { message, groupInfo } = row;
 
+                        // System notices ("X added Y", "X left the
+                        // group") render as a centered gray pill,
+                        // not a chat bubble (WhatsApp style).
+                        if (
+                            message.message_type ===
+                            "system"
+                        ) {
+
+                            return (
+                                <div
+                                    key={message.id}
+                                    className="system-message"
+                                >
+
+                                    <span className="system-message-pill">
+
+                                        {message.content ||
+                                            message.ciphertext}
+
+                                    </span>
+
+                                </div>
+
+                            );
+
+                        }
+
                         const repliedMessage =
                             message.reply_to_id
                                 ? messages.find(
@@ -519,6 +549,15 @@ export default function MessageList({
                                 onInfo={onInfo}
                                 onToggleReaction={
                                     onToggleReaction
+                                }
+                                onToggleStar={
+                                    onToggleStar
+                                }
+                                isGroupAdmin={
+                                    isGroupAdmin
+                                }
+                                onViewOnceOpened={
+                                    onViewOnceOpened
                                 }
                                 repliedMessage={
                                     repliedMessage

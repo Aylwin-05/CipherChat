@@ -30,6 +30,39 @@ class RefreshTokenRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_jti(
+        self,
+        jti: str,
+    ) -> RefreshToken | None:
+        """Find a row by its token id.
+
+        After rotation the old row survives with `replaced_by_jti`
+        set, so a replayed (rotated-away) token can still be traced
+        back to its family for revocation.
+        """
+        result = await self.db.execute(
+            select(RefreshToken).where(
+                RefreshToken.jti == jti
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_predecessor_jti(
+        self,
+        predecessor_jti: str,
+    ) -> RefreshToken | None:
+        """Find the row that replaced the given jti.
+
+        Lets a replayed token be traced to its family even after
+        its own row has been pruned.
+        """
+        result = await self.db.execute(
+            select(RefreshToken).where(
+                RefreshToken.predecessor_jti == predecessor_jti
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def create(
         self,
         record: RefreshToken,

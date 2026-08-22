@@ -1,0 +1,97 @@
+.status-strip {
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    padding: 10px 14px;
+    border-bottom: 1px solid
+        var(--color-border, rgba(0, 0, 0, 0.08));
+    background: var(
+        --color-panel,
+        #ffffff
+    );
+    scrollbar-width: none;
+}
+
+.status-strip::-webkit-scrollbar {
+    display: none;
+}
+
+.status-ring {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    min-width: 64px;
+    flex: 0 0 auto;
+}
+
+.status-ring-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(
+        135deg,
+        var(--color-primary, #25d366),
+        #128c7e
+    );
+    position: relative;
+    border: 3px solid
+        var(--color-border-strong, rgba(0, 0, 0, 0.15));
+    overflow: visible;
+}
+
+.status-ring.has-unviewed .status-ring-avatar {
+    border-color: #25d366;
+}
+
+.status-ring.mine.has-stories .status-ring-avatar {
+    border-color: #25d366;
+}
+
+.status-ring-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+}
+
+.status-ring-add {
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--color-primary, #25d366);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
+    border: 2px solid
+        var(--color-panel, #ffffff);
+}
+
+.status-ring.mine.has-stories .status-ring-add {
+    background: #54656f;
+}
+
+.status-ring-name {
+    font-size: 12px;
+    color: var(--color-text-secondary, #667781);
+    max-width: 64px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

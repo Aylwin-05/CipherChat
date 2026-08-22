@@ -44,6 +44,10 @@ class SendMessageRequest(BaseModel):
 
     is_forwarded: bool = False
 
+    # Total times this chain has been forwarded; client increments
+    # it when re-forwarding an already-forwarded message.
+    forwarded_count: int = 0
+
     # NEW
     attachment_ids: list[UUID] = []
 
@@ -138,6 +142,18 @@ class ReactionRequest(BaseModel):
         min_length=1,
         max_length=32,
     )
+
+
+# ==========================================================
+# STAR (per-user, personal)
+# ==========================================================
+
+class StarRequest(BaseModel):
+    """
+    Star or unstar a message for the current user.
+    """
+
+    starred: bool
 
 
 class ReactionResponse(BaseModel):
@@ -257,7 +273,11 @@ class MessageResponse(BaseModel):
 
     is_forwarded: bool
 
+    forwarded_count: int = 0
+
     deleted_for_everyone: bool
+
+    is_starred: bool = False
 
     is_read: bool
 
@@ -266,6 +286,8 @@ class MessageResponse(BaseModel):
     read_at: datetime | None
 
     expires_at: datetime | None
+
+    view_once_opened: bool = False
 
     created_at: datetime
 

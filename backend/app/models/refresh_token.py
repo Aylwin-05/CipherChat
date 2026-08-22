@@ -85,6 +85,12 @@ class RefreshToken(Base, TimestampMixin):
         comment="jti of the successor token (rotation chain).",
     )
 
+    predecessor_jti: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="jti this token replaced (survives pruning of the old row).",
+    )
+
     user_agent: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,

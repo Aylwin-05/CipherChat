@@ -1,139 +1,231 @@
 // ==========================================================
 // CipherChat Key Storage
 //
-// Stores RSA keys in browser.
-//
-// Development:
-// LocalStorage
+// Account RSA keypair persistence.
 //
 // Production:
-// IndexedDB
+// IndexedDB ("cipherchat-keys"). Keys are never written to
+// localStorage.
+//
+// Migration:
+// Browsers that still hold the legacy localStorage copies
+// ("cipherchat_public_key" / "cipherchat_private_key") get
+// them lifted into IndexedDB on first DB open, after which
+// the localStorage entries are removed.
 // ==========================================================
+
+const DB_NAME = "cipherchat-keys";
+const DB_VERSION = 1;
+const STORE = "keys";
 
 const PUBLIC_KEY = "cipherchat_public_key";
 const PRIVATE_KEY = "cipherchat_private_key";
 
+let dbPromise = null;
+
 // ==========================================================
-// Save Public Key
+// IndexedDB plumbing
 // ==========================================================
 
-export function savePublicKey(
-    key
-) {
+function openDb() {
 
-    localStorage.setItem(
-        PUBLIC_KEY,
-        key
-    );
+    return new Promise((resolve, reject) => {
+
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+        request.onupgradeneeded = () => {
+
+            const db = request.result;
+
+            if (!db.objectStoreNames.contains(STORE)) {
+                db.createObjectStore(STORE);
+            }
+
+        };
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+
+    });
+
+}
+
+async function ensureDb() {
+
+    if (!dbPromise) {
+
+        dbPromise = openDb().then(async (db) => {
+
+            await migrateLegacyLocalStorage(db);
+            return db;
+
+        });
+
+    }
+
+    return dbPromise;
+
+}
+
+function idbGet(db, key) {
+
+    return new Promise((resolve, reject) => {
+
+        const tx = db.transaction(STORE, "readonly");
+        const req = tx.objectStore(STORE).get(key);
+
+        req.onsuccess = () => resolve(req.result ?? null);
+        req.onerror = () => reject(req.error);
+
+    });
+
+}
+
+function idbSet(db, key, value) {
+
+    return new Promise((resolve, reject) => {
+
+        const tx = db.transaction(STORE, "readwrite");
+        const req = tx.objectStore(STORE).put(value, key);
+
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+
+    });
+
+}
+
+function idbDelete(db, key) {
+
+    return new Promise((resolve, reject) => {
+
+        const tx = db.transaction(STORE, "readwrite");
+        const req = tx.objectStore(STORE).delete(key);
+
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+
+    });
 
 }
 
 // ==========================================================
-// Save Private Key
+// Legacy migration (one-time lift out of localStorage)
 // ==========================================================
 
-export function savePrivateKey(
-    key
-) {
+async function migrateLegacyLocalStorage(db) {
 
-    localStorage.setItem(
-        PRIVATE_KEY,
-        key
-    );
+    if (typeof localStorage === "undefined") {
+        return;
+    }
+
+    let legacyPublicKey = null;
+    let legacyPrivateKey = null;
+
+    try {
+        legacyPublicKey = localStorage.getItem(PUBLIC_KEY);
+        legacyPrivateKey = localStorage.getItem(PRIVATE_KEY);
+    } catch {
+        return;
+    }
+
+    if (!legacyPublicKey && !legacyPrivateKey) {
+        return;
+    }
+
+    if (legacyPublicKey && !(await idbGet(db, PUBLIC_KEY))) {
+        await idbSet(db, PUBLIC_KEY, legacyPublicKey);
+    }
+
+    if (legacyPrivateKey && !(await idbGet(db, PRIVATE_KEY))) {
+        await idbSet(db, PRIVATE_KEY, legacyPrivateKey);
+    }
+
+    // LocalStorage copies are removed once migrated.
+    try {
+        localStorage.removeItem(PUBLIC_KEY);
+        localStorage.removeItem(PRIVATE_KEY);
+    } catch {
+        // ignore
+    }
 
 }
 
 // ==========================================================
-// Get Public Key
+// Public API
 // ==========================================================
 
-export function getPublicKey() {
+export async function savePublicKey(key) {
 
-    return localStorage.getItem(
-        PUBLIC_KEY
-    );
+    const db = await ensureDb();
+    await idbSet(db, PUBLIC_KEY, key);
 
 }
 
-// ==========================================================
-// Get Private Key
-// ==========================================================
+export async function savePrivateKey(key) {
 
-export function getPrivateKey() {
-
-    return localStorage.getItem(
-        PRIVATE_KEY
-    );
+    const db = await ensureDb();
+    await idbSet(db, PRIVATE_KEY, key);
 
 }
 
-// ==========================================================
-// Save Both Keys
-// ==========================================================
+export async function getPublicKey() {
 
-export function saveKeyPair(
-    publicKey,
-    privateKey
-) {
-
-    savePublicKey(
-        publicKey
-    );
-
-    savePrivateKey(
-        privateKey
-    );
+    const db = await ensureDb();
+    return idbGet(db, PUBLIC_KEY);
 
 }
 
-// ==========================================================
-// Load Both Keys
-// ==========================================================
+export async function getPrivateKey() {
 
-export function loadKeyPair() {
+    const db = await ensureDb();
+    return idbGet(db, PRIVATE_KEY);
+
+}
+
+export async function saveKeyPair(publicKey, privateKey) {
+
+    const db = await ensureDb();
+    await idbSet(db, PUBLIC_KEY, publicKey);
+    await idbSet(db, PRIVATE_KEY, privateKey);
+
+}
+
+export async function loadKeyPair() {
+
+    const db = await ensureDb();
 
     return {
-
-        publicKey:
-            getPublicKey(),
-
-        privateKey:
-            getPrivateKey(),
-
+        publicKey: await idbGet(db, PUBLIC_KEY),
+        privateKey: await idbGet(db, PRIVATE_KEY),
     };
 
 }
 
-// ==========================================================
-// Keys Exist
-// ==========================================================
+export async function hasKeyPair() {
 
-export function hasKeyPair() {
+    const db = await ensureDb();
 
     return !!(
-
-        getPublicKey()
-
+        (await idbGet(db, PUBLIC_KEY))
         &&
-
-        getPrivateKey()
-
+        (await idbGet(db, PRIVATE_KEY))
     );
 
 }
 
-// ==========================================================
-// Remove Keys
-// ==========================================================
+export async function clearKeyPair() {
 
-export function clearKeyPair() {
+    const db = await ensureDb();
+    await idbDelete(db, PUBLIC_KEY);
+    await idbDelete(db, PRIVATE_KEY);
 
-    localStorage.removeItem(
-        PUBLIC_KEY
-    );
-
-    localStorage.removeItem(
-        PRIVATE_KEY
-    );
+    // Also scrub any pre-migration leftovers.
+    try {
+        localStorage.removeItem(PUBLIC_KEY);
+        localStorage.removeItem(PRIVATE_KEY);
+    } catch {
+        // ignore
+    }
 
 }

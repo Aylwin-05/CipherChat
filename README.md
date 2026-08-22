@@ -58,7 +58,7 @@ arrives by email (Gmail app password recommended).
 ### Tests
 
 ```bash
-cd backend && python -m pytest tests
+cd backend && python -m pytest test_all.py
 cd frontend && npm test
 ```
 

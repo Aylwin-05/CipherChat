@@ -367,3 +367,309 @@
     cursor: not-allowed;
 
 }
+
+/* ---------- group photo ---------- */
+
+.group-info-avatar-img {
+
+    width: 68px;
+
+    height: 68px;
+
+    border-radius: 50%;
+
+    object-fit: cover;
+
+    cursor: pointer;
+
+}
+
+.group-info-desc {
+
+    font-size: 0.85rem;
+
+    color: var(--text-secondary, #666);
+
+    text-align: center;
+
+    max-width: 90%;
+
+    line-height: 1.4;
+
+}
+
+.group-info-actions {
+
+    display: flex;
+
+    gap: 8px;
+
+    margin-top: 4px;
+
+}
+
+.group-info-edit-btn {
+
+    border: 1px solid var(--border-color, #ddd);
+
+    background: none;
+
+    color: var(--text-primary, #111);
+
+    font-size: 0.8rem;
+
+    font-weight: 600;
+
+    padding: 6px 12px;
+
+    border-radius: 999px;
+
+    cursor: pointer;
+
+}
+
+.group-info-edit-btn:hover:not(:disabled) {
+
+    background: var(--hover-bg, rgba(0, 0, 0, 0.05));
+
+}
+
+.group-info-edit-btn:disabled {
+
+    opacity: 0.5;
+
+    cursor: not-allowed;
+
+}
+
+/* ---------- edit name / description ---------- */
+
+.group-info-edit-form {
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 8px;
+
+    width: 100%;
+
+    margin-top: 8px;
+
+}
+
+.group-info-input {
+
+    width: 100%;
+
+    padding: 9px 12px;
+
+    border-radius: 10px;
+
+    border: 1px solid var(--border-color, #ddd);
+
+    background: var(--bg-secondary, #fafafa);
+
+    color: var(--text-primary, #111);
+
+    font-size: 0.9rem;
+
+    resize: vertical;
+
+}
+
+.group-info-input:focus {
+
+    outline: none;
+
+    border-color: var(--accent-color, #0a84ff);
+
+}
+
+.group-info-edit-btns {
+
+    display: flex;
+
+    justify-content: flex-end;
+
+    gap: 8px;
+
+}
+
+.btn-ghost {
+
+    border: 1px solid var(--border-color, #ddd);
+
+    background: none;
+
+    color: var(--text-primary, #111);
+
+    font-weight: 600;
+
+    font-size: 0.85rem;
+
+    padding: 8px 16px;
+
+    border-radius: 10px;
+
+    cursor: pointer;
+
+}
+
+/* ---------- member controls (remove / admin) ---------- */
+
+.group-member-controls {
+
+    display: flex;
+
+    gap: 6px;
+
+    align-items: center;
+
+}
+
+.group-member-btn {
+
+    border: 1px solid var(--border-color, #ddd);
+
+    background: none;
+
+    color: var(--text-primary, #111);
+
+    font-size: 0.72rem;
+
+    font-weight: 600;
+
+    padding: 4px 9px;
+
+    border-radius: 999px;
+
+    cursor: pointer;
+
+    white-space: nowrap;
+
+}
+
+.group-member-btn:hover:not(:disabled) {
+
+    background: var(--hover-bg, rgba(0, 0, 0, 0.05));
+
+}
+
+.group-member-btn.danger {
+
+    color: #e05555;
+
+    border-color: rgba(224, 85, 85, 0.4);
+
+}
+
+.group-member-btn.danger:hover:not(:disabled) {
+
+    background: rgba(224, 85, 85, 0.08);
+
+}
+
+.group-member-btn:disabled {
+
+    opacity: 0.5;
+
+    cursor: not-allowed;
+
+}
+
+.group-member-creator {
+
+    font-size: 0.72rem;
+
+    color: var(--text-secondary, #666);
+
+}
+
+/* ---------- invite via link ---------- */
+
+.invite-link-box {
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 10px;
+
+    padding: 12px;
+
+    border-radius: 12px;
+
+    background: var(--surface-2, #1e293b);
+
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+
+}
+
+.invite-link-text {
+
+    font-size: 0.78rem;
+
+    font-family: var(--font-mono, ui-monospace, monospace);
+
+    color: var(--accent-2, #22d3ee);
+
+    word-break: break-all;
+
+    line-height: 1.45;
+
+}
+
+.invite-link-actions {
+
+    display: flex;
+
+    gap: 8px;
+
+}
+
+.invite-link-note {
+
+    font-size: 0.75rem;
+
+    color: var(--text-secondary, #94a3b8);
+
+    line-height: 1.45;
+
+}
+
+/* ---------- join group modal ---------- */
+
+.join-group-body {
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 14px;
+
+    padding: 18px;
+
+}
+
+.join-group-hint {
+
+    font-size: 0.85rem;
+
+    color: var(--text-secondary, #94a3b8);
+
+    line-height: 1.5;
+
+    margin: 0;
+
+}
+
+.join-group-actions {
+
+    display: flex;
+
+    gap: 10px;
+
+    justify-content: flex-end;
+
+}

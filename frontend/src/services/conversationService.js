@@ -205,6 +205,145 @@ const conversationService = {
     },
 
     //==========================================================
+    // Update Group Info (name / description, admin only)
+    //==========================================================
+
+    async updateGroup(conversationId, fields) {
+
+        try {
+
+            const response = await api.patch(
+                `/conversations/${conversationId}/group`,
+                fields,
+            );
+
+            return response.data;
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Failed to update group",
+                error
+            );
+
+            throw error;
+
+        }
+
+    },
+
+    //==========================================================
+    // Remove Group Member (admin only)
+    //==========================================================
+
+    async removeGroupMember(conversationId, userId) {
+
+        try {
+
+            const response = await api.post(
+                `/conversations/${conversationId}/group/remove`,
+                { user_id: userId },
+            );
+
+            return response.data;
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Failed to remove group member",
+                error
+            );
+
+            throw error;
+
+        }
+
+    },
+
+    //==========================================================
+    // Promote / Demote Admin (admin only)
+    //==========================================================
+
+    async setGroupAdmin(conversationId, userId, isAdmin) {
+
+        try {
+
+            const response = await api.post(
+                `/conversations/${conversationId}/group/admin`,
+                { user_id: userId, is_admin: isAdmin },
+            );
+
+            return response.data;
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Failed to change admin role",
+                error
+            );
+
+            throw error;
+
+        }
+
+    },
+
+    //==========================================================
+    // Upload Group Avatar (admin only)
+    //==========================================================
+
+    async uploadGroupAvatar(conversationId, file) {
+
+        try {
+
+            const formData = new FormData();
+
+            formData.append("file", file);
+
+            const response = await api.post(
+                `/conversations/${conversationId}/avatar`,
+                formData,
+                {
+                    headers: {
+                        "Content-Type": "multipart/form-data",
+                    },
+                },
+            );
+
+            return response.data;
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Failed to upload group avatar",
+                error
+            );
+
+            throw error;
+
+        }
+
+    },
+
+    //==========================================================
+    // Group Avatar URL (participants only)
+    //==========================================================
+
+    avatarUrl(conversationId) {
+
+        return `/api/v1/conversations/${conversationId}/avatar`;
+
+    },
+
+    //==========================================================
     // Update Conversation Settings (pin / archive / mute)
     //==========================================================
 
@@ -285,6 +424,63 @@ const conversationService = {
 
         const response = await api.post(
             `/conversations/${conversationId}/delete-cancel`
+        );
+
+        return response.data;
+
+    },
+
+    //==========================================================
+    // Get Active Invite Link (group admin only)
+    //==========================================================
+
+    async getInviteLink(conversationId) {
+
+        const response = await api.get(
+            `/conversations/${conversationId}/group/invite-link`
+        );
+
+        return response.data;
+
+    },
+
+    //==========================================================
+    // Create / Reset Invite Link (group admin only)
+    //==========================================================
+
+    async createInviteLink(conversationId) {
+
+        const response = await api.post(
+            `/conversations/${conversationId}/group/invite-link`
+        );
+
+        return response.data;
+
+    },
+
+    //==========================================================
+    // Revoke Invite Link (group admin only)
+    //==========================================================
+
+    async revokeInviteLink(conversationId) {
+
+        const response = await api.delete(
+            `/conversations/${conversationId}/group/invite-link`
+        );
+
+        return response.data;
+
+    },
+
+    //==========================================================
+    // Join a Group by Redeeming an Invite Link
+    //==========================================================
+
+    async joinGroupWithLink(token) {
+
+        const response = await api.post(
+            "/conversations/join-with-link",
+            { token },
         );
 
         return response.data;

@@ -16,6 +16,8 @@ from app.repositories.message_repository import (
 
 from app.websocket.connection_manager import manager
 
+logger = logging.getLogger("app.websocket.websocket_service")
+
 
 class WebSocketService:
     """
@@ -203,6 +205,11 @@ class WebSocketService:
                     f"Missing field '{field}'."
                 )
 
+        exclude = await self._blocked_recipients(
+            conversation_id,
+            current_user.id,
+        )
+
         await manager.broadcast(
             conversation_id,
             {
@@ -297,6 +304,12 @@ class WebSocketService:
                         "sync_envelope"
                     ),
             },
+            exclude_user_ids=exclude,
+        )
+
+        await self._push_new_message(
+            conversation_id,
+            current_user,
         )
             # ======================================================
     # EDIT MESSAGE
@@ -621,10 +634,45 @@ class WebSocketService:
 
             payload["candidate"] = data["candidate"]
 
+        exclude = await self._blocked_recipients(
+            conversation_id,
+            current_user.id,
+        )
+
+        targeted = data.get("to")
+
+        if targeted and UUID(targeted) in exclude:
+
+            return
+
         await manager.broadcast(
             conversation_id,
             payload,
+            exclude_user_ids=exclude,
         )
+
+        # Ringing offers must not be lost to a briefly offline
+        # recipient: keep the offer pending for members that
+        # (re)connect within the ring window, and push-notify the
+        # members with no live socket at all.
+        if event == "call_offer":
+
+            manager.store_pending_call(
+                conversation_id,
+                payload,
+            )
+
+            await self._push_new_call(
+                conversation_id,
+                current_user,
+                payload,
+            )
+
+        elif event == "call_end":
+
+            manager.drop_pending_call(
+                data["call_id"]
+            )
 
     # ======================================================
     # TYPING
@@ -680,6 +728,210 @@ class WebSocketService:
                 "event": "pong",
             }
         )
+
+    # ======================================================
+    # BLOCKED RECIPIENTS (message/call fan-out)
+    #
+    # A message or call event is only suppressed for recipients
+    # whose conversation with the sender is blocked (either
+    # direction). The sender's own sockets keep receiving their
+    # own events.
+    # ======================================================
+
+    async def _blocked_recipients(
+        self,
+        conversation_id: UUID,
+        sender_id: UUID,
+    ) -> set:
+
+        from sqlalchemy import and_, or_, select
+
+        from app.models.block import Block
+        from app.models.conversation_participant import (
+            ConversationParticipant,
+        )
+
+        try:
+
+            result = await self.db.execute(
+                select(
+                    ConversationParticipant.user_id
+                ).where(
+                    ConversationParticipant.conversation_id
+                    == conversation_id
+                )
+            )
+
+            member_ids = set(
+                result.scalars().all()
+            )
+
+            block_result = await self.db.execute(
+                select(
+                    Block.blocker_id,
+                    Block.blocked_id,
+                ).where(
+                    or_(
+                        and_(
+                            Block.blocker_id == sender_id,
+                            Block.blocked_id.in_(member_ids),
+                        ),
+                        and_(
+                            Block.blocked_id == sender_id,
+                            Block.blocker_id.in_(member_ids),
+                        ),
+                    )
+                )
+            )
+
+            blocked = set()
+
+            for blocker_id, blocked_id in block_result.all():
+
+                if blocker_id == sender_id:
+                    blocked.add(blocked_id)
+
+                if blocked_id == sender_id:
+                    blocked.add(blocker_id)
+
+            return blocked
+
+        except Exception:
+
+            logger.exception(
+                "Block lookup failed for conversation=%s",
+                conversation_id,
+            )
+
+            return set()
+
+    # ======================================================
+    # WEB PUSH NOTIFICATION (new message)
+    #
+    # The user-scoped socket already delivered the event to the
+    # open app; Web Push covers every browser that is closed or
+    # in the background. The service worker suppresses the
+    # notification when the app is visible and focused, so there
+    # is no double-notification. Payloads are redacted — message
+    # content is end-to-end encrypted and never touches the
+    # server, let alone the push provider.
+    # ======================================================
+
+    async def _push_new_message(
+        self,
+        conversation_id: UUID,
+        current_user: User,
+    ):
+
+        try:
+
+            from sqlalchemy import select
+
+            from app.models.conversation import Conversation
+            from app.services.push_service import push_service
+            from app.websocket.connection_manager import manager
+
+            member_ids = await manager._member_ids(
+                conversation_id
+            )
+
+            result = await self.db.execute(
+                select(
+                    Conversation.conversation_type
+                ).where(
+                    Conversation.id == conversation_id
+                )
+            )
+
+            conversation_type = (
+                result.scalar_one_or_none()
+                or "private"
+            )
+
+            await push_service.notify_message(
+                recipient_ids=member_ids,
+                sender_id=current_user.id,
+                sender_name=current_user.display_name,
+                conversation_id=conversation_id,
+                conversation_type=conversation_type,
+            )
+
+        except Exception:
+
+            logger.exception(
+                "Push fan-out failed for conversation=%s",
+                conversation_id,
+            )
+
+    # ======================================================
+    # CALL PUSH
+    #
+    # The user-scoped socket delivers the offer to every ONLINE
+    # member; Web Push covers the members whose socket is down
+    # (closed tab, reconnect gap). Payload is metadata only — SDP
+    # is never pushed, and the notification itself never contains
+    # call content (media is peer-to-peer DTLS-SRTP).
+    # ======================================================
+
+    async def _push_new_call(
+        self,
+        conversation_id: UUID,
+        current_user: User,
+        payload: dict,
+    ):
+
+        try:
+
+            from sqlalchemy import select
+
+            from app.models.conversation import Conversation
+            from app.services.push_service import push_service
+            from app.websocket.connection_manager import manager
+
+            member_ids = await manager._member_ids(
+                conversation_id
+            )
+
+            connected = manager.connected_user_ids()
+
+            offline_members = [
+                member_id
+                for member_id in member_ids
+                if member_id not in connected
+            ]
+
+            result = await self.db.execute(
+                select(
+                    Conversation.conversation_type
+                ).where(
+                    Conversation.id == conversation_id
+                )
+            )
+
+            conversation_type = (
+                result.scalar_one_or_none()
+                or "private"
+            )
+
+            await push_service.notify_call(
+                recipient_ids=offline_members,
+                sender_id=current_user.id,
+                sender_name=current_user.display_name,
+                conversation_id=conversation_id,
+                conversation_type=conversation_type,
+                call_type=payload.get(
+                    "call_type",
+                    "voice",
+                ),
+                call_id=payload["call_id"],
+            )
+
+        except Exception:
+
+            logger.exception(
+                "Call push fan-out failed for call=%s",
+                payload.get("call_id"),
+            )
 
     # ======================================================
     # VALIDATION HELPERS

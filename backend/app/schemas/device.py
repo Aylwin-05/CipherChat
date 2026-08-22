@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 class OneTimePreKeyUpload(BaseModel):
     key_id: int
     public_key: str
-    private_key_encrypted: str
 
 
 class RegisterDeviceRequest(BaseModel):
@@ -20,10 +19,8 @@ class RegisterDeviceRequest(BaseModel):
 
     identity_key_public: str
     identity_key_x25519: str
-    identity_key_private_encrypted: str
 
     signed_prekey_public: str
-    signed_prekey_private_encrypted: str
     signed_prekey_id: int
     signed_prekey_signature: str
 

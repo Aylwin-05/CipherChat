@@ -40,7 +40,22 @@ def rate_limit(
 
 
 def _client_ip(request: Request) -> str:
+    # NOTE: the reverse proxy (nginx) OVERWRITES X-Forwarded-For
+    # with $remote_addr, so the first entry is the real client.
+    # The header is only honored when it contains a valid IP;
+    # garbage or absent values fall back to the direct peer.
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        candidate = forwarded.split(",")[0].strip()
+        if _is_ip(candidate):
+            return candidate
     return request.client.host if request.client else "unknown"
+
+
+def _is_ip(value: str) -> bool:
+    try:
+        import ipaddress
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False

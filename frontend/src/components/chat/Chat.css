@@ -52,6 +52,14 @@
     box-shadow: inset 0 0 0 1.5px var(--avatar-ring);
 }
 
+.chat-avatar-img {
+    width: 46px;
+    height: 46px;
+    border-radius: 16px;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
 .chat-presence {
     position: absolute;
     right: -3px;
@@ -225,6 +233,44 @@
     line-height: 1.5;
     color: var(--text-3);
     border-top: 1px solid var(--border);
+    margin-top: 4px;
+}
+
+/* ---------- block confirmation menu ---------- */
+
+.block-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 30;
+    width: 280px;
+    padding: 12px;
+    border-radius: 14px;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    animation: msgIn 0.16s var(--ease);
+}
+
+.block-menu-head {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-1);
+}
+
+.block-menu-note {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-3);
+}
+
+.block-menu-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
     margin-top: 4px;
 }
 
@@ -1022,6 +1068,99 @@
     background: rgba(251, 113, 133, 0.14);
 }
 
+.view-once-toggle {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    color: var(--text-3);
+    transition: color 0.15s ease, background 0.15s ease;
+}
+
+.view-once-toggle:hover {
+    color: var(--accent-2);
+    background: rgba(34, 211, 238, 0.12);
+}
+
+.view-once-toggle.active {
+    color: var(--accent-2);
+    background: rgba(34, 211, 238, 0.16);
+}
+
+/* ---------- view-once media cards (chat bubble) ---------- */
+
+.view-once-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 200px;
+    max-width: 100%;
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.view-once-card svg {
+    flex-shrink: 0;
+    color: var(--accent-2);
+}
+
+.view-once-card:hover {
+    background: var(--surface-3);
+    border-color: rgba(34, 211, 238, 0.4);
+}
+
+.view-once-card.opened {
+    cursor: default;
+    color: var(--text-3);
+}
+
+.view-once-card.opened svg {
+    color: var(--text-3);
+}
+
+.view-once-card.opened:hover {
+    background: var(--surface-2);
+    border-color: var(--border);
+}
+
+/* Sender's own unopened card: static, nothing to tap */
+.view-once-card.mine,
+.view-once-card.mine:hover {
+    cursor: default;
+    background: var(--surface-2);
+    border-color: var(--border);
+    color: var(--text-3);
+}
+
+.view-once-media {
+    position: relative;
+    display: inline-block;
+}
+
+.view-once-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: grid;
+    place-items: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: var(--radius-pill);
+    background: rgba(0, 0, 0, 0.65);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    pointer-events: none;
+}
+
 /* ---------- attachment upload progress ---------- */
 
 .upload-progress {
@@ -1130,6 +1269,132 @@
 .chat-input-bar:focus-within {
     border-color: var(--accent-focus);
     box-shadow: 0 0 0 4px var(--accent-focus-ring);
+}
+
+/* ----------------------------------------------------------
+   Emoji picker
+   ---------------------------------------------------------- */
+
+.emoji-wrap {
+    position: relative;
+    display: flex;
+    flex-shrink: 0;
+}
+
+.emoji-wrap .icon-btn.active {
+    color: var(--accent);
+    background: var(--surface-2);
+}
+
+.emoji-picker {
+    position: absolute;
+    bottom: 52px;
+    left: 0;
+    z-index: 40;
+    width: min(320px, calc(100vw - 32px));
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 10px;
+    border-radius: var(--radius-lg);
+    background: var(--surface-2, #1e293b);
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.emoji-category {
+    margin-bottom: 6px;
+}
+
+.emoji-category:last-child {
+    margin-bottom: 0;
+}
+
+.emoji-category-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: var(--text-3);
+    padding: 4px 4px 6px;
+}
+
+.emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 2px;
+}
+
+.emoji-btn {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    font-size: 19px;
+    border-radius: 8px;
+    transition: background 0.12s ease, transform 0.12s var(--ease);
+}
+
+.emoji-btn:hover {
+    background: var(--surface-2);
+    transform: scale(1.18);
+}
+
+.emoji-btn:active {
+    transform: scale(1.05);
+}
+
+/* ----------------------------------------------------------
+   Starred messages modal
+   ---------------------------------------------------------- */
+
+.starred-modal-sub {
+    padding: 2px 20px 12px;
+    font-size: 13px;
+    color: var(--text-3);
+}
+
+.starred-modal-list {
+    max-height: 420px;
+    overflow-y: auto;
+    padding: 0 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.starred-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--surface, rgba(255, 255, 255, 0.045));
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+}
+
+.starred-item-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.starred-item-sender {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 2px;
+}
+
+.starred-item-text {
+    font-size: 14px;
+    color: var(--text-1);
+    word-break: break-word;
+}
+
+.starred-item-meta {
+    font-size: 11.5px;
+    color: var(--text-3);
+    margin-top: 4px;
 }
 
 .icon-btn {
@@ -1380,6 +1645,28 @@
     font-weight: 600;
     letter-spacing: 0.2px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+
+/* ---------- system notices ("X added Y", "X left") ---------- */
+
+.system-message {
+    display: flex;
+    justify-content: center;
+    margin: 10px 0 4px;
+    pointer-events: none;
+}
+
+.system-message-pill {
+    max-width: 80%;
+    padding: 6px 16px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    font-size: 12.5px;
+    font-weight: 500;
+    text-align: center;
+    line-height: 1.45;
 }
 
 /* ---------- message grouping (WhatsApp-style) ---------- */

@@ -59,11 +59,6 @@ class UserKey(Base):
         nullable=False,
     )
 
-    private_key_encrypted: Mapped[str] = mapped_column(
-        String,
-        nullable=False,
-    )
-
     # ==========================================================
     # Audit
     # ==========================================================

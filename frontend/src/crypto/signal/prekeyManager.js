@@ -13,7 +13,6 @@
 
 import { signalKeyStore } from "./keyStore.js";
 import { generateOneTimePrekeys } from "./identity.js";
-import { wrapPrivateKey } from "./identity.js";
 import { b64encode } from "./bytes.js";
 
 export const DEFAULT_THRESHOLD = 20;
@@ -66,7 +65,6 @@ export async function replenishOneTimePrekeys({
         const payload = generated.map((opk) => ({
             key_id: opk.keyId,
             public_key: b64encode(opk.publicKey),
-            private_key_encrypted: wrapPrivateKey(opk.privateKey),
         }));
         try {
             await upload(payload);

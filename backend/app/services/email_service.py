@@ -109,65 +109,6 @@ class EmailService:
 
         return html.replace("{{OTP}}", otp)
 
-    async def send_recovery_code_email(
-        self,
-        recipient_email: str,
-        code: str,
-    ):
-        """
-        Send the one-time account recovery code (best-effort).
-
-        Unlike the OTP the code is shown on screen too, so an SMTP
-        failure is logged and swallowed — registration must not
-        fail because mail is down.
-        """
-
-        display = "-".join(
-            code[i : i + 6]
-            for i in range(0, len(code), 6)
-        )
-
-        html = (
-            "<div style='font-family: Arial, sans-serif; "
-            "max-width: 520px; margin: 0 auto; padding: 24px;'>"
-            "<h2 style='color: #1f2937;'>Your CipherChat recovery code</h2>"
-            "<p style='color: #374151; line-height: 1.6;'>"
-            "Enter this code when you log in on a new browser to "
-            "restore your encrypted message history. Keep it safe — "
-            "it is the only way to unlock your history on a new device."
-            "</p>"
-            "<div style='background: #f3f4f6; border-radius: 8px; "
-            "padding: 16px; text-align: center; "
-            "font-size: 22px; letter-spacing: 2px; "
-            "font-weight: bold; color: #111827;'>"
-            f"{display}"
-            "</div>"
-            "<p style='color: #6b7280; font-size: 13px;'>"
-            "If you did not register a new device, you can ignore "
-            "this email — your account cannot be accessed with the "
-            "code alone."
-            "</p>"
-            "</div>"
-        )
-
-        message = MIMEMultipart("alternative")
-        message["Subject"] = "Your CipherChat Recovery Code"
-        message["From"] = f"{self.from_name} <{self.from_email}>"
-        message["To"] = recipient_email
-
-        message.attach(MIMEText(html, "html"))
-
-        await asyncio.to_thread(
-            self._send_sync,
-            recipient_email,
-            message,
-        )
-
-        logger.info(
-            "Recovery code email sent to %s",
-            recipient_email,
-        )
-
     async def send_recovery_link_email(
         self,
         recipient_email: str,

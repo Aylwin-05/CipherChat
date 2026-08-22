@@ -8,12 +8,50 @@
 //
 // Browser generates and stores identity keys.
 // Backend stores ONLY the public key.
+// Every AES-GCM operation is bound to the conversation it
+// belongs to. A ciphertext copied/moved into another context
+// (by a compromised server, a replayed old message, etc.)
+// then fails authentication at decrypt time instead of
+// silently decrypting. The bindings below are UTF-8 encoded
+// before being passed to WebCrypto.
+//
+// Legacy rows (encrypted before AAD existed) have no binding:
+// decrypting callers retry WITHOUT the AAD as a fallback, so
+// old history keeps working.
 // ==========================================================
 
 import {
     arrayBufferToBase64,
     base64ToArrayBuffer,
-} from "./base64";
+} from "./base64.js";
+
+// ==========================================================
+// ADDITIONAL AUTHENTICATED DATA
+//
+// Every AES-GCM operation is bound to the conversation it
+// belongs to. A ciphertext copied/moved into another context
+// (by a compromised server, a replayed old message, etc.)
+// then fails authentication at decrypt time instead of
+// silently decrypting. The bindings below are UTF-8 encoded
+// before being passed to WebCrypto.
+//
+// Legacy rows (encrypted before AAD existed) have no binding:
+// decrypting callers retry WITHOUT the AAD as a fallback, so
+// old history keeps working.
+// ==========================================================
+
+export const DM_AAD_PREFIX = "cipherchat-dm:";
+export const GROUP_AAD_PREFIX = "cipherchat-group:";
+
+export function encodeAAD(aadString) {
+
+    if (!aadString) return null;
+
+    return new TextEncoder().encode(
+        aadString
+    );
+
+}
 
 // ==========================================================
 // RSA KEY GENERATION
@@ -202,17 +240,24 @@ async function importAESKey(
     );
 
 }
+
 // ==========================================================
 // ENCRYPT MESSAGE
 // ==========================================================
 
-export async function 
-encryptMessage(
+export async function encryptMessage(
     plaintext,
     senderPublicKey,
-    receiverPublicKey
-) 
-{
+    receiverPublicKey,
+    aad = null,
+) {
+
+    // ----------------------------------------------
+    // Optional associated data. Callers pass the
+    // conversation binding; when omitted the row stays
+    // UNBOUND so pre-AAD history keeps decrypting via
+    // the unbound fallback in decryptMessage().
+    // ----------------------------------------------
 
     // ----------------------------------------------
     // Generate one-time AES key
@@ -242,6 +287,8 @@ encryptMessage(
             {
                 name: "AES-GCM",
                 iv,
+                additionalData:
+                    encodeAAD(aad) ?? undefined,
             },
             aesKey,
             encoder.encode(
@@ -384,6 +431,7 @@ export async function encryptBytes(
     };
 
 }
+
 // ==========================================================
 // DECRYPT MESSAGE
 // ==========================================================
@@ -393,11 +441,8 @@ export async function decryptMessage(
     encryptedKeyBase64,
     nonceBase64,
     privateKeyBase64,
+    aad = null,
 ) {
-
-    // ----------------------------------------------
-    // Import private RSA key
-    // ----------------------------------------------
 
     const privateKey =
         await importPrivateKey(
@@ -429,28 +474,57 @@ export async function decryptMessage(
         );
 
     // ----------------------------------------------
-    // Decrypt ciphertext
+    // Decrypt ciphertext (AAD first, then fall back
+    // to the unbound form for pre-AAD history)
     // ----------------------------------------------
 
-    const plaintext =
-        await crypto.subtle.decrypt(
-            {
-                name: "AES-GCM",
-                iv: new Uint8Array(
-                    base64ToArrayBuffer(
-                        nonceBase64
-                    )
-                ),
-            },
-            aesKey,
-            base64ToArrayBuffer(
-                ciphertextBase64
-            )
-        );
+    const aadBytes =
+        encodeAAD(aad);
 
-    return new TextDecoder().decode(
-        plaintext
-    );
+    const attempt =
+        async (useAad) => {
+
+            const plaintext =
+                await crypto.subtle.decrypt(
+                    {
+                        name: "AES-GCM",
+                        iv: new Uint8Array(
+                            base64ToArrayBuffer(
+                                nonceBase64
+                            )
+                        ),
+                        additionalData:
+                            useAad && aadBytes
+                                ? aadBytes
+                                : undefined,
+                    },
+                    aesKey,
+                    base64ToArrayBuffer(
+                        ciphertextBase64
+                    )
+                );
+
+            return new TextDecoder().decode(
+                plaintext
+            );
+
+        };
+
+    if (aadBytes) {
+
+        try {
+
+            return await attempt(true);
+
+        }
+        catch {
+
+            // fall through to the unbound attempt
+        }
+
+    }
+
+    return await attempt(false);
 
 }
 
@@ -567,7 +641,6 @@ export async function safeDecrypt(
         };
 
     }
-
     catch (error) {
 
         console.error(

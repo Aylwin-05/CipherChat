@@ -9,6 +9,7 @@ from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import rate_limit
 from app.models.user import User
 from app.repositories.friend_repository import FriendRepository
+from app.repositories.block_repository import BlockRepository
 from app.schemas.friend import (
     FriendMessage,
     FriendRequestAction,
@@ -66,6 +67,17 @@ async def send_friend_request(
 ):
     repository = FriendRepository(db)
     service = FriendService(repository)
+
+    block_repository = BlockRepository(db)
+
+    if await block_repository.is_blocked(
+        current_user.id,
+        request.receiver_id,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This user cannot be added as a friend.",
+        )
 
     try:
         friendship = await service.send_request(

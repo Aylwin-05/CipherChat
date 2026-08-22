@@ -33,6 +33,7 @@ import {
     arrayBufferToBase64,
 } from "../crypto/base64";
 import {
+    DM_AAD_PREFIX,
     decryptMessage,
 } from "../crypto/cryptoService";
 import {
@@ -115,6 +116,12 @@ export default function useMessages(
     const [searching, setSearching] =
         useState(false);
 
+    const [starredList, setStarredList] =
+        useState([]);
+
+    const [starredLoading, setStarredLoading] =
+        useState(false);
+
     const isGroup =
         conversation?.conversation_type === "group";
 
@@ -135,6 +142,8 @@ export default function useMessages(
                 );
 
             setGroupDetail(detail);
+
+            return detail;
 
         }
         catch (error) {
@@ -286,6 +295,18 @@ export default function useMessages(
             message.conversation_id || conversation.id;
 
         // -------------------------------------------------
+        // System messages ("X added Y", "X left the group")
+        // are server-generated plaintext metadata — no
+        // encryption involved, so skip the whole decrypt path.
+        // -------------------------------------------------
+
+        if (message.message_type === "system") {
+
+            return message.ciphertext ?? "";
+
+        }
+
+        // -------------------------------------------------
         // Multi-device: pick the envelope addressed to THIS
         // device. Messages carry one envelope per device of
         // every participant; only our own copy is decryptable
@@ -410,7 +431,7 @@ export default function useMessages(
                 plaintext =
                     await decryptGroupMessage(
                         message,
-                        getPrivateKey(),
+                        await getPrivateKey(),
                         user.id,
                         myDeviceId,
                     );
@@ -547,7 +568,8 @@ export default function useMessages(
                     message.ciphertext,
                     encryptedKey,
                     message.nonce,
-                    getPrivateKey()
+                    await getPrivateKey(),
+                    DM_AAD_PREFIX + conversationId,
                 );
 
             }
@@ -616,6 +638,28 @@ export default function useMessages(
         }
 
         void initialize();
+
+    }, [conversation?.id]);
+
+    // After the sync secret is unlocked (recovery code entered
+    // in the modal, Settings, or the /recover page), re-fetch
+    // this conversation: the account-key copies now decrypt.
+    useEffect(() => {
+
+        if (!conversation) return;
+
+        const onUnlocked = () => void initialize();
+
+        window.addEventListener(
+            "cipherchat:sync-unlocked",
+            onUnlocked,
+        );
+
+        return () =>
+            window.removeEventListener(
+                "cipherchat:sync-unlocked",
+                onUnlocked,
+            );
 
     }, [conversation?.id]);
     useEffect(() => {
@@ -994,6 +1038,38 @@ export default function useMessages(
                             break;
 
                         //--------------------------------------------------
+                        // View-once media opened
+                        //--------------------------------------------------
+
+                        case "view_once_opened":
+
+                            setMessages(
+                                previous =>
+
+                                    previous.map(
+                                        message =>
+
+                                            message.id ===
+                                            event.message_id
+
+                                                ? {
+                                                    ...message,
+                                                    view_once_opened: true,
+                                                    attachments: (
+                                                        message.attachments || []
+                                                    ).map(attachment => ({
+                                                        ...attachment,
+                                                        view_once_opened: true,
+                                                    })),
+                                                }
+
+                                                : message
+                                    )
+                            );
+
+                            break;
+
+                        //--------------------------------------------------
                         // Delete
                         //--------------------------------------------------
 
@@ -1097,8 +1173,14 @@ export default function useMessages(
 
                             if (
                                 event.attachment?.attachment_type ===
-                                "image"
+                                    "image" &&
+                                !event.attachment.view_once
                             ) {
+
+                                // View-once media is excluded: on
+                                // recipients it must only download
+                                // when they tap to open; the sender's
+                                // own bubble preloads it instead.
 
 try {
 
@@ -1107,7 +1189,7 @@ try {
                                     event.attachment.id,
                                     {
                                         wrappedKey:
-                                            event.sender_id === user?.id
+                                            String(event.sender_id) === String(user?.id)
                                                 ? event.attachment.encrypted_key_sender
                                                 : event.attachment.encrypted_key_receiver,
 
@@ -1477,6 +1559,16 @@ try {
 
                 for (const attachment of message.attachments) {
 
+                    // View-once media is never auto-fetched — not
+                    // even the sender's own copy (WhatsApp-style:
+                    // no preview anywhere). Recipients fetch only
+                    // on tap, and closing deletes it server-side.
+                    if (attachment.view_once) {
+
+                        continue;
+
+                    }
+
                     if (
                         attachment.attachment_type ===
                         "image"
@@ -1489,7 +1581,7 @@ try {
                                     attachment.id,
                                     {
                                         wrappedKey:
-                                            message.sender_id === user?.id
+                                            String(message.sender_id) === String(user?.id)
                                                 ? attachment.encrypted_key_sender
                                                 : attachment.encrypted_key_receiver,
 
@@ -1578,6 +1670,7 @@ try {
             onProgress = null,
             signal = null,
             holdUntil = 0,
+            viewOnce = false,
         } = options;
 
         // Hoisted so the catch block can clean up an orphaned
@@ -1593,15 +1686,6 @@ try {
 
             if (isGroup) {
 
-                if (file) {
-
-                    throw new Error(
-                        "Attachments are not available "
-                        + "in group chats yet."
-                    );
-
-                }
-
                 if (!groupDetail?.participants?.length) {
 
                     throw new Error(
@@ -1611,25 +1695,167 @@ try {
 
                 }
 
-                const encrypted =
-                    await encryptGroupMessage(
-                        plaintext,
-                        groupDetail.participants,
-                        conversation.id,
-                    );
+                // Members actually used for wrapping — kept so a
+                // following attachment wraps its key for exactly
+                // the same audience as the message text.
+                let members = groupDetail.participants;
 
-                const saved =
-                    await messageService.sendMessage(
-                        conversation.id,
-                        encrypted,
-                        replyToId,
-                        isForwarded,
-                    );
+                // Encrypt with the CURRENT membership; if the
+                // server rejects because a member changed since
+                // this view was loaded, refresh and re-encrypt
+                // once (never wrap keys for a removed member).
+                let saved;
+
+                try {
+
+                    const encrypted =
+                        await encryptGroupMessage(
+                            plaintext,
+                            members,
+                            conversation.id,
+                        );
+
+                    saved =
+                        await messageService.sendMessage(
+                            conversation.id,
+                            encrypted,
+                            replyToId,
+                            isForwarded,
+                        );
+
+                }
+                catch (error) {
+
+                    const detail =
+                        error?.response?.data?.detail;
+
+                    if (
+                        typeof detail === "string" &&
+                        detail.includes(
+                            "Group membership changed"
+                        )
+                    ) {
+
+                        const fresh =
+                            await refreshGroupDetail();
+
+                        members =
+                            fresh?.participants ??
+                            groupDetail.participants;
+
+                        const encrypted =
+                            await encryptGroupMessage(
+                                plaintext,
+                                members,
+                                conversation.id,
+                            );
+
+                        saved =
+                            await messageService.sendMessage(
+                                conversation.id,
+                                encrypted,
+                                replyToId,
+                                isForwarded,
+                            );
+
+                    }
+                    else {
+
+                        throw error;
+
+                    }
+
+                }
+
+                //--------------------------------------------------
+                // Group attachment E2EE: AES-encrypt the file in
+                // the browser, then deliver its key per DEVICE as
+                // Signal envelopes for every member's devices —
+                // the same channel the group text itself uses.
+                // The single-receiver RSA columns carry only a
+                // placeholder (a group has no single receiver).
+                //--------------------------------------------------
+
+                let uploaded = null;
+
+                if (file) {
+
+                    const {
+                        encryptedFile,
+                        rawKey,
+                        iv,
+                    } = await encryptFile(file);
+
+                    const encryptedFileBlob =
+                        new File(
+                            [encryptedFile],
+                            file.name,
+                            {
+                                type:
+                                    file.type ||
+                                    "application/octet-stream",
+                            }
+                        );
+
+                    const memberBundles =
+                        await Promise.all(
+                            members.map(member =>
+                                deviceService
+                                    .getBundle(member.user_id)
+                                    .catch(() => null)
+                            )
+                        );
+
+                    const allDevices =
+                        memberBundles.flatMap(
+                            bundle =>
+                                bundle?.devices ?? []
+                        );
+
+                    const wrappedKeys =
+                        await encryptBytesForDevices({
+                            conversationId:
+                                conversation.id,
+                            bytes:
+                                new Uint8Array(rawKey),
+                            devices: allDevices,
+                        });
+
+                    uploaded =
+                        await messageService.uploadAttachment(
+                            saved.id,
+                            encryptedFileBlob,
+                            {
+                                encrypted_key_sender:
+                                    "signal",
+
+                                encrypted_key_receiver:
+                                    "signal",
+
+                                nonce:
+                                    arrayBufferToBase64(iv),
+
+                                wrapped_keys:
+                                    wrappedKeys,
+                            },
+                            {
+                                onProgress,
+                                signal,
+                                viewOnce,
+                            }
+                        );
+
+                    onProgress?.(100);
+
+                }
 
                 const localMessage = {
                     ...saved,
                     content: plaintext,
-                    attachments: [],
+                    attachments:
+                        file && uploaded
+                            ? [uploaded.attachment]
+                            : [],
                 };
 
                 setMessages(previous => [
@@ -1676,9 +1902,10 @@ try {
                     message_type: saved.message_type,
                     reply_to_id: saved.reply_to_id,
                     is_forwarded: saved.is_forwarded,
+                    forwarded_count: saved.forwarded_count,
                     expires_at: saved.expires_at,
                     created_at: saved.created_at,
-                    attachments: [],
+                    attachments: localMessage.attachments,
                     recipient_keys: saved.recipient_keys ?? [],
                     envelopes: saved.envelopes ?? [],
                 });
@@ -1716,9 +1943,7 @@ try {
                     devices: allDevices,
                 });
 
-            console.log(
-                "3. Sending to backend..."
-            );
+            // Message send in progress
 
             savedMessage =
                 await messageService.sendMessage(
@@ -1763,7 +1988,7 @@ try {
                     );
 
                 const myPublicKey =
-                    getPublicKey();
+                    await getPublicKey();
 
                 const theirPublicKey =
                     (
@@ -1828,6 +2053,7 @@ try {
                         {
                             onProgress,
                             signal,
+                            viewOnce,
                         }
                     );
 
@@ -1897,6 +2123,7 @@ try {
                 message_type: savedMessage.message_type,
                 reply_to_id: savedMessage.reply_to_id,
                 is_forwarded: savedMessage.is_forwarded,
+                forwarded_count: savedMessage.forwarded_count,
                 expires_at: savedMessage.expires_at,
                 created_at: savedMessage.created_at,
                 attachments: localMessage.attachments,
@@ -2134,15 +2361,65 @@ try {
 
                 }
 
-                encrypted =
-                    await encryptGroupMessage(
-                        newPlaintext,
-                        groupDetail.participants,
-                        conversation.id,
+                // Re-wrap the key for the CURRENT members; if
+                // membership changed since this view was loaded,
+                // refresh and re-encrypt once.
+                const sendGroupEdit = async (participants) => {
+
+                    const enc =
+                        await encryptGroupMessage(
+                            newPlaintext,
+                            participants,
+                            conversation.id,
+                        );
+
+                    await messageService.editMessage(
+                        messageId,
+                        enc,
                     );
 
-                recipientKeys =
-                    encrypted.recipient_keys ?? [];
+                    encrypted = enc;
+
+                    recipientKeys =
+                        enc.recipient_keys ?? [];
+
+                };
+
+                try {
+
+                    await sendGroupEdit(
+                        groupDetail.participants
+                    );
+
+                }
+                catch (error) {
+
+                    const detail =
+                        error?.response?.data?.detail;
+
+                    if (
+                        typeof detail === "string" &&
+                        detail.includes(
+                            "Group membership changed"
+                        )
+                    ) {
+
+                        const fresh =
+                            await refreshGroupDetail();
+
+                        await sendGroupEdit(
+                            fresh?.participants ??
+                            groupDetail.participants
+                        );
+
+                    }
+                    else {
+
+                        throw error;
+
+                    }
+
+                }
 
             }
             else {
@@ -2171,12 +2448,12 @@ try {
                         ],
                     });
 
-            }
+                await messageService.editMessage(
+                    messageId,
+                    encrypted,
+                );
 
-            await messageService.editMessage(
-                messageId,
-                encrypted,
-            );
+            }
 
             // Optimistic UI update
             setMessages(
@@ -2372,6 +2649,7 @@ try {
     async function forwardMessage(
         plaintext,
         targetUsers,
+        forwardedCount = 0,
     ) {
 
         const results = [];
@@ -2410,6 +2688,7 @@ try {
                         encrypted,
                         null,
                         true,
+                        forwardedCount,
                     );
 
                 try {
@@ -2446,6 +2725,7 @@ try {
                     message_type: saved.message_type,
                     reply_to_id: saved.reply_to_id,
                     is_forwarded: saved.is_forwarded,
+                    forwarded_count: saved.forwarded_count,
                     expires_at: saved.expires_at,
                     created_at: saved.created_at,
                     attachments: [],
@@ -2570,6 +2850,195 @@ try {
     }
 
     //--------------------------------------------------
+    // Star / Unstar (per-user, personal)
+    //--------------------------------------------------
+
+    async function toggleStarMessage(
+        messageId,
+        starred,
+    ) {
+
+        // Optimistic update
+        setMessages(
+            previous => previous.map(
+                message =>
+
+                    message.id === messageId
+
+                        ? {
+                            ...message,
+                            is_starred: starred,
+                        }
+
+                        : message
+            )
+        );
+
+        setStarredList(previous =>
+            previous.map(
+                message =>
+
+                    message.id === messageId
+
+                        ? {
+                            ...message,
+                            is_starred: starred,
+                        }
+
+                        : message
+            )
+        );
+
+        try {
+
+            await messageService.toggleStar(
+                messageId,
+                starred,
+            );
+
+        }
+        catch (error) {
+
+            console.error(
+                "Failed to toggle star",
+                error
+            );
+
+            setError(error);
+
+            // Roll back the optimistic update
+            setMessages(
+                previous => previous.map(
+                    message =>
+
+                        message.id === messageId
+
+                            ? {
+                                ...message,
+                                is_starred: !starred,
+                            }
+
+                            : message
+                )
+            );
+
+            throw error;
+
+        }
+
+    }
+
+    //--------------------------------------------------
+    // View-once media opened by the recipient
+    //--------------------------------------------------
+
+    async function reportViewOnceOpened(messageId) {
+
+        try {
+
+            await messageService.markViewOnceOpened(
+                messageId
+            );
+
+            // The server broadcasts "view_once_opened" to both
+            // sides; this local update keeps the opener's UI
+            // instant even if the socket is slow.
+            setMessages(
+                previous => previous.map(
+                    message =>
+
+                        message.id === messageId
+
+                            ? {
+                                ...message,
+                                view_once_opened: true,
+                            }
+
+                            : message
+                )
+            );
+
+        }
+        catch (error) {
+
+            console.error(
+                "Failed to mark view-once media as opened",
+                error
+            );
+
+            setError(error);
+
+        }
+
+    }
+
+    //--------------------------------------------------
+    // Load starred messages of the current conversation
+    //--------------------------------------------------
+
+    async function loadStarred() {
+
+        setStarredLoading(true);
+
+        try {
+
+            const history =
+                await messageService.getStarredMessages(
+                    conversation.id
+                );
+
+            const decrypted =
+                await Promise.all(
+                    history.map(
+                        async (message) => {
+
+                            try {
+
+                                const plaintext =
+                                    await decryptIncoming(message);
+
+                                return {
+                                    ...message,
+                                    content: plaintext,
+                                };
+
+                            }
+                            catch {
+
+                                return {
+                                    ...message,
+                                    content:
+                                        "[Unable to decrypt]",
+                                };
+
+                            }
+
+                        }
+                    )
+                );
+
+            setStarredList(decrypted);
+
+        }
+        catch (error) {
+
+            console.error(
+                "Failed to load starred messages",
+                error
+            );
+
+            setStarredList([]);
+
+        }
+        finally {
+
+            setStarredLoading(false);
+
+        }
+
+    }
+
+    //--------------------------------------------------
     // Return Hook API
     //--------------------------------------------------
 
@@ -2589,6 +3058,16 @@ try {
         editMessage,
 
         toggleReaction,
+
+        toggleStarMessage,
+
+        starredList,
+
+        loadStarred,
+
+        starredLoading,
+
+        reportViewOnceOpened,
 
         forwardMessage,
 

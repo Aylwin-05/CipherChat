@@ -126,6 +126,16 @@ static/uploads/
 *.bak
 *.swp
 *.swo
+*.new
+
+# Internal security audit notes (never publish)
+PRODUCTION_FIXES.txt
+
+# One-off debug/fix scripts and scratch files
+fix_*.py
+verify_*.py
+check_frontend.py
+failure_log.txt
 
 # ==========================================================
 # Secrets

@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -151,7 +151,6 @@ async def unhandled_exception_handler(
                 ),
             },
         )
-
     return error_response
 
 # ==========================================================
@@ -196,15 +195,20 @@ async def health(
 ):
     """
     Health check endpoint.
+
+    Returns 503 when the database is unavailable, so load
+    balancers and orchestrators can detect unhealthy nodes.
     """
 
     try:
         await db.execute(text("SELECT 1"))
         database_status = "connected"
-
     except Exception as e:
         logger.error("Health check failed: %s", e)
-        database_status = "disconnected"
+        raise HTTPException(
+            status_code=503,
+            detail="Database unavailable",
+        )
 
     return {
         "status": "healthy",

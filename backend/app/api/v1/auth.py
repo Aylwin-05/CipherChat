@@ -1,5 +1,7 @@
 from uuid import UUID
 
+import ipaddress
+
 import logging
 
 from fastapi import (
@@ -18,6 +20,7 @@ from app.core.rate_limit import (
     get_limiter,
 )
 from app.database.session import get_db
+from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import rate_limit
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.refresh_token_repository import (
@@ -25,10 +28,15 @@ from app.repositories.refresh_token_repository import (
     RefreshTokenRepository,
 )
 from app.schemas.auth import (
+    DisableTwoFARequest,
+    EnableTwoFARequest,
     MessageResponse,
+    ResetTwoFARequest,
     SendOTPRequest,
     TokenResponse,
+    TwoFAStatusResponse,
     VerifyOTPRequest,
+    VerifyTwoFARequest,
 )
 from app.services.auth_service import AuthService
 from app.services.jwt_service import JWTService
@@ -71,9 +79,17 @@ def _clear_refresh_cookie(response: Response):
 
 
 def _client_ip(request: Request) -> str:
+    # Same rules as app/dependencies/rate_limit.py: the reverse
+    # proxy overwrites X-Forwarded-For with $remote_addr, so the
+    # header is only honored when it holds a valid IP literal.
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        candidate = forwarded.split(",")[0].strip()
+        try:
+            ipaddress.ip_address(candidate)
+            return candidate
+        except ValueError:
+            pass
     return request.client.host if request.client else "unknown"
 
 
@@ -143,7 +159,6 @@ async def send_otp(
 
 @router.post(
     "/verify-otp",
-    response_model=TokenResponse,
     dependencies=[
         rate_limit("otp.verify.ip", 50, 600),
     ],
@@ -158,8 +173,6 @@ async def verify_otp(
     repository = AuthRepository(db)
 
     service = AuthService(repository)
-
-    jwt = JWTService()
 
     result = await service.verify_otp(
         request_body.email,
@@ -180,12 +193,265 @@ async def verify_otp(
         user.email,
     )
 
+    # ----------------------------------------------------------
+    # Two-step verification is enabled: do NOT issue tokens yet.
+    # The client must present the 6-digit PIN with a short-lived
+    # two_fa token (issued here) within its 10-minute window.
+    # ----------------------------------------------------------
+
+    if user.two_fa_enabled:
+
+        jwt = JWTService()
+
+        two_fa_token = jwt.create_two_fa_token(
+            user_id=str(user.id),
+            email=user.email,
+        )
+
+        return {
+            "two_fa_required": True,
+            "two_fa_token": two_fa_token,
+            "email": user.email,
+        }
+
+    jwt = JWTService()
+
     access_token = jwt.create_access_token(
         user_id=str(user.id),
         email=user.email,
     )
 
     # -- issue + persist refresh token (rotation-enabled) ---------
+    refresh_service = RefreshTokenService(
+        RefreshTokenRepository(db)
+    )
+
+    refresh_token = await refresh_service.issue(
+        user.id,
+        user_agent=request.headers.get("user-agent"),
+        ip_address=_client_ip(request),
+    )
+
+    _set_refresh_cookie(response, refresh_token)
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user=user,
+    )
+
+
+# ==========================================================
+# 2FA: Status
+# ==========================================================
+
+@router.get(
+    "/two-fa/status",
+    response_model=TwoFAStatusResponse,
+)
+async def two_fa_status(
+    current_user=Depends(get_current_user),
+):
+    return {
+        "two_fa_enabled": bool(
+            current_user.two_fa_enabled
+        ),
+    }
+
+
+# ==========================================================
+# 2FA: Enable (set the 6-digit PIN)
+# ==========================================================
+
+@router.put(
+    "/two-fa",
+    response_model=TwoFAStatusResponse,
+    dependencies=[
+        rate_limit("auth.two_fa", 10, 300),
+    ],
+)
+async def enable_two_fa(
+    request_body: EnableTwoFARequest,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+
+    if request_body.pin != request_body.confirm_pin:
+
+        raise HTTPException(
+            status_code=400,
+            detail="The PINs do not match.",
+        )
+
+    repository = AuthRepository(db)
+
+    service = AuthService(repository)
+
+    return await service.enable_two_fa(
+        current_user,
+        request_body.pin,
+    )
+
+
+# ==========================================================
+# 2FA: Disable (requires the current PIN)
+# ==========================================================
+
+@router.delete(
+    "/two-fa",
+    response_model=TwoFAStatusResponse,
+    dependencies=[
+        rate_limit("auth.two_fa", 10, 300),
+    ],
+)
+async def disable_two_fa(
+    request_body: DisableTwoFARequest,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+
+    repository = AuthRepository(db)
+
+    service = AuthService(repository)
+
+    try:
+
+        return await service.disable_two_fa(
+            current_user,
+            request_body.pin,
+        )
+
+    except ValueError as error:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+
+
+# ==========================================================
+# 2FA: Complete Login with PIN
+# ==========================================================
+
+@router.post(
+    "/two-fa/verify",
+    dependencies=[
+        rate_limit("auth.two_fa.verify", 10, 300),
+    ],
+)
+async def verify_two_fa(
+    request: Request,
+    response: Response,
+    request_body: VerifyTwoFARequest,
+    db: AsyncSession = Depends(get_db),
+):
+
+    jwt = JWTService()
+
+    payload = jwt.verify_two_fa_token(
+        request_body.two_fa_token
+    )
+
+    if payload is None:
+
+        raise HTTPException(
+            status_code=401,
+            detail="This login session has expired. "
+                   "Please request a new code.",
+        )
+
+    repository = AuthRepository(db)
+
+    service = AuthService(repository)
+
+    user = await service.verify_two_fa(
+        payload["email"],
+        request_body.pin,
+    )
+
+    if user is None:
+
+        raise HTTPException(
+            status_code=400,
+            detail="The PIN you entered is incorrect.",
+        )
+
+    logger.info(
+        "Two-step verification passed: user=%s",
+        user.id,
+    )
+
+    access_token = jwt.create_access_token(
+        user_id=str(user.id),
+        email=user.email,
+    )
+
+    refresh_service = RefreshTokenService(
+        RefreshTokenRepository(db)
+    )
+
+    refresh_token = await refresh_service.issue(
+        user.id,
+        user_agent=request.headers.get("user-agent"),
+        ip_address=_client_ip(request),
+    )
+
+    _set_refresh_cookie(response, refresh_token)
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user=user,
+    )
+
+
+# ==========================================================
+# 2FA: Reset via Email OTP (recovery)
+#
+# Proving control of the account email with a fresh OTP
+# disables 2FA and logs the user in, so the account owner is
+# never permanently locked out (the email is the primary
+# factor; the PIN is the second layer).
+# ==========================================================
+
+@router.post(
+    "/two-fa/reset",
+    dependencies=[
+        rate_limit("auth.two_fa.reset", 5, 600),
+    ],
+)
+async def reset_two_fa(
+    request: Request,
+    response: Response,
+    request_body: ResetTwoFARequest,
+    db: AsyncSession = Depends(get_db),
+):
+
+    repository = AuthRepository(db)
+
+    service = AuthService(repository)
+
+    result = await service.reset_two_fa(
+        request_body.email,
+        request_body.otp,
+    )
+
+    if result is None:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired OTP.",
+        )
+
+    user = result["user"]
+
+    jwt = JWTService()
+
+    access_token = jwt.create_access_token(
+        user_id=str(user.id),
+        email=user.email,
+    )
+
     refresh_service = RefreshTokenService(
         RefreshTokenRepository(db)
     )

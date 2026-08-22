@@ -26,6 +26,8 @@ THUMBNAIL_DIR = BASE_UPLOAD_DIR / "thumbnails"
 
 AVATAR_DIR = BASE_UPLOAD_DIR / "avatars"
 
+STORIES_DIR = BASE_UPLOAD_DIR / "stories"
+
 
 # ==========================================================
 # Maximum File Sizes
@@ -44,6 +46,8 @@ MAX_ARCHIVE_SIZE = 200 * 1024 * 1024
 MAX_ENCRYPTED_SIZE = 500 * 1024 * 1024
 
 MAX_AVATAR_SIZE = 5 * 1024 * 1024
+
+MAX_STORY_SIZE = 20 * 1024 * 1024
 
 
 # ==========================================================
@@ -111,6 +115,22 @@ AVATAR_EXTENSIONS = {
     ".webp",
 }
 
+STORY_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+
+STORY_MEDIA_TYPES = {
+    ".jpg": "image",
+    ".jpeg": "image",
+    ".png": "image",
+    ".gif": "image",
+    ".bmp": "image",
+    ".webp": "image",
+    ".mp4": "video",
+    ".mov": "video",
+    ".avi": "video",
+    ".mkv": "video",
+    ".webm": "video",
+}
+
 
 # ==========================================================
 # Create folders automatically
@@ -137,6 +157,8 @@ for directory in [
     THUMBNAIL_DIR,
 
     AVATAR_DIR,
+
+    STORIES_DIR,
 
 ]:
     directory.mkdir(

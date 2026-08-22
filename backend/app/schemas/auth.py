@@ -17,6 +17,14 @@ OTPCode = Annotated[
     ),
 ]
 
+TwoFAPin = Annotated[
+    str,
+    Field(
+        pattern=r"^\d{6}$",
+        description="6-digit two-step verification PIN",
+    ),
+]
+
 
 # ==========================================================
 # Requests
@@ -37,6 +45,55 @@ class VerifyOTPRequest(BaseModel):
 class RefreshTokenRequest(BaseModel):
 
     refresh_token: str
+
+
+# ==========================================================
+# Two-Step Verification (2FA PIN)
+# ==========================================================
+
+class EnableTwoFARequest(BaseModel):
+
+    pin: TwoFAPin
+
+    confirm_pin: TwoFAPin
+
+
+class DisableTwoFARequest(BaseModel):
+
+    pin: TwoFAPin
+
+
+class VerifyTwoFARequest(BaseModel):
+
+    two_fa_token: str
+
+    pin: TwoFAPin
+
+
+class ResetTwoFARequest(BaseModel):
+
+    email: EmailStr
+
+    otp: OTPCode
+
+
+class TwoFAStatusResponse(BaseModel):
+
+    two_fa_enabled: bool
+
+
+class TwoFAChallengeResponse(BaseModel):
+    """
+    Returned by verify-otp when the account has 2FA enabled:
+    no tokens are issued until the PIN is presented with the
+    short-lived two_fa_token.
+    """
+
+    two_fa_required: bool = True
+
+    two_fa_token: str
+
+    email: EmailStr
 
 
 # ==========================================================

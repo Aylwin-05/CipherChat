@@ -20,7 +20,44 @@ import { useAuth } from "../../context/AuthContext";
 
 import { getTheme, setTheme } from "../../utils/theme";
 
+import {
+    getPushState,
+    subscribe as subscribePush,
+    unsubscribe as unsubscribePush,
+    isSupported as pushSupported,
+} from "../../services/pushService";
+
+import blockService from "../../services/blockService";
+
+import authService from "../../services/authService";
+
+import appLock from "../../utils/appLock";
+
 import "./SettingsPage.css";
+
+const PRIVACY_OPTIONS = [
+    { value: "everyone", label: "Everyone" },
+    { value: "my_contacts", label: "My contacts" },
+    { value: "nobody", label: "Nobody" },
+];
+
+const PRIVACY_FIELDS = [
+    {
+        key: "last_seen",
+        label: "Last seen & online",
+        hint: "Who can see when you are online.",
+    },
+    {
+        key: "profile_photo",
+        label: "Profile photo",
+        hint: "Who can see your profile photo.",
+    },
+    {
+        key: "story",
+        label: "Status updates",
+        hint: "Who can see your 24h status updates.",
+    },
+];
 
 const THEME_OPTIONS = [
     {
@@ -68,6 +105,481 @@ export default function SettingsPage() {
     const [theme, setThemeState] = useState(getTheme());
 
     const [confirmLogout, setConfirmLogout] = useState(false);
+
+    // ==========================================================
+    // Web push notifications
+    // ==========================================================
+
+    const [pushState, setPushState] = useState("loading");
+
+    const [pushBusy, setPushBusy] = useState(false);
+
+    // ==========================================================
+    // Privacy (last seen / photo / status)
+    // ==========================================================
+
+    const [privacy, setPrivacy] = useState({
+        last_seen: "everyone",
+        profile_photo: "everyone",
+        story: "my_contacts",
+    });
+
+    const [privacyBusy, setPrivacyBusy] = useState(false);
+
+    // ==========================================================
+    // Blocked users
+    // ==========================================================
+
+    const [blockedUsers, setBlockedUsers] = useState([]);
+
+    const [blockedBusy, setBlockedBusy] = useState(false);
+
+    const [unblockBusyId, setUnblockBusyId] = useState(null);
+
+    // ==========================================================
+    // Two-step verification (server-side 2FA PIN)
+    // ==========================================================
+
+    const [twoFA, setTwoFA] = useState({
+        enabled: false,
+        loading: true,
+    });
+
+    const [twoFAMode, setTwoFAMode] = useState("idle"); // idle | setup | teardown
+
+    const [twoFABusy, setTwoFABusy] = useState(false);
+
+    const [twoFAError, setTwoFAError] = useState("");
+
+    const [twoFAPin, setTwoFAPin] = useState("");
+
+    const [twoFAConfirm, setTwoFAConfirm] = useState("");
+
+    // ==========================================================
+    // App lock (local device PIN)
+    // ==========================================================
+
+    const [appLockMode, setAppLockMode] = useState("idle"); // idle | setup | change | teardown
+
+    const [appLockEnabled, setAppLockEnabled] = useState(false);
+
+    const [appLockBusy, setAppLockBusy] = useState(false);
+
+    const [appLockError, setAppLockError] = useState("");
+
+    const [appLockPin, setAppLockPin] = useState("");
+
+    const [appLockConfirm, setAppLockConfirm] = useState("");
+
+    const [appLockCurrent, setAppLockCurrent] = useState("");
+
+    useEffect(() => {
+
+        blockService.getPrivacy()
+            .then(setPrivacy)
+            .catch(() => {});
+
+        blockService.getBlockedUsers()
+            .then(setBlockedUsers)
+            .catch(() => {});
+
+        appLock.isConfigured()
+            .then(setAppLockEnabled)
+            .catch(() => {});
+
+        authService.getTwoFAStatus()
+            .then(({ two_fa_enabled }) =>
+                setTwoFA({
+                    enabled: two_fa_enabled,
+                    loading: false,
+                })
+            )
+            .catch(() =>
+                setTwoFA(previous => ({
+                    ...previous,
+                    loading: false,
+                }))
+            );
+
+    }, []);
+
+    async function handlePrivacyChange(field, value) {
+
+        if (privacyBusy) return;
+
+        const previous = privacy;
+
+        setPrivacy({
+            ...privacy,
+            [field]: value,
+        });
+
+        setPrivacyBusy(true);
+
+        try {
+
+            const updated =
+                await blockService.updatePrivacy({
+                    [field]: value,
+                });
+
+            setPrivacy(updated);
+
+        }
+        catch (error) {
+
+            setPrivacy(previous);
+
+            toast.error(
+                error.response?.data?.detail ??
+                "Unable to update privacy settings."
+            );
+
+        }
+        finally {
+
+            setPrivacyBusy(false);
+
+        }
+
+    }
+
+    async function handleUnblock(userId) {
+
+        if (unblockBusyId) return;
+
+        setUnblockBusyId(userId);
+
+        try {
+
+            await blockService.unblockUser(userId);
+
+            setBlockedUsers(users =>
+                users.filter(user => user.id !== userId)
+            );
+
+            toast.success("User unblocked.");
+
+        }
+        catch (error) {
+
+            toast.error(
+                error.response?.data?.detail ??
+                "Unable to unblock this user."
+            );
+
+        }
+        finally {
+
+            setUnblockBusyId(null);
+
+        }
+
+    }
+
+    // ==========================================================
+    // Two-step verification handlers
+    // ==========================================================
+
+    async function handleEnableTwoFA(event) {
+
+        event.preventDefault();
+
+        if (twoFABusy) return;
+
+        setTwoFAError("");
+
+        if (twoFAPin.length !== 6) {
+
+            setTwoFAError("PIN must be 6 digits.");
+
+            return;
+
+        }
+
+        if (twoFAPin !== twoFAConfirm) {
+
+            setTwoFAError("The PINs do not match.");
+
+            return;
+
+        }
+
+        setTwoFABusy(true);
+
+        try {
+
+            const status =
+                await authService.enableTwoFA(
+                    twoFAPin,
+                    twoFAConfirm
+                );
+
+            setTwoFA({
+                enabled: status.two_fa_enabled,
+                loading: false,
+            });
+
+            setTwoFAMode("idle");
+
+            setTwoFAPin("");
+
+            setTwoFAConfirm("");
+
+            toast.success(
+                "Two-step verification is now on."
+            );
+
+        }
+        catch (error) {
+
+            setTwoFAError(
+                error.response?.data?.detail ??
+                "Unable to enable two-step verification."
+            );
+
+        }
+        finally {
+
+            setTwoFABusy(false);
+
+        }
+
+    }
+
+    async function handleDisableTwoFA(event) {
+
+        event.preventDefault();
+
+        if (twoFABusy) return;
+
+        setTwoFAError("");
+
+        if (twoFAPin.length !== 6) {
+
+            setTwoFAError(
+                "Enter your current PIN to turn it off."
+            );
+
+            return;
+
+        }
+
+        setTwoFABusy(true);
+
+        try {
+
+            const status =
+                await authService.disableTwoFA(twoFAPin);
+
+            setTwoFA({
+                enabled: status.two_fa_enabled,
+                loading: false,
+            });
+
+            setTwoFAMode("idle");
+
+            setTwoFAPin("");
+
+            setTwoFAConfirm("");
+
+            toast.success(
+                "Two-step verification is now off."
+            );
+
+        }
+        catch (error) {
+
+            setTwoFAError(
+                error.response?.data?.detail ??
+                "Unable to disable two-step verification."
+            );
+
+        }
+        finally {
+
+            setTwoFABusy(false);
+
+        }
+
+    }
+
+    // ==========================================================
+    // App lock handlers
+    // ==========================================================
+
+    async function handleAppLockSubmit(event) {
+
+        event.preventDefault();
+
+        if (appLockBusy) return;
+
+        setAppLockError("");
+
+        if (appLockMode === "teardown") {
+
+            if (appLockCurrent.length < 4) {
+
+                setAppLockError(
+                    "Enter your current PIN to turn it off."
+                );
+
+                return;
+
+            }
+
+        }
+        else if (!appLock.isValidPin(appLockPin)) {
+
+            setAppLockError("PIN must be 4–6 digits.");
+
+            return;
+
+        }
+
+        setAppLockBusy(true);
+
+        try {
+
+            if (appLockMode === "setup") {
+
+                if (appLockPin !== appLockConfirm) {
+
+                    setAppLockError(
+                        "The PINs do not match."
+                    );
+
+                    setAppLockBusy(false);
+
+                    return;
+
+                }
+
+                await appLock.setPin(appLockPin);
+
+                setAppLockEnabled(true);
+
+                toast.success(
+                    "App lock is now on for this device."
+                );
+
+            }
+            else if (appLockMode === "change") {
+
+                await appLock.changePin(
+                    appLockCurrent,
+                    appLockPin
+                );
+
+                toast.success(
+                    "App lock PIN updated."
+                );
+
+            }
+            else if (appLockMode === "teardown") {
+
+                const verdict =
+                    await appLock.verify(appLockCurrent);
+
+                if (!verdict.valid || verdict.notConfigured) {
+
+                    setAppLockError(
+                        verdict.notConfigured
+                            ? "No PIN is configured on this device."
+                            : "The current PIN is incorrect."
+                    );
+
+                    setAppLockBusy(false);
+
+                    return;
+
+                }
+
+                appLock.removePin();
+
+                setAppLockEnabled(false);
+
+                toast.success(
+                    "App lock is now off for this device."
+                );
+
+            }
+
+            setAppLockMode("idle");
+
+            setAppLockPin("");
+
+            setAppLockConfirm("");
+
+            setAppLockCurrent("");
+
+        }
+        catch (error) {
+
+            setAppLockError(
+                error?.message ||
+                "Unable to update app lock."
+            );
+
+        }
+        finally {
+
+            setAppLockBusy(false);
+
+        }
+
+    }
+
+    useEffect(() => {
+
+        getPushState()
+            .then(setPushState)
+            .catch(() => setPushState("disabled"));
+
+    }, []);
+
+    async function handleToggleNotifications() {
+
+        if (pushBusy) return;
+
+        setPushBusy(true);
+
+        try {
+
+            if (pushState === "enabled") {
+
+                await unsubscribePush();
+
+                setPushState("disabled");
+
+            }
+            else {
+
+                const ok = await subscribePush();
+
+                setPushState(
+                    ok ? "enabled" : await getPushState()
+                );
+
+            }
+
+        }
+        catch (error) {
+
+            console.error(error);
+
+            toast.error(
+                "Could not change notification settings."
+            );
+
+        }
+        finally {
+
+            setPushBusy(false);
+
+        }
+
+    }
 
     // ==========================================================
     // Support: recover a lost/forgotten recovery code
@@ -351,6 +863,67 @@ export default function SettingsPage() {
         logout();
     }
 
+    // Enter-an-existing-code box — shown in EVERY support state
+    // (idle, fresh-key confirm, link-sent) so the user can unlock
+    // without leaving the page.
+    const recoveryUnlockBox = (
+        !recoveryHasSecret && (
+            <div className="recovery-unlock-box">
+                <details>
+                    <summary>
+                        Already have your code? Unlock
+                        this browser
+                    </summary>
+
+                    <form
+                        className="recovery-unlock-form"
+                        onSubmit={handleUnlockCode}
+                    >
+                        <input
+                            type="text"
+                            className="recovery-unlock-input"
+                            placeholder="XXXXXX-XXXXXX-XXXXXX-XXXXXX"
+                            value={unlockCode}
+                            onChange={event =>
+                                setUnlockCode(
+                                    event.target.value.toUpperCase()
+                                )
+                            }
+                            spellCheck={false}
+                        />
+
+                        <button
+                            type="submit"
+                            className="btn-ghost"
+                            disabled={
+                                unlockBusy ||
+                                unlockCode.length < 20
+                            }
+                        >
+                            {unlockBusy
+                                ? "Unlocking…"
+                                : "Unlock"}
+                        </button>
+                    </form>
+
+                    {unlockError && (
+                        <p className="recovery-support-error">
+                            {unlockError}
+                        </p>
+                    )}
+
+                    {unlocked && (
+                        <p className="recovery-unlock-ok">
+                            This browser is now unlocked —
+                            the full history is readable
+                            here.
+                        </p>
+                    )}
+                </details>
+            </div>
+        )
+    );
+
     return (
 
         <div className="settings-page">
@@ -411,7 +984,7 @@ export default function SettingsPage() {
                         <input
                             ref={fileInputRef}
                             type="file"
-                            accept="image/*"
+                            accept="image/jpeg,image/png,image/webp,image/gif"
                             hidden
                             onChange={handleAvatarChange}
                         />
@@ -560,7 +1133,797 @@ export default function SettingsPage() {
 
             </section>
 
-            {/* ------- account ------- */}
+            {/* ------- notifications ------- */}
+
+            <section className="settings-card">
+
+                <div className="settings-card-head">
+
+                    <h3>Notifications</h3>
+
+                    <p>
+                        Get browser notifications for new messages
+                        and status updates, even when CipherChat is
+                        in the background or closed. Notifications
+                        are privacy-safe: they never reveal message
+                        content — it stays encrypted.
+                    </p>
+
+                </div>
+
+                <div className="settings-row">
+
+                    <div className="settings-row-text">
+                        <strong>Web notifications</strong>
+                        <small>
+                            {pushState === "loading"
+                                ? "Checking…"
+                                : pushState === "unsupported"
+                                    ? "Not supported by this browser."
+                                    : pushState === "blocked"
+                                        ? "Notifications are blocked — "
+                                          + "enable them in your browser "
+                                          + "settings."
+                                        : pushState === "enabled"
+                                            ? "Enabled on this browser."
+                                            : "Receive notifications on "
+                                              + "this device."}
+                        </small>
+                    </div>
+
+                    {pushSupported() && (
+                        <button
+                            type="button"
+                            className={
+                                pushState === "enabled"
+                                    ? "btn-ghost"
+                                    : "btn-primary"
+                            }
+                            onClick={handleToggleNotifications}
+                            disabled={
+                                pushState === "loading" ||
+                                pushBusy ||
+                                pushState === "blocked" ||
+                                pushState === "unsupported"
+                            }
+                        >
+                            {pushBusy
+                                ? "Working…"
+                                : pushState === "enabled"
+                                    ? "Disable"
+                                    : "Enable"}
+                        </button>
+                    )}
+
+                </div>
+
+            </section>
+
+            {/* ------- privacy ------- */}
+
+            <section className="settings-card">
+
+                <div className="settings-card-head">
+
+                    <h3>Privacy</h3>
+
+                    <p>
+                        Control who can see your online status,
+                        profile photo and status updates. Blocked
+                        users can never see any of these.
+                    </p>
+
+                </div>
+
+                <div className="privacy-list">
+
+                    {PRIVACY_FIELDS.map(field => (
+
+                        <div
+                            key={field.key}
+                            className="settings-row"
+                        >
+
+                            <div className="settings-row-text">
+
+                                <strong>{field.label}</strong>
+
+                                <small>{field.hint}</small>
+
+                            </div>
+
+                            <select
+                                className="privacy-select"
+                                value={privacy[field.key]}
+                                disabled={privacyBusy}
+                                onChange={(e) =>
+                                    handlePrivacyChange(
+                                        field.key,
+                                        e.target.value,
+                                    )
+                                }
+                            >
+
+                                {PRIVACY_OPTIONS.map(option => (
+
+                                    <option
+                                        key={option.value}
+                                        value={option.value}
+                                    >
+                                        {option.label}
+                                    </option>
+
+                                ))}
+
+                            </select>
+
+                        </div>
+
+                    ))}
+
+                </div>
+
+            </section>
+
+            {/* ------- blocked users ------- */}
+
+            <section className="settings-card">
+
+                <div className="settings-card-head">
+
+                    <h3>Blocked users</h3>
+
+                    <p>
+                        Blocked users cannot message or call you,
+                        and cannot see your presence, status
+                        updates or profile photo. You also stop
+                        seeing theirs. Blocking removes them from
+                        your friends.
+                    </p>
+
+                </div>
+
+                {blockedUsers.length === 0 ? (
+
+                    <div className="settings-row">
+
+                        <div className="settings-row-text">
+
+                            <strong>No blocked users</strong>
+
+                            <small>
+                                Block someone from their chat
+                                header to stop them contacting
+                                you.
+                            </small>
+
+                        </div>
+
+                    </div>
+
+                ) : (
+
+                    <div className="blocked-list">
+
+                        {blockedUsers.map(user => (
+
+                            <div
+                                key={user.id}
+                                className="blocked-row"
+                            >
+
+                                <UserAvatar
+                                    user={user}
+                                    className="blocked-avatar"
+                                />
+
+                                <div className="blocked-meta">
+
+                                    <strong>
+                                        {user.display_name}
+                                    </strong>
+
+                                    <small>
+                                        @{user.username}
+                                    </small>
+
+                                </div>
+
+                                <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    disabled={
+                                        unblockBusyId === user.id
+                                    }
+                                    onClick={() =>
+                                        handleUnblock(user.id)
+                                    }
+                                >
+                                    {unblockBusyId === user.id
+                                        ? "Unblocking…"
+                                        : "Unblock"}
+                                </button>
+
+                            </div>
+
+                        ))}
+
+                    </div>
+
+                )}
+
+            </section>
+
+            {/* ------- two-step verification ------- */}
+
+            <section className="settings-card">
+
+                <div className="settings-card-head">
+
+                    <h3>Two-step verification</h3>
+
+                    <p>
+                        A 6-digit PIN that must be entered after
+                        the email code when you log in on a new
+                        device. If you forget it, you can reset
+                        it with your email code.
+                    </p>
+
+                </div>
+
+                {twoFA.loading ? (
+
+                    <div className="settings-row">
+
+                        <div className="settings-row-text">
+
+                            <strong>Checking…</strong>
+
+                            <small>
+                                Loading two-step verification
+                                status.
+                            </small>
+
+                        </div>
+
+                    </div>
+
+                ) : twoFA.enabled ? (
+
+                    <div className="settings-actions">
+
+                        {twoFAMode === "idle" ? (
+
+                            <div className="settings-row">
+
+                                <div className="settings-row-text">
+
+                                    <strong>
+                                        Two-step verification is on
+                                    </strong>
+
+                                    <small>
+                                        Your PIN is required after
+                                        the email code on new
+                                        devices.
+                                    </small>
+
+                                </div>
+
+                                <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    onClick={() => {
+                                        setTwoFAMode("teardown");
+
+                                        setTwoFAError("");
+                                    }}
+                                >
+                                    Turn off
+                                </button>
+
+                            </div>
+
+                        ) : (
+
+                            <form
+                                className="settings-form"
+                                onSubmit={handleDisableTwoFA}
+                            >
+
+                                <div className="settings-field">
+
+                                    <label htmlFor="twofa-disable-pin">
+                                        Current PIN
+                                    </label>
+
+                                    <input
+                                        id="twofa-disable-pin"
+                                        type="password"
+                                        maxLength={6}
+                                        placeholder="••••••"
+                                        value={twoFAPin}
+                                        onChange={(e) =>
+                                            setTwoFAPin(
+                                                e.target.value.replace(/\D/g, "")
+                                            )
+                                        }
+                                        inputMode="numeric"
+                                        autoComplete="off"
+                                    />
+
+                                </div>
+
+                                {twoFAError && (
+
+                                    <p className="settings-field-error">
+                                        {twoFAError}
+                                    </p>
+
+                                )}
+
+                                <div className="settings-actions">
+
+                                    <button
+                                        type="button"
+                                        className="btn-ghost"
+                                        onClick={() => {
+                                            setTwoFAMode("idle");
+
+                                            setTwoFAPin("");
+
+                                            setTwoFAError("");
+                                        }}
+                                        disabled={twoFABusy}
+                                    >
+                                        Cancel
+                                    </button>
+
+                                    <button
+                                        type="submit"
+                                        className="btn-danger"
+                                        disabled={twoFABusy}
+                                    >
+                                        {twoFABusy
+                                            ? "Turning off…"
+                                            : "Turn off 2FA"}
+                                    </button>
+
+                                </div>
+
+                            </form>
+
+                        )}
+
+                    </div>
+
+                ) : twoFAMode === "setup" ? (
+
+                    <form
+                        className="settings-form"
+                        onSubmit={handleEnableTwoFA}
+                    >
+
+                        <div className="settings-field">
+
+                            <label htmlFor="twofa-pin">
+                                New PIN (6 digits)
+                            </label>
+
+                            <input
+                                id="twofa-pin"
+                                type="password"
+                                maxLength={6}
+                                placeholder="••••••"
+                                value={twoFAPin}
+                                onChange={(e) =>
+                                    setTwoFAPin(
+                                        e.target.value.replace(/\D/g, "")
+                                    )
+                                }
+                                inputMode="numeric"
+                                autoComplete="off"
+                            />
+
+                        </div>
+
+                        <div className="settings-field">
+
+                            <label htmlFor="twofa-confirm">
+                                Confirm PIN
+                            </label>
+
+                            <input
+                                id="twofa-confirm"
+                                type="password"
+                                maxLength={6}
+                                placeholder="••••••"
+                                value={twoFAConfirm}
+                                onChange={(e) =>
+                                    setTwoFAConfirm(
+                                        e.target.value.replace(/\D/g, "")
+                                    )
+                                }
+                                inputMode="numeric"
+                                autoComplete="off"
+                            />
+
+                        </div>
+
+                        {twoFAError && (
+
+                            <p className="settings-field-error">
+                                {twoFAError}
+                            </p>
+
+                        )}
+
+                        <div className="settings-actions">
+
+                            <button
+                                type="button"
+                                className="btn-ghost"
+                                onClick={() => {
+                                    setTwoFAMode("idle");
+
+                                    setTwoFAPin("");
+
+                                    setTwoFAConfirm("");
+
+                                    setTwoFAError("");
+                                }}
+                                disabled={twoFABusy}
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                type="submit"
+                                className="btn-primary"
+                                disabled={twoFABusy}
+                            >
+                                {twoFABusy
+                                    ? "Enabling…"
+                                    : "Turn on"}
+                            </button>
+
+                        </div>
+
+                    </form>
+
+                ) : (
+
+                    <div className="settings-actions">
+
+                        <div className="settings-row">
+
+                            <div className="settings-row-text">
+
+                                <strong>
+                                    Two-step verification is off
+                                </strong>
+
+                                <small>
+                                    Add an extra PIN layer to your
+                                    account logins.
+                                </small>
+
+                            </div>
+
+                            <button
+                                type="button"
+                                className="btn-primary"
+                                onClick={() => {
+                                    setTwoFAMode("setup");
+
+                                    setTwoFAError("");
+                                }}
+                            >
+                                Turn on
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                )}
+
+            </section>
+
+            {/* ------- app lock ------- */}
+
+            <section className="settings-card">
+
+                <div className="settings-card-head">
+
+                    <h3>App lock</h3>
+
+                    <p>
+                        Lock CipherChat on this device with a
+                        4–6 digit PIN. It&apos;s local only — never
+                        sent to our servers. Forgot it? Use
+                        &quot;Forgot PIN&quot; on the lock screen to
+                        reset it.
+                    </p>
+
+                </div>
+
+                <div className="settings-actions">
+
+                    {appLockMode === "setup" ? (
+
+                        <form
+                            className="settings-form"
+                            onSubmit={handleAppLockSubmit}
+                        >
+
+                            <div className="settings-field">
+
+                                <label htmlFor="applock-pin">
+                                    New PIN (4–6 digits)
+                                </label>
+
+                                <input
+                                    id="applock-pin"
+                                    type="password"
+                                    maxLength={6}
+                                    placeholder="••••••"
+                                    value={appLockPin}
+                                    onChange={(e) =>
+                                        setAppLockPin(
+                                            e.target.value.replace(/\D/g, "")
+                                        )
+                                    }
+                                    inputMode="numeric"
+                                    autoComplete="off"
+                                />
+
+                            </div>
+
+                            <div className="settings-field">
+
+                                <label htmlFor="applock-confirm">
+                                    Confirm PIN
+                                </label>
+
+                                <input
+                                    id="applock-confirm"
+                                    type="password"
+                                    maxLength={6}
+                                    placeholder="••••••"
+                                    value={appLockConfirm}
+                                    onChange={(e) =>
+                                        setAppLockConfirm(
+                                            e.target.value.replace(/\D/g, "")
+                                        )
+                                    }
+                                    inputMode="numeric"
+                                    autoComplete="off"
+                                />
+
+                            </div>
+
+                            {appLockError && (
+
+                                <p className="settings-field-error">
+                                    {appLockError}
+                                </p>
+
+                            )}
+
+                            <div className="settings-actions">
+
+                                <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    onClick={() => {
+                                        setAppLockMode("idle");
+
+                                        setAppLockPin("");
+
+                                        setAppLockConfirm("");
+
+                                        setAppLockError("");
+                                    }}
+                                    disabled={appLockBusy}
+                                >
+                                    Cancel
+                                </button>
+
+                                <button
+                                    type="submit"
+                                    className="btn-primary"
+                                    disabled={appLockBusy}
+                                >
+                                    {appLockBusy
+                                        ? "Enabling…"
+                                        : "Turn on"}
+                                </button>
+
+                            </div>
+
+                        </form>
+
+                    ) : appLockMode === "change" || appLockMode === "teardown" ? (
+
+                        <form
+                            className="settings-form"
+                            onSubmit={handleAppLockSubmit}
+                        >
+
+                            <div className="settings-field">
+
+                                <label htmlFor="applock-current">
+                                    Current PIN
+                                </label>
+
+                                <input
+                                    id="applock-current"
+                                    type="password"
+                                    maxLength={6}
+                                    placeholder="••••••"
+                                    value={appLockCurrent}
+                                    onChange={(e) =>
+                                        setAppLockCurrent(
+                                            e.target.value.replace(/\D/g, "")
+                                        )
+                                    }
+                                    inputMode="numeric"
+                                    autoComplete="off"
+                                />
+
+                            </div>
+
+                            {appLockMode === "change" && (
+
+                                <div className="settings-field">
+
+                                    <label htmlFor="applock-new">
+                                        New PIN (4–6 digits)
+                                    </label>
+
+                                    <input
+                                        id="applock-new"
+                                        type="password"
+                                        maxLength={6}
+                                        placeholder="••••••"
+                                        value={appLockPin}
+                                        onChange={(e) =>
+                                            setAppLockPin(
+                                                e.target.value.replace(/\D/g, "")
+                                            )
+                                        }
+                                        inputMode="numeric"
+                                        autoComplete="off"
+                                    />
+
+                                </div>
+
+                            )}
+
+                            {appLockError && (
+
+                                <p className="settings-field-error">
+                                    {appLockError}
+                                </p>
+
+                            )}
+
+                            <div className="settings-actions">
+
+                                <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    onClick={() => {
+                                        setAppLockMode("idle");
+
+                                        setAppLockPin("");
+
+                                        setAppLockCurrent("");
+
+                                        setAppLockError("");
+                                    }}
+                                    disabled={appLockBusy}
+                                >
+                                    Cancel
+                                </button>
+
+                                <button
+                                    type="submit"
+                                    className={
+                                        appLockMode === "teardown"
+                                            ? "btn-danger"
+                                            : "btn-primary"
+                                    }
+                                    disabled={appLockBusy}
+                                >
+                                    {appLockBusy
+                                        ? "Working…"
+                                        : appLockMode === "teardown"
+                                            ? "Turn off"
+                                            : "Change PIN"}
+                                </button>
+
+                            </div>
+
+                        </form>
+
+                    ) : (
+
+                        <div className="settings-row">
+
+                            <div className="settings-row-text">
+
+                                <strong>
+                                    {appLockEnabled
+                                        ? "App lock is on for this device"
+                                        : "App lock is off"}
+                                </strong>
+
+                                <small>
+                                    {appLockEnabled
+                                        ? "CipherChat asks for this PIN when you open the app in this browser."
+                                        : "Anyone with this device can open CipherChat without a PIN."}
+                                </small>
+
+                            </div>
+
+                            <div className="settings-row-buttons">
+
+                                {appLockEnabled && (
+                                    <button
+                                        type="button"
+                                        className="btn-ghost"
+                                        onClick={() => {
+                                            setAppLockMode("change");
+
+                                            setAppLockError("");
+                                        }}
+                                    >
+                                        Change PIN
+                                    </button>
+                                )}
+
+                                <label
+                                    className="switch"
+                                    title={appLockEnabled
+                                        ? "Turn off app lock"
+                                        : "Turn on app lock"}
+                                >
+
+                                    <input
+                                        type="checkbox"
+                                        checked={appLockEnabled}
+                                        disabled={appLockBusy || appLockMode !== "idle"}
+                                        onChange={() => {
+                                            if (appLockEnabled) {
+                                                setAppLockMode("teardown");
+                                            }
+                                            else {
+                                                setAppLockMode("setup");
+                                            }
+
+                                            setAppLockError("");
+                                        }}
+                                    />
+
+                                    <span className="switch-track">
+                                        <span className="switch-thumb" />
+                                    </span>
+
+                                </label>
+
+                            </div>
+
+                        </div>
+
+                    )}
+
+                </div>
+
+            </section>
+
+            {/* ------- support ------- */}
 
             <section className="settings-card support-zone">
 
@@ -588,6 +1951,8 @@ export default function SettingsPage() {
                             (which stops working) and restores the
                             same synced history.
                         </div>
+
+                        {recoveryUnlockBox}
 
                     </div>
 
@@ -630,6 +1995,8 @@ export default function SettingsPage() {
                                 </button>
                             </div>
                         </div>
+
+                        {recoveryUnlockBox}
 
                     </div>
 
@@ -714,61 +2081,7 @@ export default function SettingsPage() {
                             </p>
                         )}
 
-                        {!recoveryHasSecret && (
-                            <div className="recovery-unlock-box">
-                                <details>
-                                    <summary>
-                                        Already have your code? Unlock
-                                        this browser
-                                    </summary>
-
-                                    <form
-                                        className="recovery-unlock-form"
-                                        onSubmit={handleUnlockCode}
-                                    >
-                                        <input
-                                            type="text"
-                                            className="recovery-unlock-input"
-                                            placeholder="XXXXXX-XXXXXX-XXXXXX-XXXXXX"
-                                            value={unlockCode}
-                                            onChange={event =>
-                                                setUnlockCode(
-                                                    event.target.value.toUpperCase()
-                                                )
-                                            }
-                                            spellCheck={false}
-                                        />
-
-                                        <button
-                                            type="submit"
-                                            className="btn-ghost"
-                                            disabled={
-                                                unlockBusy ||
-                                                unlockCode.length < 20
-                                            }
-                                        >
-                                            {unlockBusy
-                                                ? "Unlocking…"
-                                                : "Unlock"}
-                                        </button>
-                                    </form>
-
-                                    {unlockError && (
-                                        <p className="recovery-support-error">
-                                            {unlockError}
-                                        </p>
-                                    )}
-
-                                    {unlocked && (
-                                        <p className="recovery-unlock-ok">
-                                            This browser is now unlocked —
-                                            the full history is readable
-                                            here.
-                                        </p>
-                                    )}
-                                </details>
-                            </div>
-                        )}
+                        {recoveryUnlockBox}
 
                     </div>
 

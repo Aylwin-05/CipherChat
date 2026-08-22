@@ -1,50 +1,92 @@
 import axios from "axios";
 
-const API_BASE_URL =
-    import.meta.env.VITE_API_URL || "/api/v1";
+const api = axios.create({
+    baseURL: "/api/v1",
+    headers: {
+        "Content-Type": "application/json",
+    },
+    timeout: 10000,
+});
 
 // ==========================================================
-// ACCESS TOKEN — memory only
-// ==========================================================
+// ACCESS TOKEN STORE
 //
-// The access token is kept in a module variable so it is never
-// recoverable from localStorage/XSS. The refresh token lives
-// exclusively in the server's HttpOnly cookie and is rotated on
-// every refresh, so it never needs client-side storage either.
+// The access token lives in memory (and is mirrored to
+// localStorage so a page reload keeps the session until the
+// token expires).
+// ==========================================================
 
-let accessToken = null;
+let accessToken =
+    localStorage.getItem("access_token");
 
-export function setAccessToken(token) {
-    accessToken = token || null;
+export function setAccessToken(
+    token
+) {
+
+    accessToken = token;
+
+    if (token) {
+
+        localStorage.setItem(
+            "access_token",
+            token
+        );
+
+    }
+
+    else {
+
+        localStorage.removeItem(
+            "access_token"
+        );
+
+    }
+
 }
 
 export function getAccessToken() {
+
     return accessToken;
+
 }
 
 export function clearAccessToken() {
-    accessToken = null;
+
+    setAccessToken(null);
+
 }
 
-const api = axios.create({
-    baseURL: API_BASE_URL,
-    headers: {
-        "Content-Type": "application/json",
-    },
-    timeout: 10000,
-    withCredentials: true,
-});
+// ==========================================================
+// REFRESH ACCESS TOKEN
+//
+// The refresh token lives in an HttpOnly cookie which the
+// browser attaches automatically. Returns the new access
+// token string, or throws.
+// ==========================================================
 
-// Raw instance for the refresh call itself so the response
-// interceptor (which also fires on 401) never loops.
-const apiWithoutInterceptors = axios.create({
-    baseURL: API_BASE_URL,
-    headers: {
-        "Content-Type": "application/json",
-    },
-    timeout: 10000,
-    withCredentials: true,
-});
+export async function refreshAccessToken() {
+
+    const response =
+        await axios.post(
+            "/api/v1/auth/refresh"
+        );
+
+    const newAccessToken =
+        response.data.access_token;
+
+    if (!newAccessToken) {
+
+        throw new Error(
+            "Refresh returned no access token."
+        );
+
+    }
+
+    setAccessToken(newAccessToken);
+
+    return newAccessToken;
+
+}
 
 // ==========================================================
 // REQUEST INTERCEPTOR
@@ -54,7 +96,8 @@ api.interceptors.request.use(
 
     (config) => {
 
-        const token = getAccessToken();
+        const token =
+            getAccessToken();
 
         if (token) {
 
@@ -72,53 +115,8 @@ api.interceptors.request.use(
 );
 
 // ==========================================================
-// TOKEN REFRESH (via HttpOnly cookie)
-//
-// Single-flight: concurrent callers (React StrictMode double
-// effects, parallel 401 retries) share ONE refresh request.
-// Without this, two parallel rotations of the same token would
-// trip the server's reuse detector and revoke the whole family.
+// TOKEN REFRESH
 // ==========================================================
-
-let refreshInFlight = null;
-
-async function refreshAccessToken() {
-
-    if (refreshInFlight) {
-
-        return refreshInFlight;
-
-    }
-
-    refreshInFlight = (async () => {
-
-        const response =
-            await apiWithoutInterceptors.post(
-                "/auth/refresh",
-                {},
-            );
-
-        setAccessToken(
-            response.data.access_token
-        );
-
-        return response.data.access_token;
-
-    })();
-
-    try {
-
-        return await refreshInFlight;
-
-    }
-
-    finally {
-
-        refreshInFlight = null;
-
-    }
-
-}
 
 let isRefreshing = false;
 
@@ -248,6 +246,10 @@ api.interceptors.response.use(
                 clearAccessToken();
 
                 localStorage.removeItem(
+                    "refresh_token"
+                );
+
+                localStorage.removeItem(
                     "user"
                 );
 
@@ -280,5 +282,3 @@ api.interceptors.response.use(
 );
 
 export default api;
-
-export { refreshAccessToken };

@@ -32,20 +32,6 @@ const deviceService = {
     },
 
     // ======================================================
-    // Replenish One-Time PreKeys (primary device)
-    // ======================================================
-
-    async replenishPreKeys() {
-
-        const response = await api.post(
-            "/devices/prekeys/replenish"
-        );
-
-        return response.data;
-
-    },
-
-    // ======================================================
     // Upload Client-Generated One-Time PreKeys
     // ======================================================
 

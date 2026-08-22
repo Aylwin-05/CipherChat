@@ -106,6 +106,13 @@ async def websocket_endpoint(
             }
         )
 
+        # Replay any ringing call offers this user missed while
+        # offline (closed tab, reconnect gap) so the incoming-call
+        # UI always shows up instead of being silently lost.
+        await manager.deliver_pending_calls(
+            current_user.id
+        )
+
         # Notify everyone sharing a conversation with this user
         await manager.broadcast_presence(
             current_user.id,

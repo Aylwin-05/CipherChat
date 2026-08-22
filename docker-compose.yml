@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: cipherchat
-      POSTGRES_PASSWORD: cipherchat
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cipherchat}
       POSTGRES_DB: cipherchat
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -26,7 +26,7 @@ services:
     environment:
       APP_ENV: production
       DEBUG: "false"
-      DATABASE_URL: postgresql+asyncpg://cipherchat:cipherchat@postgres:5432/cipherchat
+      DATABASE_URL: postgresql+asyncpg://cipherchat:${POSTGRES_PASSWORD:-cipherchat}@postgres:5432/cipherchat
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       MASTER_KEY: ${MASTER_KEY:?set MASTER_KEY in .env}
@@ -46,6 +46,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     restart: unless-stopped
 
   frontend:
@@ -53,7 +59,13 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
 volumes:

@@ -16,7 +16,9 @@ from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import rate_limit
 from app.models.user import User
 from app.repositories.attachment_repository import AttachmentRepository
+from app.repositories.block_repository import BlockRepository
 from app.repositories.conversation_repository import ConversationRepository
+from app.repositories.device_repository import DeviceRepository
 from app.repositories.message_repository import MessageRepository
 from app.schemas.message import (
     EditMessageRequest,
@@ -24,6 +26,7 @@ from app.schemas.message import (
     ReactionRequest,
     ReactionResponse,
     SendMessageRequest,
+    StarRequest,
     SyncCopyUpsert,
 )
 from app.services.attachment_service import AttachmentService
@@ -57,6 +60,7 @@ def serialize_message(message):
         "nonce": attachment.nonce,
         "wrapped_keys": attachment.wrapped_keys or [],
         "sync_blob": attachment.sync_blob,
+        "view_once": attachment.view_once,
     }
     for attachment in message.attachments]
 
@@ -83,12 +87,16 @@ def serialize_message(message):
 
         edited=message.edited,
         is_forwarded=message.is_forwarded,
+        forwarded_count=message.forwarded_count,
         deleted_for_everyone=message.deleted_for_everyone,
+        is_starred=getattr(message, "is_starred", False),
 
         is_read=message.is_read,
         delivered_at=message.delivered_at,
         read_at=message.read_at,
         expires_at=message.expires_at,
+
+        view_once_opened=message.view_once_opened,
 
         created_at=message.created_at,
         updated_at=message.updated_at,
@@ -141,6 +149,42 @@ async def send_message(
     conversation_repository = ConversationRepository(db)
     attachment_repository = AttachmentRepository(db)
 
+    conversation = await conversation_repository.get_by_id(
+        request.conversation_id
+    )
+
+    if conversation is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found.",
+        )
+
+    if conversation.conversation_type == "private":
+
+        block_repository = BlockRepository(db)
+
+        participants = (
+            await conversation_repository.get_participants(
+                request.conversation_id
+            )
+        )
+
+        for participant in participants:
+
+            other_id = participant.user_id
+
+            if other_id == current_user.id:
+                continue
+
+            if await block_repository.is_blocked(
+                current_user.id,
+                other_id,
+            ):
+                raise HTTPException(
+                    status_code=403,
+                    detail="You cannot send messages to this user.",
+                )
+
     attachment_service = AttachmentService(
         attachment_repository
     )
@@ -149,6 +193,7 @@ async def send_message(
         message_repository,
         conversation_repository,
         attachment_service,
+        DeviceRepository(db),
     )
 
     try:
@@ -163,6 +208,7 @@ async def send_message(
             message_type=request.message_type,
             reply_to_id=request.reply_to_id,
             is_forwarded=request.is_forwarded,
+            forwarded_count=request.forwarded_count,
             recipient_keys=[
                 (key.user_id, key.encrypted_key)
                 for key in request.recipient_keys
@@ -237,6 +283,7 @@ async def edit_message(
         message_repository,
         conversation_repository,
         attachment_service,
+        DeviceRepository(db),
     )
 
     try:
@@ -343,6 +390,7 @@ async def toggle_reaction(
         message_repository,
         conversation_repository,
         attachment_service,
+        DeviceRepository(db),
     )
 
     try:
@@ -366,6 +414,171 @@ async def toggle_reaction(
                 "event": "reaction",
                 **result,
             },
+        )
+
+        return result
+
+    except ValueError as e:
+
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+
+# ==========================================================
+# STAR / UNSTAR MESSAGE (per-user, personal)
+# ==========================================================
+
+@router.put(
+    "/{message_id}/star",
+    dependencies=[
+        rate_limit("messages.star", 120, 60),
+    ],
+)
+async def set_star(
+    message_id: UUID,
+    request: StarRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+
+    message_repository = MessageRepository(db)
+    conversation_repository = ConversationRepository(db)
+    attachment_repository = AttachmentRepository(db)
+
+    attachment_service = AttachmentService(
+        attachment_repository
+    )
+
+    service = MessageService(
+        message_repository,
+        conversation_repository,
+        attachment_service,
+        DeviceRepository(db),
+    )
+
+    try:
+
+        result = await service.set_star(
+            current_user=current_user,
+            message_id=message_id,
+            starred=request.starred,
+        )
+
+        await db.commit()
+
+        return result
+
+    except ValueError as e:
+
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+
+# ==========================================================
+# GET STARRED MESSAGES (optionally filtered by conversation)
+# ==========================================================
+
+@router.get(
+    "/starred",
+    response_model=list[MessageResponse],
+    dependencies=[
+        rate_limit("messages.starred", 60, 60),
+    ],
+)
+async def get_starred_messages(
+    conversation_id: UUID | None = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+
+    message_repository = MessageRepository(db)
+    conversation_repository = ConversationRepository(db)
+    attachment_repository = AttachmentRepository(db)
+
+    attachment_service = AttachmentService(
+        attachment_repository
+    )
+
+    service = MessageService(
+        message_repository,
+        conversation_repository,
+        attachment_service,
+        DeviceRepository(db),
+    )
+
+    try:
+
+        messages = await service.get_starred_messages(
+            current_user=current_user,
+            conversation_id=conversation_id,
+        )
+
+        return [
+            serialize_message(message)
+            for message in messages
+        ]
+
+    except ValueError as e:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+
+# ==========================================================
+# VIEW ONCE MEDIA: recipient reports the media as opened
+# ==========================================================
+
+@router.post(
+    "/{message_id}/view-once-opened",
+    dependencies=[
+        rate_limit("messages.viewonce", 30, 60),
+    ],
+)
+async def mark_view_once_opened(
+    message_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+
+    message_repository = MessageRepository(db)
+    conversation_repository = ConversationRepository(db)
+    attachment_repository = AttachmentRepository(db)
+
+    attachment_service = AttachmentService(
+        attachment_repository
+    )
+
+    service = MessageService(
+        message_repository,
+        conversation_repository,
+        attachment_service,
+        DeviceRepository(db),
+    )
+
+    try:
+
+        result = await service.mark_view_once_opened(
+            current_user=current_user,
+            message_id=message_id,
+        )
+
+        await db.commit()
+
+        # Both sides must swap the media for the "Opened"
+        # placeholder in real time.
+        await manager.broadcast(
+            UUID(result["conversation_id"]),
+            result,
         )
 
         return result
@@ -409,6 +622,7 @@ async def get_messages(
         message_repository,
         conversation_repository,
         attachment_service,
+        DeviceRepository(db),
     )
 
     try:
@@ -466,6 +680,7 @@ async def upsert_sync_envelope(
         message_repository,
         conversation_repository,
         attachment_service,
+        DeviceRepository(db),
     )
 
     try:
@@ -527,6 +742,7 @@ async def delete_for_everyone(
         message_repository,
         conversation_repository,
         attachment_service,
+        DeviceRepository(db),
     )
 
     try:
@@ -577,6 +793,7 @@ async def delete_for_me(
         message_repository,
         conversation_repository,
         attachment_service,
+        DeviceRepository(db),
     )
 
     try:

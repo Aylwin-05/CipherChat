@@ -116,6 +116,28 @@ class User(Base, TimestampMixin):
     )
 
     # ==========================================================
+    # Two-step verification (2FA PIN)
+    #
+    # A 6-digit PIN the user sets in Settings. When enabled, a
+    # successful email OTP login does NOT issue tokens: the
+    # client must first present the PIN (which travels through a
+    # short-lived two_fa JWT issued at OTP time). Only the
+    # scrypt hash is stored — never the PIN itself.
+    # ==========================================================
+
+    two_fa_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    # Format: "scrypt$<salt_hex>$<hash_hex>".
+    two_fa_secret: Mapped[str | None] = mapped_column(
+        String(512),
+        nullable=True,
+    )
+
+    # ==========================================================
     # Account recovery code (cross-browser history sync)
     #
     # The recovery code is shown once (and emailed) when the

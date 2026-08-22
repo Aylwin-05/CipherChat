@@ -7,6 +7,7 @@ from app.models.attachment import Attachment
 from app.models.message import Message
 from app.models.message_reaction import MessageReaction
 from app.models.message_recipient_key import MessageRecipientKey
+from app.models.message_star import MessageStar
 from app.models.signal_session import SignalSession
 from app.repositories.base_repository import BaseRepository
 
@@ -88,6 +89,12 @@ class MessageRepository(BaseRepository):
         await self.db.execute(
             delete(MessageReaction).where(
                 MessageReaction.message_id.in_(message_ids)
+            )
+        )
+
+        await self.db.execute(
+            delete(MessageStar).where(
+                MessageStar.message_id.in_(message_ids)
             )
         )
 
@@ -331,6 +338,12 @@ class MessageRepository(BaseRepository):
         )
 
         await self.db.execute(
+            delete(MessageStar).where(
+                MessageStar.message_id.in_(message_ids)
+            )
+        )
+
+        await self.db.execute(
             delete(MessageRecipientKey).where(
                 MessageRecipientKey.message_id.in_(message_ids)
             )
@@ -391,20 +404,30 @@ class MessageRepository(BaseRepository):
     # PER-RECIPIENT KEYS (group E2EE)
     # ==========================================================
 
-    async def add_recipient_key(
+    async def purge_removed_user_keys(
         self,
-        message_id: UUID,
+        conversation_id: UUID,
         user_id: UUID,
-        encrypted_key: str,
-    ) -> MessageRecipientKey:
+    ) -> int:
+        """Remove per-recipient wrapped keys for a removed user.
 
-        row = MessageRecipientKey(
-            message_id=message_id,
-            user_id=user_id,
-            encrypted_key=encrypted_key,
+        This ensures the removed user can no longer decrypt
+        new group messages. Remaining members will have their
+        keys re-wrapped during message re-encryption.
+        """
+
+        result = await self.db.execute(
+            delete(MessageRecipientKey).where(
+                MessageRecipientKey.message_id.in_(
+                    select(Message.id).where(
+                        Message.conversation_id == conversation_id
+                    )
+                ),
+                MessageRecipientKey.user_id == user_id,
+            )
         )
-
-        return await self.create(row)
+        await self.db.flush()
+        return result.rowcount
 
     async def replace_recipient_keys(
         self,
@@ -552,6 +575,105 @@ class MessageRepository(BaseRepository):
     ):
 
         await self.delete(reaction)
+
+    # ==========================================================
+    # STARS (per-user, personal)
+    # ==========================================================
+
+    async def get_star(
+        self,
+        message_id: UUID,
+        user_id: UUID,
+    ) -> MessageStar | None:
+
+        result = await self.execute(
+
+            select(MessageStar).where(
+                MessageStar.message_id == message_id,
+                MessageStar.user_id == user_id,
+            )
+
+        )
+
+        return result.scalar_one_or_none()
+
+    async def add_star(
+        self,
+        message_id: UUID,
+        user_id: UUID,
+    ) -> MessageStar:
+
+        star = MessageStar(
+            message_id=message_id,
+            user_id=user_id,
+        )
+
+        return await self.create(star)
+
+    async def remove_star(
+        self,
+        star: MessageStar,
+    ):
+
+        await self.delete(star)
+
+    async def get_starred_message_ids(
+        self,
+        conversation_id: UUID,
+        user_id: UUID,
+    ) -> set[UUID]:
+
+        result = await self.execute(
+
+            select(MessageStar.message_id)
+            .join(
+                Message,
+                MessageStar.message_id == Message.id,
+            )
+            .where(
+                Message.conversation_id == conversation_id,
+                MessageStar.user_id == user_id,
+            )
+
+        )
+
+        return {row[0] for row in result.all()}
+
+    async def get_starred_messages(
+        self,
+        user_id: UUID,
+        conversation_id: UUID | None = None,
+    ) -> list[Message]:
+
+        await self.purge_expired()
+
+        query = (
+            select(Message)
+            .join(
+                MessageStar,
+                MessageStar.message_id == Message.id,
+            )
+            .options(
+                *_message_options()
+            )
+            .where(
+                MessageStar.user_id == user_id,
+            )
+        )
+
+        if conversation_id is not None:
+
+            query = query.where(
+                Message.conversation_id == conversation_id
+            )
+
+        result = await self.execute(
+            query.order_by(
+                MessageStar.created_at.desc()
+            )
+        )
+
+        return list(result.scalars().all())
 
     # ==========================================================
     # SAVE

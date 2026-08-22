@@ -31,7 +31,7 @@ export function arrayBufferToBase64(
         }
     );
 
-    return window.btoa(
+    return btoa(
         binary
     );
 
@@ -47,7 +47,7 @@ export function base64ToArrayBuffer(
 ) {
 
     const binary =
-        window.atob(
+        atob(
             base64
         );
 

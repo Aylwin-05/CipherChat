@@ -67,24 +67,11 @@ export function generateOneTimePrekeys({ startId = 1, count = OPK_BATCH_SIZE } =
 }
 
 // ==========================================================
-// Client-side "encryption" of private key material
-//
-// The backend stores private keys as opaque base64 blobs
-// (its tests use b64(b64(raw)) as the placeholder convention).
-// The real key stays in the local IndexedDB key store; this
-// value is only what the server keeps on record.
-// ==========================================================
-
-export function wrapPrivateKey(rawBytes) {
-    return b64encode(utf8Encode(b64encode(rawBytes)));
-}
-
-function utf8Encode(text) {
-    return new TextEncoder().encode(text);
-}
-
-// ==========================================================
 // Build the /devices/register payload
+//
+// ONLY public key material is uploaded. The private halves of
+// every key stay in the local IndexedDB key store, so the
+// server can never decrypt sessions.
 // ==========================================================
 
 export function buildRegisterPayload({
@@ -105,15 +92,12 @@ export function buildRegisterPayload({
         app_version: appVersion,
         identity_key_public: b64encode(identity.publicKey),
         identity_key_x25519: b64encode(identity.x25519Public),
-        identity_key_private_encrypted: wrapPrivateKey(identity.privateKey),
         signed_prekey_public: b64encode(signedPrekey.publicKey),
-        signed_prekey_private_encrypted: wrapPrivateKey(signedPrekey.privateKey),
         signed_prekey_id: signedPrekey.keyId,
         signed_prekey_signature: b64encode(signedPrekey.signature),
         one_time_prekeys: oneTimePrekeys.map((opk) => ({
             key_id: opk.keyId,
             public_key: b64encode(opk.publicKey),
-            private_key_encrypted: wrapPrivateKey(opk.privateKey),
         })),
     };
 }

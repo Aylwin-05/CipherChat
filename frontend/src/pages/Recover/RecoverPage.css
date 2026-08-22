@@ -47,3 +47,55 @@
     line-height: 1.5;
     text-align: center;
 }
+
+/* ---------- "already have your code?" unlock box ---------- */
+
+.recovery-unlock-box {
+    width: 100%;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+
+.recovery-unlock-box summary {
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    user-select: none;
+}
+
+.recovery-unlock-form {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.recovery-unlock-input {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    color: var(--text-1);
+    font-size: 13.5px;
+    letter-spacing: 1px;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.recovery-unlock-input:focus {
+    border-color: var(--accent);
+}
+
+.recovery-unlock-submit {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.recovery-unlock-error {
+    margin-top: 10px;
+    font-size: 13px;
+    line-height: 1.45;
+}

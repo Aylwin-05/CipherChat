@@ -19,12 +19,14 @@ logger = logging.getLogger(__name__)
 #
 # The server NEVER stores the secret in plaintext:
 #
-#   recovery_code     24-char code, shown once + emailed
+#   recovery_code     24-char code, shown on screen exactly once
 #   recovery_salt     random 16 bytes (hex)
 #   recovery_wrapped  AES-256-GCM(secret, PBKDF2(code, salt))
 #
-# A stolen database therefore yields ciphertexts + a wrapped key
-# that is only usable by guessing the code (2^~119 candidates).
+# The code is never stored and never emailed; a lost code goes
+# through the /recovery link + OTP flow. A stolen database
+# therefore yields ciphertexts + a wrapped key that is only
+# usable by guessing the code (2^~119 candidates).
 # ==========================================================
 
 RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -89,8 +91,8 @@ def create_recovery_key() -> dict:
     Generate a fresh (code, salt, wrapped secret) triple.
 
     Returns the code in RAW form (the caller shows it to the user
-    and emails it — it is never stored), plus the salt + wrapped
-    blob that ARE stored on the user row.
+    once — it is never stored and never emailed), plus the salt +
+    wrapped blob that ARE stored on the user row.
     """
     code = generate_recovery_code()
     salt = os.urandom(SALT_BYTES)

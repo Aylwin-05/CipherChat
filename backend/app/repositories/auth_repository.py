@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from app.models.otp import OTPCode
 from app.models.user import User
@@ -73,6 +73,14 @@ class AuthRepository(BaseRepository):
         return user
 
     # ==========================================================
+    # Save (persist dirty attributes, e.g. 2FA fields)
+    # ==========================================================
+
+    async def save(self):
+
+        await self.update()
+
+    # ==========================================================
     # User Keys
     # ==========================================================
 
@@ -140,9 +148,23 @@ class AuthRepository(BaseRepository):
         otp: OTPCode,
     ):
 
-        otp.is_used = True
+        updated = await self.db.execute(
+            update(OTPCode)
+            .where(
+                OTPCode.id == otp.id,
+                OTPCode.is_used.is_(False),
+            )
+            .values(
+                is_used=True,
+            )
+            .execution_options(
+                synchronize_session=False
+            )
+        )
 
-        await self.update()
+        if updated.rowcount == 0:
+            # Another request already consumed this OTP
+            raise ValueError("OTP already used or expired.")
 
     async def increment_attempts(
         self,

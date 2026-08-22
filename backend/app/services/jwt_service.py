@@ -21,6 +21,10 @@ class JWTService:
             settings.REFRESH_TOKEN_EXPIRE_DAYS
         )
 
+        self.two_fa_token_expire = (
+            settings.TWO_FA_TOKEN_EXPIRE_MINUTES
+        )
+
     # ======================================================
     # Access Token
     # ======================================================
@@ -78,6 +82,53 @@ class JWTService:
             self.secret_key,
             algorithm=self.algorithm,
         )
+
+    # ======================================================
+    # Two-Factor Token (short-lived proof of OTP success)
+    #
+    # Issued when the user passes the email OTP but has 2FA
+    # enabled. The login does not complete until the PIN is
+    # presented together with this token; the short expiry
+    # limits the window in which a stolen token is useful.
+    # ======================================================
+
+    def create_two_fa_token(
+        self,
+        user_id: str,
+        email: str,
+    ) -> str:
+
+        expire = datetime.now(timezone.utc) + timedelta(
+            minutes=self.two_fa_token_expire
+        )
+
+        payload = {
+            "sub": user_id,
+            "email": email,
+            "type": "two_fa",
+            "exp": expire,
+        }
+
+        return jwt.encode(
+            payload,
+            self.secret_key,
+            algorithm=self.algorithm,
+        )
+
+    def verify_two_fa_token(
+        self,
+        token: str,
+    ) -> dict[str, Any] | None:
+
+        payload = self.decode_token(token)
+
+        if payload is None:
+            return None
+
+        if payload.get("type") != "two_fa":
+            return None
+
+        return payload
 
     # ======================================================
     # Decode

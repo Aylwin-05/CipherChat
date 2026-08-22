@@ -10,6 +10,8 @@ import {
 
 import {
     decryptMessage,
+    GROUP_AAD_PREFIX,
+    encodeAAD,
 } from "../crypto/cryptoService";
 
 import {
@@ -65,6 +67,14 @@ export async function encryptGroupMessage(
             {
                 name: "AES-GCM",
                 iv,
+                // Bind the ciphertext to this group: a copy
+                // moved into another conversation fails GCM
+                // authentication at decrypt time.
+                additionalData:
+                    encodeAAD(
+                        GROUP_AAD_PREFIX +
+                        conversationId
+                    ),
             },
             key,
             encoder.encode(
@@ -294,6 +304,7 @@ export async function decryptGroupMessage(
         ownKey.encrypted_key,
         message.nonce,
         privateKeyBase64,
+        GROUP_AAD_PREFIX + message.conversation_id,
     );
 
 }

@@ -66,6 +66,8 @@ async def upload_attachment(
 
     wrapped_keys: str | None = Form(None),
 
+    view_once: bool = Form(False),
+
     current_user: User = Depends(get_current_user),
 
     db: AsyncSession = Depends(get_db),
@@ -103,6 +105,13 @@ async def upload_attachment(
         for participant in participants
     )
 
+    if not allowed:
+
+        raise HTTPException(
+            status_code=403,
+            detail="You are not a member of this conversation.",
+        )
+
     if encrypted:
 
         if not encrypted_key_sender:
@@ -138,6 +147,7 @@ async def upload_attachment(
             encrypted_key_receiver=encrypted_key_receiver,
             nonce=nonce,
             wrapped_keys=parsed_wrapped_keys,
+            view_once=view_once,
         )
 
     except Exception as e:
@@ -290,6 +300,12 @@ async def download_attachment(
             detail="Access denied.",
         )
 
+    # View-once media stays downloadable until the RECIPIENT
+    # reports it opened (POST /messages/{id}/view-once-opened),
+    # which deletes the file server-side. Consuming on first GET
+    # here would break the sender's preview after a refresh and
+    # pre-destroy the media before the recipient taps.
+
     file_path = Path(attachment.storage_path)
 
     if not file_path.exists():
@@ -303,6 +319,9 @@ async def download_attachment(
         path=file_path,
         filename=attachment.original_name,
         media_type=attachment.mime_type,
+        headers={
+            "Content-Disposition": f"attachment; filename={attachment.original_name}"
+        },
     )
 
 
@@ -450,6 +469,38 @@ async def delete_attachment(
             status_code=403,
             detail="Access denied.",
         )
+
+    # Delete-for-everyone requires ownership (WhatsApp-style group
+    # moderation: a group admin may delete any member's attachment).
+    if message.sender_id != current_user.id:
+
+        conversation = (
+            await conversation_repository.get_by_id(
+                message.conversation_id
+            )
+        )
+
+        participant = (
+            await conversation_repository.get_participant(
+                message.conversation_id,
+                current_user.id,
+            )
+        )
+
+        is_group_admin = (
+            conversation is not None
+            and conversation.conversation_type == "group"
+            and participant is not None
+            and bool(participant.is_admin)
+        )
+
+        if not is_group_admin:
+
+            raise HTTPException(
+                status_code=403,
+                detail="Only the sender or a group admin can "
+                       "delete this attachment.",
+            )
 
     deleted = await attachment_service.delete_attachment(
         attachment_id

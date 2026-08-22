@@ -9,11 +9,13 @@ import ForwardModal from "./ForwardModal";
 import MessageInfoPanel from "./MessageInfoPanel";
 import DeleteConversationModal from "./DeleteConversationModal";
 import GroupInfoModal from "./GroupInfoModal";
+import StarredMessagesModal from "./StarredMessagesModal";
 
 import UserAvatar from "../UserAvatar";
 import { useAuth } from "../../context/AuthContext";
 import { useChatSocket } from "../../context/ChatSocketContext";
 import { useCall } from "../../context/CallContext";
+import blockService from "../../services/blockService";
 
 import "./Chat.css";
 
@@ -90,6 +92,7 @@ export default function ChatWindow({
         bumpConversation,
         updateSettings,
         selectConversation,
+        refreshStories,
     } = useChatSocket();
 
     const {
@@ -106,6 +109,11 @@ export default function ChatWindow({
         sendMessage,
         editMessage,
         toggleReaction,
+        toggleStarMessage,
+        starredList,
+        loadStarred,
+        starredLoading,
+        reportViewOnceOpened,
         forwardMessage,
         deleteMessage,
         typing,
@@ -159,7 +167,19 @@ export default function ChatWindow({
     const [showSearch, setShowSearch] =
         useState(false);
 
+    const [blocked, setBlocked] =
+        useState(false);
+
+    const [blockConfirm, setBlockConfirm] =
+        useState(false);
+
+    const [blockBusy, setBlockBusy] =
+        useState(false);
+
     const [deleteOpen, setDeleteOpen] =
+        useState(false);
+
+    const [starredOpen, setStarredOpen] =
         useState(false);
 
     const [groupInfoOpen, setGroupInfoOpen] =
@@ -289,9 +309,109 @@ export default function ChatWindow({
 
         setDeleteOpen(false);
 
+        setBlockConfirm(false);
+
         handleCloseSearch();
 
     }, [conversation?.id]);
+
+    // ==========================================================
+    // Block state for the current 1:1 chat
+    // ==========================================================
+
+    useEffect(() => {
+
+        let cancelled = false;
+
+        if (
+            !conversation ||
+            conversation.conversation_type === "group"
+        ) {
+            return undefined;
+        }
+
+        setBlocked(false);
+
+        blockService.getBlockedUsers()
+            .then(users => {
+                if (!cancelled) {
+                    setBlocked(
+                        users.some(
+                            user =>
+                                user.id ===
+                                conversation.other_user?.id,
+                        )
+                    );
+                }
+            })
+            .catch(() => {});
+
+        return () => {
+            cancelled = true;
+        };
+
+    }, [conversation?.id]);
+
+    async function handleToggleBlock() {
+
+        if (
+            blockBusy ||
+            !conversation?.other_user?.id
+        ) {
+            return;
+        }
+
+        setBlockBusy(true);
+
+        try {
+
+            if (blocked) {
+
+                await blockService.unblockUser(
+                    conversation.other_user.id
+                );
+
+                setBlocked(false);
+
+                toast.success("User unblocked.");
+
+            }
+            else {
+
+                await blockService.blockUser(
+                    conversation.other_user.id
+                );
+
+                setBlocked(true);
+
+                toast.success(
+                    "User blocked. They can no longer " +
+                    "message, call or see your presence, " +
+                    "status or profile photo."
+                );
+
+            }
+
+            refreshStories();
+
+        }
+        catch (error) {
+
+            toast.error(
+                error.response?.data?.detail ??
+                "Unable to update block status."
+            );
+
+        }
+        finally {
+
+            setBlockBusy(false);
+
+            setBlockConfirm(false);
+
+        }
+
+    }
 
     function handleEdit(message) {
 
@@ -324,10 +444,20 @@ export default function ChatWindow({
                 replyToId: replyTo?.id,
                 onProgress: options.onProgress,
                 signal: options.signal,
+                viewOnce: options.viewOnce,
             },
         );
 
         setReplyTo(null);
+
+    }
+
+    async function handleToggleStar(message) {
+
+        await toggleStarMessage(
+            message.id,
+            !message.is_starred,
+        );
 
     }
 
@@ -337,6 +467,7 @@ export default function ChatWindow({
             await forwardMessage(
                 plaintext,
                 recipients,
+                forwardTarget?.forwarded_count ?? 0,
             );
 
         // Surface forwarded copies in the sidebar
@@ -419,7 +550,8 @@ export default function ChatWindow({
         groupDetail?.participants ?? []) {
 
         participantsMap[participant.user_id] =
-            participant.user ?? {};
+            participant.user ??
+            participant;
 
     }
 
@@ -443,6 +575,9 @@ export default function ChatWindow({
 
     const countMembers =
         groupDetail?.participants?.length ?? 0;
+
+    const isGroupAdmin =
+        Boolean(groupDetail?.is_admin);
 
     const liveOnline =
         isGroup
@@ -496,23 +631,37 @@ export default function ChatWindow({
 
                 <div className="chat-identity">
 
-                    <UserAvatar
-                        user={isGroup
-                            ? {
-                                display_name: groupName,
-                                avatar_color: conversation.id,
-                            }
-                            : otherUser}
-                        className="chat-avatar"
-                    >
-                        {!isGroup && (
-                            <span
-                                className={`chat-presence ${
-                                    liveOnline ? "online" : ""
-                                }`}
-                            />
-                        )}
-                    </UserAvatar>
+                    {isGroup && groupDetail?.avatar_url ? (
+
+                        <img
+                            src={groupDetail.avatar_url}
+                            alt="Group"
+                            className="chat-avatar-img"
+                        />
+
+                    ) : (
+
+                        <UserAvatar
+                            user={isGroup
+                                ? {
+                                    display_name: groupName,
+                                    avatar_color: conversation.id,
+                                }
+                                : otherUser}
+                            className="chat-avatar"
+                        >
+
+                            {!isGroup && (
+                                <span
+                                    className={`chat-presence ${
+                                        liveOnline ? "online" : ""
+                                    }`}
+                                />
+                            )}
+
+                        </UserAvatar>
+
+                    )}
 
                     <div className="chat-heading">
 
@@ -567,6 +716,32 @@ export default function ChatWindow({
                 </div>
 
                 <div className="chat-header-actions">
+
+                    <span
+                        className="e2e-chip icon-chip"
+                        title="Starred messages"
+                    >
+                        <button
+                            type="button"
+                            className="chip-btn"
+                            onClick={() =>
+                                setStarredOpen(true)
+                            }
+                        >
+                            <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
+                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                            </svg>
+                        </button>
+                    </span>
 
                     <span className="e2e-chip icon-chip" title="Search messages">
 
@@ -738,6 +913,95 @@ export default function ChatWindow({
                                     <CallIcon video />
                                 </button>
                             </span>
+
+                        </>
+
+                    )}
+
+                    {!isGroup && otherUser?.id && (
+
+                        <>
+                            <span
+                                className={
+                                    blocked
+                                        ? "e2e-chip icon-chip chip-active"
+                                        : "e2e-chip icon-chip"
+                                }
+                                title={
+                                    blocked
+                                        ? "Unblock this user"
+                                        : "Block this user"
+                                }
+                            >
+                                <button
+                                    type="button"
+                                    className="chip-btn"
+                                    disabled={blockBusy}
+                                    onClick={() =>
+                                        setBlockConfirm(v => !v)
+                                    }
+                                >
+                                    <svg
+                                        width="14"
+                                        height="14"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    >
+                                        <circle cx="12" cy="12" r="10" />
+                                        <path d="M4.93 4.93l14.14 14.14" />
+                                    </svg>
+                                </button>
+                            </span>
+
+                            {blockConfirm && !blocked && (
+
+                                <div className="block-menu">
+
+                                    <div className="block-menu-head">
+                                        Block {otherUser.display_name}?
+                                    </div>
+
+                                    <div className="block-menu-note">
+                                        They can no longer message
+                                        or call you, and can&apos;t
+                                        see your presence, status
+                                        updates or profile photo.
+                                        They&apos;ll be removed from
+                                        your friends.
+                                    </div>
+
+                                    <div className="block-menu-actions">
+
+                                        <button
+                                            type="button"
+                                            className="btn-ghost"
+                                            onClick={() =>
+                                                setBlockConfirm(false)
+                                            }
+                                        >
+                                            Cancel
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            className="btn-danger"
+                                            disabled={blockBusy}
+                                            onClick={handleToggleBlock}
+                                        >
+                                            {blockBusy
+                                                ? "Blocking…"
+                                                : "Block"}
+                                        </button>
+
+                                    </div>
+
+                                </div>
+
+                            )}
 
                         </>
 
@@ -941,6 +1205,9 @@ export default function ChatWindow({
                 onForward={setForwardTarget}
                 onInfo={setInfoTarget}
                 onToggleReaction={toggleReaction}
+                onToggleStar={handleToggleStar}
+                isGroupAdmin={isGroupAdmin}
+                onViewOnceOpened={reportViewOnceOpened}
                 otherUser={otherUser}
                 conversationId={conversation.id}
                 highlightMessageId={highlightMessageId}
@@ -1015,6 +1282,21 @@ export default function ChatWindow({
                     }
                     onClose={() =>
                         setInfoTarget(null)
+                    }
+                />
+
+            )}
+
+            {starredOpen && (
+
+                <StarredMessagesModal
+                    conversationName={groupName}
+                    starredList={starredList}
+                    loading={starredLoading}
+                    onLoad={loadStarred}
+                    onUnstar={handleToggleStar}
+                    onClose={() =>
+                        setStarredOpen(false)
                     }
                 />
 

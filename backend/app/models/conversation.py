@@ -34,6 +34,25 @@ class Conversation(Base):
         nullable=False,
     )
 
+    avatar_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    description: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    created_by: Mapped[UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

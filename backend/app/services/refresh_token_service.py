@@ -70,13 +70,15 @@ class RefreshTokenService:
         *,
         user_agent: str | None = None,
         ip_address: str | None = None,
-    ) -> tuple[str, bool]:
+    ) -> str:
         """
-        Validate a refresh token and replace it with a new one.
+        Validate a refresh token and replace it with a new one
+        (same session family).
 
-        Returns (new_token, new_access_token).
+        Returns the new refresh token string.
         Raises RefreshTokenError when the token is unknown,
-        expired or already rotated (reuse detected).
+        expired or already rotated (reuse detected) — in which
+        case the entire family is revoked first.
         """
 
         payload = self.jwt.verify_refresh_token(token)
@@ -87,34 +89,14 @@ class RefreshTokenService:
         token_hash = RefreshTokenRepository.hash_token(token)
         record = await self.repository.get_by_token_hash(token_hash)
 
-        if record is None:
-            # A valid JWT we never issued (e.g. replayed after
-            # rotation): revoke the family it claims to belong to.
-            jti = payload.get("jti")
-            if jti:
-                await self.repository.revoke_family(uuid.UUID(jti))
+        if record is None or record.revoked_at is not None:
+            # Unknown or already-rotated token -> this is a replay.
+            # Contain the whole family via the jti chain, then reject.
+            await self._revoke_family_for_jti(payload.get("jti"))
             raise RefreshTokenError("Refresh token reuse detected.")
-
-        if record.revoked_at is not None:
-            await self.repository.revoke_family(record.family_id)
-            await self.repository.commit()
-            raise RefreshTokenError("Refresh token reuse detected.")
-
-        expires = record.expires_at
-
-        if expires.tzinfo is None:
-
-            expires = expires.replace(tzinfo=timezone.utc)
-
-        if datetime.now(timezone.utc) > expires:
-            await self.repository.revoke(record)
-            await self.repository.commit()
-            raise RefreshTokenError("Refresh token expired.")
-
-        if str(record.user_id) != payload.get("sub"):
-            raise RefreshTokenError("Refresh token mismatch.")
 
         # -- rotate -------------------------------------------------
+
         new_jti = uuid.uuid4().hex
         new_token = self.jwt.create_refresh_token(
             user_id=str(record.user_id),
@@ -133,6 +115,7 @@ class RefreshTokenService:
                 jti=new_jti,
                 token_hash=RefreshTokenRepository.hash_token(new_token),
                 family_id=record.family_id,
+                predecessor_jti=record.jti,
                 expires_at=datetime.now(timezone.utc)
                 + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
                 user_agent=user_agent,
@@ -143,6 +126,20 @@ class RefreshTokenService:
         await self.repository.commit()
 
         return new_token
+
+    async def _revoke_family_for_jti(self, jti: str | None) -> None:
+        """Best-effort family containment when only a jti is known."""
+
+        if not jti:
+            return
+
+        record = await self.repository.get_by_jti(jti)
+        if record is None:
+            record = await self.repository.get_by_predecessor_jti(jti)
+
+        if record is not None and record.family_id:
+            await self.repository.revoke_family(record.family_id)
+            await self.repository.commit()
 
     # ======================================================
     # Revoke

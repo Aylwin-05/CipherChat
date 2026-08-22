@@ -83,6 +83,133 @@ class AuthService:
         return True
 
     # =====================================================
+    # TWO-STEP VERIFICATION (2FA PIN)
+    # =====================================================
+
+    async def enable_two_fa(
+        self,
+        user: User,
+        pin: str,
+    ) -> dict:
+
+        user.two_fa_secret = SecurityUtils.hash_pin(pin)
+
+        user.two_fa_enabled = True
+
+        await self.repository.save()
+
+        await self.repository.commit()
+
+        logger.info(
+            "Two-step verification enabled: user=%s",
+            user.id,
+        )
+
+        return {
+            "two_fa_enabled": True,
+        }
+
+    async def disable_two_fa(
+        self,
+        user: User,
+        pin: str,
+    ) -> dict:
+
+        if not SecurityUtils.verify_pin(
+            pin,
+            user.two_fa_secret,
+        ):
+            raise ValueError(
+                "The PIN you entered is incorrect."
+            )
+
+        user.two_fa_secret = None
+
+        user.two_fa_enabled = False
+
+        await self.repository.save()
+
+        await self.repository.commit()
+
+        logger.info(
+            "Two-step verification disabled: user=%s",
+            user.id,
+        )
+
+        return {
+            "two_fa_enabled": False,
+        }
+
+    async def verify_two_fa(
+        self,
+        email: str,
+        pin: str,
+    ) -> User | None:
+        """
+        Returns the user only when the PIN matches their
+        stored 2FA secret. The caller issues tokens.
+        """
+
+        user = (
+            await self.repository.get_user_by_email(
+                email
+            )
+        )
+
+        if user is None or not user.two_fa_enabled:
+            return None
+
+        if not SecurityUtils.verify_pin(
+            pin,
+            user.two_fa_secret,
+        ):
+            return None
+
+        return user
+
+    async def reset_two_fa(
+        self,
+        email: str,
+        otp: str,
+    ):
+        """
+        Recovery path: proving email control via a fresh OTP
+        disables 2FA so the owner is never locked out.
+        """
+
+        result = await self.verify_otp(
+            email,
+            otp,
+        )
+
+        if result is None:
+            return None
+
+        user = result["user"]
+
+        user.two_fa_secret = None
+
+        user.two_fa_enabled = False
+
+        await self.repository.save()
+
+        await self.repository.commit()
+
+        # The `onupdate=func.now()` flush expires updated_at;
+        # reload the row so serializing the user later (Pydantic
+        # reads attributes synchronously) never hits a lazy load.
+        await self.repository.refresh(user)
+
+        logger.warning(
+            "Two-step verification reset via OTP: user=%s",
+            user.id,
+        )
+
+        return {
+            "user": user,
+        }
+
+    # =====================================================
     # VERIFY OTP
     # =====================================================
 
@@ -129,9 +256,18 @@ class AuthService:
 
             return None
 
-        await self.repository.mark_otp_used(
-            otp_record
-        )
+        try:
+
+            await self.repository.mark_otp_used(
+                otp_record
+            )
+
+        except ValueError:
+
+            # OTP was consumed by a concurrent request
+            await self.repository.commit()
+
+            return None
 
         await self.repository.commit()
 

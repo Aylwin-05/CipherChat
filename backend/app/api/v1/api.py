@@ -13,6 +13,10 @@ from app.api.v1.attachments import (
 from app.api.v1.users import router as users_router
 from app.api.v1.devices import router as devices_router
 from app.api.v1.recovery import router as recovery_router
+from app.api.v1.stories import router as stories_router
+from app.api.v1.push import router as push_router
+from app.api.v1.blocks import router as blocks_router
+from app.api.v1.call import router as call_router
 
 api_router = APIRouter()
 
@@ -69,3 +73,27 @@ api_router.include_router(attachments_router)
 # ==========================================================
 
 api_router.include_router(keys_router)
+
+# ==========================================================
+# Stories (24h status updates)
+# ==========================================================
+
+api_router.include_router(stories_router)
+
+# ==========================================================
+# Push notifications (Web Push / VAPID)
+# ==========================================================
+
+api_router.include_router(push_router)
+
+# ==========================================================
+# Blocks & Privacy
+# ==========================================================
+
+api_router.include_router(blocks_router)
+
+# ==========================================================
+# Calls (ICE/TURN config)
+# ==========================================================
+
+api_router.include_router(call_router)

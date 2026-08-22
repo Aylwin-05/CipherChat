@@ -152,13 +152,12 @@ class Device(Base):
         nullable=False,
         comment="X25519 public key derived from identity key (base64), 32 bytes raw",
     )
-    
-    identity_key_private_encrypted: Mapped[str] = mapped_column(
-        String,
-        nullable=False,
-        comment="Ed25519 private key encrypted with user's master key (base64)",
-    )
-    
+
+    # Private key columns are NOT stored on the server.
+    # The client holds all private key material in IndexedDB.
+    # These columns are kept for reference only if a migration
+    # ever adds them; a future migration will drop them.
+
     # ==========================================================
     # Registration
     # ==========================================================
@@ -248,13 +247,7 @@ class SignedPreKey(Base):
         nullable=False,
         comment="X25519 public key (base64), 32 bytes raw",
     )
-    
-    private_key_encrypted: Mapped[str] = mapped_column(
-        String,
-        nullable=False,
-        comment="X25519 private key encrypted with device's identity key (base64)",
-    )
-    
+
     signature: Mapped[str] = mapped_column(
         String,
         nullable=False,
@@ -324,13 +317,7 @@ class OneTimePreKey(Base):
         nullable=False,
         comment="X25519 public key (base64), 32 bytes raw",
     )
-    
-    private_key_encrypted: Mapped[str] = mapped_column(
-        String,
-        nullable=False,
-        comment="X25519 private key encrypted with device's identity key (base64)",
-    )
-    
+
     consumed: Mapped[bool] = mapped_column(
         Boolean,
         default=False,

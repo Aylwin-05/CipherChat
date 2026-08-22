@@ -3,6 +3,7 @@ import { useEffect } from "react";
 export default function ImageLightbox({
     attachment,
     url,
+    viewOnce = false,
     onClose,
 }) {
 
@@ -49,36 +50,42 @@ export default function ImageLightbox({
 
                 <span className="lightbox-name">
 
-                    {attachment.original_name || "Image"}
+                    {viewOnce
+                        ? "View once"
+                        : (attachment.original_name || "Image")}
 
                 </span>
 
                 <div className="lightbox-actions">
 
-                    <a
-                        className="lightbox-download"
-                        href={url}
-                        download={attachment.original_name || "image"}
-                    >
+                    {!viewOnce && (
 
-                        <svg
-                            width="15"
-                            height="15"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
+                        <a
+                            className="lightbox-download"
+                            href={url}
+                            download={attachment.original_name || "image"}
                         >
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <path d="m7 10 5 5 5-5" />
-                            <path d="M12 15V3" />
-                        </svg>
 
-                        Download
+                            <svg
+                                width="15"
+                                height="15"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <path d="m7 10 5 5 5-5" />
+                                <path d="M12 15V3" />
+                            </svg>
 
-                    </a>
+                            Download
+
+                        </a>
+
+                    )}
 
                     <button
                         type="button"
@@ -105,14 +112,45 @@ export default function ImageLightbox({
 
             </div>
 
-            <img
-                className="lightbox-image"
-                src={url}
-                alt={attachment.original_name || "Image"}
-                onClick={event =>
-                    event.stopPropagation()
-                }
-            />
+            {attachment.attachment_type === "video" ? (
+
+                <video
+                    className="lightbox-image"
+                    src={url}
+                    controls
+                    autoPlay
+                    controlsList={
+                        viewOnce ? "nodownload noplaybackrate" : undefined
+                    }
+                    disablePictureInPicture={viewOnce || undefined}
+                    onContextMenu={
+                        viewOnce
+                            ? event => event.preventDefault()
+                            : undefined
+                    }
+                    onClick={event =>
+                        event.stopPropagation()
+                    }
+                />
+
+            ) : (
+
+                <img
+                    className="lightbox-image"
+                    src={url}
+                    alt={attachment.original_name || "Image"}
+                    draggable={!viewOnce}
+                    onContextMenu={
+                        viewOnce
+                            ? event => event.preventDefault()
+                            : undefined
+                    }
+                    onClick={event =>
+                        event.stopPropagation()
+                    }
+                />
+
+            )}
 
         </div>
 

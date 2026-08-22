@@ -55,10 +55,6 @@ class KeyService:
         key = UserKey(
             user_id=current_user.id,
             public_key=public_key,
-
-            # Keep this only because your current schema requires it.
-            # We'll remove this column later.
-            private_key_encrypted="",
         )
 
         await self.repository.create_key(key)

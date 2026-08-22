@@ -147,6 +147,23 @@ class Attachment(Base):
         JSON,
         nullable=True,
     )
+
+    # WhatsApp-style "view once" media: the recipient can open
+    # the file exactly one time. When the recipient reports the
+    # media as opened, the server deletes the file and this row,
+    # so no copy survives on the backend.
+    view_once: Mapped[bool] = mapped_column(
+        default=False,
+        nullable=False,
+    )
+    
+    # View-once consumption tracker: set to True after the
+    # recipient has successfully opened the file. When True,
+    # subsequent downloads are rejected.
+    view_once_consumed: Mapped[bool] = mapped_column(
+        default=False,
+        nullable=False,
+    )
     
     # ==========================================================
     # Optional Media Metadata

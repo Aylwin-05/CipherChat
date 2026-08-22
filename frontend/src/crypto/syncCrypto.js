@@ -60,6 +60,25 @@ function utf8Text(bytes) {
     return new TextDecoder().decode(bytes);
 }
 
+// The backend stores and serves the PBKDF2 salt as HEX
+// (recovery_service.py: salt.hex()). Earlier client code tried
+// base64 — which silently produced wrong salt bytes and made
+// every unlock fail the AES-GCM tag check. Accept hex first,
+// fall back to base64 for safety.
+function decodeSalt(text) {
+    const value = String(text).trim();
+
+    if (value.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(value)) {
+        const bytes = new Uint8Array(value.length / 2);
+        for (let i = 0; i < bytes.length; i += 1) {
+            bytes[i] = parseInt(value.substr(i * 2, 2), 16);
+        }
+        return bytes;
+    }
+
+    return b64decode(value);
+}
+
 // ==========================================================
 // Recovery code -> wrap key -> sync secret
 // ==========================================================
@@ -68,8 +87,8 @@ export function normalizeRecoveryCode(code) {
     return String(code).replace(/[^A-Z0-9]/gi, "").toUpperCase();
 }
 
-export function deriveWrapKeyFromCode(code, saltB64) {
-    const salt = b64decode(saltB64);
+export function deriveWrapKeyFromCode(code, saltText) {
+    const salt = decodeSalt(saltText);
     return pbkdf2(
         sha256,
         utf8Bytes(normalizeRecoveryCode(code)),

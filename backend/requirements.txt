@@ -34,3 +34,4 @@ hkdf
 pytest
 pytest-asyncio
 aiosqlite
+http-ece

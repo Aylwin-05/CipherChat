@@ -5,6 +5,7 @@ import Login from "../pages/Login/Login";
 import OTP from "../pages/OTP/OTP";
 import RecoverPage from "../pages/Recover/RecoverPage";
 import ProtectedRoute from "./ProtectedRoute";
+import PublicOnlyRoute from "./PublicOnlyRoute";
 
 export default function AppRoutes() {
     return (
@@ -22,12 +23,20 @@ export default function AppRoutes() {
 
             <Route
                 path="/login"
-                element={<Login />}
+                element={
+                    <PublicOnlyRoute>
+                        <Login />
+                    </PublicOnlyRoute>
+                }
             />
 
             <Route
                 path="/otp"
-                element={<OTP />}
+                element={
+                    <PublicOnlyRoute>
+                        <OTP />
+                    </PublicOnlyRoute>
+                }
             />
 
             <Route

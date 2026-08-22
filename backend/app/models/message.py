@@ -4,6 +4,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Integer,
     String,
     TypeDecorator,
     func,
@@ -211,6 +212,14 @@ class Message(Base):
         nullable=False,
     )
 
+    # How many times the message has been forwarded in total
+    # (WhatsApp-style: 1 = "Forwarded", 5+ = "Forwarded many times").
+    forwarded_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+
     delivered_at: Mapped[DateTime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
@@ -226,6 +235,14 @@ class Message(Base):
     expires_at: Mapped[DateTime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+
+    # View-once media has been opened by the recipient: the
+    # server has already deleted the attachment file + rows.
+    view_once_opened: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
     )
 
     created_at: Mapped[DateTime] = mapped_column(

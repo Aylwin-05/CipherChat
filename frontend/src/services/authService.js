@@ -1,6 +1,7 @@
 import api, {
     refreshAccessToken,
     setAccessToken,
+    getAccessToken,
     clearAccessToken,
 } from "../api/api";
 
@@ -59,6 +60,80 @@ const authService = {
     },
 
     // ======================================================
+    // Two-step verification (2FA PIN)
+    // ======================================================
+
+    async getTwoFAStatus() {
+
+        const response = await api.get(
+            "/auth/two-fa/status"
+        );
+
+        return response.data;
+
+    },
+
+    async enableTwoFA(pin, confirmPin) {
+
+        const response = await api.put(
+            "/auth/two-fa",
+            {
+                pin,
+                confirm_pin: confirmPin,
+            }
+        );
+
+        return response.data;
+
+    },
+
+    async disableTwoFA(pin) {
+
+        const response = await api.delete(
+            "/auth/two-fa",
+            {
+                data: { pin },
+            }
+        );
+
+        return response.data;
+
+    },
+
+    // Complete a login after the PIN challenge. The backend
+    // returns the full TokenResponse, so the caller can log in
+    // with it directly.
+    async verifyTwoFA(twoFAToken, pin) {
+
+        const response = await api.post(
+            "/auth/two-fa/verify",
+            {
+                two_fa_token: twoFAToken,
+                pin,
+            }
+        );
+
+        return response.data;
+
+    },
+
+    // Recovery: prove control of the email with a fresh OTP to
+    // turn 2FA off and log in (the "forgot my PIN" path).
+    async resetTwoFA(email, otp) {
+
+        const response = await api.post(
+            "/auth/two-fa/reset",
+            {
+                email,
+                otp,
+            }
+        );
+
+        return response.data;
+
+    },
+
+    // ======================================================
     // Get Logged-in User
     // ======================================================
 
@@ -79,6 +154,12 @@ const authService = {
     login(accessToken) {
 
         setAccessToken(accessToken);
+
+    },
+
+    getAccessToken() {
+
+        return getAccessToken();
 
     },
 

@@ -9,6 +9,7 @@ import {
 import { useAuth } from "./AuthContext";
 
 import conversationService from "../services/conversationService";
+import storyService from "../services/storyService";
 import websocketService from "../services/websocketService";
 
 import {
@@ -32,6 +33,10 @@ export function ChatSocketProvider({ children }) {
 
     const [loading, setLoading] =
         useState(true);
+
+    // 24h status updates (WhatsApp-style stories)
+    const [stories, setStories] =
+        useState([]);
 
     const listenersRef = useRef(new Set());
 
@@ -143,6 +148,8 @@ export function ChatSocketProvider({ children }) {
                     case "connected":
 
                         await loadConversations();
+
+                        await refreshStories();
 
                         break;
 
@@ -320,6 +327,133 @@ export function ChatSocketProvider({ children }) {
                         await loadConversations();
 
                         break;
+
+                    // ==========================================
+                    // Stories (24h status updates)
+                    // ==========================================
+
+                    case "story.new": {
+
+                        const story = event.story;
+
+                        if (!story) break;
+
+                        setStories(previous => {
+
+                            const groups =
+                                previous.map(g =>
+                                    g.user_id === story.user_id
+                                        ? {
+                                            ...g,
+                                            stories: [
+                                                ...g.stories,
+                                                story,
+                                            ],
+                                        }
+                                        : g
+                                );
+
+                            const exists = groups.some(
+                                g => g.user_id === story.user_id
+                            );
+
+                            if (exists) return groups;
+
+                            return [
+                                ...groups,
+                                {
+                                    user_id: story.user_id,
+                                    owner: story.owner,
+                                    stories: [story],
+                                },
+                            ];
+
+                        });
+
+                        break;
+
+                    }
+
+                    case "story.deleted": {
+
+                        const storyId = event.story_id;
+
+                        if (!storyId) break;
+
+                        setStories(previous =>
+                            previous
+                                .map(group => ({
+                                    ...group,
+                                    stories: group.stories.filter(
+                                        s => s.id !== storyId
+                                    ),
+                                }))
+                                .filter(group =>
+                                    group.stories.length > 0
+                                )
+                        );
+
+                        break;
+
+                    }
+
+                    case "story.viewed": {
+
+                        const {
+                            story_id: storyId,
+                            user_id: viewerId,
+                            user_name: viewerName,
+                        } = event;
+
+                        if (!storyId) break;
+
+                        setStories(previous =>
+                            previous.map(group => ({
+                                ...group,
+                                stories: group.stories.map(story => {
+
+                                    if (story.id !== storyId) {
+
+                                        return story;
+
+                                    }
+
+                                    if (
+                                        story.viewers?.some(
+                                            v =>
+                                                v.user_id ===
+                                                viewerId
+                                        )
+                                    ) {
+
+                                        return story;
+
+                                    }
+
+                                    return {
+                                        ...story,
+                                        view_count:
+                                            (story.view_count ?? 0) + 1,
+                                        viewers: [
+                                            ...(story.viewers ?? []),
+                                            {
+                                                user_id: viewerId,
+                                                display_name:
+                                                    viewerName,
+                                                viewed_at:
+                                                    new Date()
+                                                        .toISOString(),
+                                            },
+                                        ],
+                                    };
+
+                                }),
+                            }))
+                        );
+
+                        break;
+
+                    }
 
                 }
 
@@ -630,11 +764,133 @@ export function ChatSocketProvider({ children }) {
 
     }
 
+    //=====================================================
+    // Stories (24h status updates)
+    //=====================================================
+
+    async function refreshStories() {
+
+        try {
+
+            const feed =
+                await storyService.getFeed();
+
+            setStories(feed);
+
+        }
+        catch (error) {
+
+            console.error(
+                "Failed to load stories",
+                error
+            );
+
+        }
+
+    }
+
+    // Returns the posted story wrapped in its feed group
+    // so the caller can open the viewer right after posting.
+    async function postStory({ file, caption }) {
+
+        const story =
+            await storyService.upload({
+                file,
+                caption,
+                myUserId: userRef.current?.id,
+            });
+
+        setStories(previous => {
+
+            const groups = previous.map(group =>
+                group.user_id === story.user_id
+                    ? {
+                        ...group,
+                        stories: [...group.stories, story],
+                    }
+                    : group
+            );
+
+            const exists = groups.some(
+                group => group.user_id === story.user_id
+            );
+
+            if (exists) return groups;
+
+            return [
+                {
+                    user_id: story.user_id,
+                    owner: story.owner,
+                    stories: [story],
+                },
+                ...previous,
+            ];
+
+        });
+
+        return {
+            user_id: story.user_id,
+            owner: story.owner,
+            stories: [story],
+        };
+
+    }
+
+    async function markStoryViewed(storyId) {
+
+        try {
+
+            await storyService.markViewed(storyId);
+
+            // Reflect "viewed" locally so the ring loses its
+            // highlight without a full feed round-trip.
+            setStories(previous =>
+                previous.map(group => ({
+                    ...group,
+                    stories: group.stories.map(story =>
+                        story.id === storyId
+                            ? { ...story, viewed: true }
+                            : story
+                    ),
+                }))
+            );
+
+        }
+        catch (error) {
+
+            console.debug(
+                "[STORY-VIEW]",
+                error
+            );
+
+        }
+
+    }
+
+    async function deleteStory(storyId) {
+
+        await storyService.deleteStory(storyId);
+
+        setStories(previous =>
+            previous
+                .map(group => ({
+                    ...group,
+                    stories: group.stories.filter(
+                        story => story.id !== storyId
+                    ),
+                }))
+                .filter(group => group.stories.length > 0)
+        );
+
+    }
+
     const value = {
 
         conversations,
 
         presence,
+
+        stories,
 
         loading,
 
@@ -655,6 +911,14 @@ export function ChatSocketProvider({ children }) {
         subscribe,
 
         refreshConversations: loadConversations,
+
+        refreshStories,
+
+        postStory,
+
+        markStoryViewed,
+
+        deleteStory,
 
     };
 
