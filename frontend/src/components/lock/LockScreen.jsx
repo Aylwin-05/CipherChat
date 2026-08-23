@@ -170,7 +170,7 @@ export default function LockScreen({ onUnlocked }) {
 
                 <p className="lock-hint">
 
-                    CipherChat is locked on this device.
+                    Nexara is locked on this device.
                     Enter your PIN to continue.
 
                 </p>

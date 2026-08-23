@@ -1,6 +1,6 @@
-# CipherChat Mobile (Capacitor)
+# Nexara Mobile (Capacitor)
 
-Native Android/iOS shell that wraps the existing CipherChat web
+Native Android/iOS shell that wraps the existing Nexara web
 frontend (`frontend/`) in a WebView. There is **no duplicated UI
 code** here: this folder only contains the native shell and build
 wiring; every screen comes from the single React SPA.

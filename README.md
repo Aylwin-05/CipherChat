@@ -1,4 +1,6 @@
-# CipherChat
+# Nexara
+
+> *Nexara* — from **nexus** (connection) + **ara** (sacred space).
 
 A privacy-first, end-to-end encrypted messaging platform.
 
@@ -28,7 +30,7 @@ Sender                                                      Recipient
 ## Development
 
 Prerequisites: **PostgreSQL 14+** running locally on `:5432` (create the
-`cipherchat` database and match the credentials in `backend/.env`). Redis is
+`nexara` database and match the credentials in `backend/.env`). Redis is
 optional — without `REDIS_URL` the app falls back to in-memory rate limiting
 (fine for one local instance). Mail: the `.env` `SMTP_*` values for real OTP
 delivery.

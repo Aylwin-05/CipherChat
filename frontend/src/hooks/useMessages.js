@@ -651,13 +651,13 @@ export default function useMessages(
         const onUnlocked = () => void initialize();
 
         window.addEventListener(
-            "cipherchat:sync-unlocked",
+            "nexara:sync-unlocked",
             onUnlocked,
         );
 
         return () =>
             window.removeEventListener(
-                "cipherchat:sync-unlocked",
+                "nexara:sync-unlocked",
                 onUnlocked,
             );
 

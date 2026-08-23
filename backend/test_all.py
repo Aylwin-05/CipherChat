@@ -1,4 +1,4 @@
-"""CipherChat consolidated test suite.
+"""Nexara consolidated test suite.
 
 Single-file merge of the former backend/tests/ package (24 files).
 Generated mechanically with AST deduplication:
@@ -3017,7 +3017,7 @@ def _register__ws(client, email):
     return (data['access_token'], data['user'])
 def _connect(client, token):
     """One user-scoped socket per client."""
-    return client.websocket_connect('/ws/me', subprotocols=['cipherchat.' + token])
+    return client.websocket_connect('/ws/me', subprotocols=['nexara.' + token])
 def _drain(ws, target_event, limit=30):
     """Receive frames until an event matching target_event shows up."""
     for _ in range(limit):

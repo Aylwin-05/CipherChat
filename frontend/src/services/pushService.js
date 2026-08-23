@@ -11,7 +11,7 @@ import api from "../api/api";
 
 const SW_PATH = "/sw.js";
 
-const PUSH_ENABLED_KEY = "cipherchat_push_enabled";
+const PUSH_ENABLED_KEY = "nexara_push_enabled";
 
 function isSupported() {
 

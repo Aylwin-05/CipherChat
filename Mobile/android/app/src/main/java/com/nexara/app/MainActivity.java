@@ -1,4 +1,4 @@
-package com.cipherchat.app;
+package com.nexara.app;
 
 import com.getcapacitor.BridgeActivity;
 

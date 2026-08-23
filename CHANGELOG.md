@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to CipherChat are documented in this file.
+All notable changes to Nexara are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
@@ -54,7 +54,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Initial public release of the CipherChat platform: React frontend,
+- Initial public release of the Nexara platform: React frontend,
   FastAPI backend, PostgreSQL storage, WebSocket real-time layer, email OTP
   login, and RSA-based encrypted messaging (since superseded by the Signal
   protocol stack).

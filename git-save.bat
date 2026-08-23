@@ -1,9 +1,20 @@
 @echo off
-title CipherChat Git Save
+title Nexara Git Save
 
 echo ================================
-echo      CipherChat Git Helper
+echo      Nexara Git Helper
 echo ================================
+echo.
+
+echo Checking remote URL...
+set NEWURL=https://github.com/Aylwin-05/Nexara.git
+for /f %%u in ('git remote get-url origin') do set CURURL=%%u
+if not "%CURURL%"=="%NEWURL%" (
+    git remote set-url origin %NEWURL%
+    echo Updated remote: %CURURL% -^> %NEWURL%
+) else (
+    echo Remote already up to date.
+)
 echo.
 
 git status

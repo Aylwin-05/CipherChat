@@ -20,7 +20,7 @@ logger = logging.getLogger("app.services.push")
 
 VAPID_KEYS_SETTING = "vapid.private_key"
 VAPID_PUBLIC_SETTING = "vapid.public_key"
-VAPID_MAILTO = "admin@cipherchat.local"
+VAPID_MAILTO = "admin@nexara.local"
 VAPID_TOKEN_TTL_SECONDS = 12 * 60 * 60
 PUSH_TTL_SECONDS = 600
 

@@ -1,5 +1,5 @@
 // ==========================================================
-// CipherChat Signal Chat Service
+// Nexara Signal Chat Service
 //
 // High-level wrapper used by the chat UI:
 //   - encrypt():  fetch peer bundle (once), run X3DH first

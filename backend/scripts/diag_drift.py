@@ -8,7 +8,7 @@ import app.models  # noqa: F401  (registers all tables on Base.metadata)
 
 async def main():
     raw = await asyncpg.connect(
-        "postgresql://postgres:database@localhost:5432/cipherchat"
+        "postgresql://postgres:database@localhost:5432/nexara"
     )
 
     db_tables = {

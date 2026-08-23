@@ -1,5 +1,5 @@
 // ==========================================================
-// CipherChat Signal Message Envelope
+// Nexara Signal Message Envelope
 //
 // JSX mirror of backend/app/crypto/signal/message.py
 //

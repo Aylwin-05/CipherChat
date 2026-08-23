@@ -1,4 +1,4 @@
-"""Initial CipherChat schema
+"""Initial Nexara schema
 
 Revision ID: 4babf4cb83b2
 Revises: 

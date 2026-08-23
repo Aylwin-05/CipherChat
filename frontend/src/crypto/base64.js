@@ -1,5 +1,5 @@
 // ==========================================================
-// CipherChat Base64 Utilities
+// Nexara Base64 Utilities
 //
 // Converts:
 // ArrayBuffer <-> Base64 string

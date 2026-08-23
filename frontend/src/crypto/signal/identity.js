@@ -1,5 +1,5 @@
 // ==========================================================
-// CipherChat Signal Identity & Registration Payload
+// Nexara Signal Identity & Registration Payload
 //
 // Generates the long-term device identity (Ed25519), the
 // signed prekey (X25519) and a batch of one-time prekeys,

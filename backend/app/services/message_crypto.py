@@ -8,7 +8,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 class MessageCrypto:
     """
-    CipherChat Hybrid Encryption Engine
+    Nexara Hybrid Encryption Engine
 
     Hybrid Encryption
     -----------------

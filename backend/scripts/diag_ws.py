@@ -11,10 +11,10 @@ from app.core.config import settings
 
 async def main():
     conn = await asyncpg.connect(
-        "postgresql://postgres:database@localhost:5432/cipherchat"
+        "postgresql://postgres:database@localhost:5432/nexara"
     )
     row = await conn.fetchrow(
-        "SELECT id, email FROM users WHERE email = 'cipherchat.dev@gmail.com'"
+        "SELECT id, email FROM users WHERE email = 'nexara.dev@gmail.com'"
     )
     await conn.close()
 
@@ -32,7 +32,7 @@ async def main():
     import websockets
 
     uri = "ws://127.0.0.1:8000/ws/me"
-    subprotocols = [f"cipherchat.{token}"]
+    subprotocols = [f"nexara.{token}"]
 
     async with websockets.connect(
         uri, subprotocols=subprotocols, open_timeout=10

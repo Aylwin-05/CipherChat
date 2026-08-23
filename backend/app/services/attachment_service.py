@@ -39,7 +39,7 @@ from app.repositories.attachment_repository import AttachmentRepository
 
 class AttachmentService:
     """
-    Handles every file upload inside CipherChat.
+    Handles every file upload inside Nexara.
 
     Responsibilities
     ----------------

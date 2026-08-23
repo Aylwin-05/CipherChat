@@ -1,5 +1,5 @@
 // ==========================================================
-// CipherChat Signal Protocol Primitives
+// Nexara Signal Protocol Primitives
 //
 // JS mirror of backend/app/crypto/signal/primitives.py.
 //

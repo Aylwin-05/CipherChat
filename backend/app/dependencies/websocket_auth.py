@@ -8,11 +8,11 @@ class WebSocketAuth:
     Handles authentication for WebSocket connections.
 
     The JWT is carried in the `Sec-WebSocket-Protocol` header
-    as a subprotocol named `cipherchat.<token>` instead of
+    as a subprotocol named `nexara.<token>` instead of
     a query parameter, so it never leaks into access / proxy logs.
     """
 
-    TOKEN_PREFIX = "cipherchat."
+    TOKEN_PREFIX = "nexara."
 
     def __init__(self):
         self.jwt_service = JWTService()

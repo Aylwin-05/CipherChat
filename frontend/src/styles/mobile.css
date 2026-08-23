@@ -1,5 +1,5 @@
 /* ============================================================
-   CipherChat — Mobile compatibility layer
+   Nexara — Mobile compatibility layer
    ------------------------------------------------------------
    A single stylesheet loaded AFTER every component style.
    It only overrides; nothing here redefines the desktop app.
@@ -236,7 +236,7 @@
     }
 
     .conv-title::before {
-        content: "CipherChat";
+        content: "Nexara";
         font-size: 21px;
         font-weight: 700;
         letter-spacing: -0.4px;

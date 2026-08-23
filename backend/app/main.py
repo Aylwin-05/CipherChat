@@ -24,12 +24,12 @@ logger = logging.getLogger("app.main")
 
 app = FastAPI(
     title=settings.APP_NAME,
-    description="CipherChat Backend API",
+    description="Nexara Backend API",
     version="1.0.0",
     debug=settings.DEBUG,
     redirect_slashes=False,
     contact={
-        "name": "CipherChat API",
+        "name": "Nexara API",
         "email": settings.SMTP_FROM_EMAIL,
     },
     license_info={

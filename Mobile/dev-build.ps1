@@ -1,5 +1,5 @@
 # ============================================================
-# CipherChat mobile DEV build
+# Nexara mobile DEV build
 #
 # Rebuilds the web bundle with the API/WebSocket endpoints
 # pointing at this PC over the LAN, then syncs it into the

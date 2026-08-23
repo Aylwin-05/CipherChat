@@ -1,5 +1,5 @@
 // ============================================================
-// CipherChat consolidated frontend test suite.
+// Nexara consolidated frontend test suite.
 //
 // Single-file merge of the former tests/signal/ directory.
 // Each source file runs as its own named subtree so its
@@ -850,16 +850,16 @@ globalThis.localStorage = {
 
 // Seed legacy values BEFORE the first DB open so the migration
 // test (below) observes the lift.
-localStorage.setItem("cipherchat_public_key", "legacy-pub");
-localStorage.setItem("cipherchat_private_key", "legacy-priv");
+localStorage.setItem("nexara_public_key", "legacy-pub");
+localStorage.setItem("nexara_private_key", "legacy-priv");
 
 test("legacy localStorage values migrate on first open", async () => {
     assert.equal(await getPrivateKey(), "legacy-priv");
     assert.equal(await getPublicKey(), "legacy-pub");
 
     // LocalStorage copies are removed once migrated.
-    assert.equal(localStorage.getItem("cipherchat_public_key"), null);
-    assert.equal(localStorage.getItem("cipherchat_private_key"), null);
+    assert.equal(localStorage.getItem("nexara_public_key"), null);
+    assert.equal(localStorage.getItem("nexara_private_key"), null);
 
     await clearKeyPair();
 });
@@ -882,8 +882,8 @@ test("keys roundtrip through IndexedDB", async () => {
 test("keys are NOT written to localStorage", async () => {
     await saveKeyPair("pub-no-ls", "priv-no-ls");
 
-    assert.equal(localStorage.getItem("cipherchat_public_key"), null);
-    assert.equal(localStorage.getItem("cipherchat_private_key"), null);
+    assert.equal(localStorage.getItem("nexara_public_key"), null);
+    assert.equal(localStorage.getItem("nexara_private_key"), null);
 
     await clearKeyPair();
 });

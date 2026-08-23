@@ -2,13 +2,13 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: cipherchat
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cipherchat}
-      POSTGRES_DB: cipherchat
+      POSTGRES_USER: nexara
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexara}
+      POSTGRES_DB: nexara
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cipherchat"]
+      test: ["CMD-SHELL", "pg_isready -U nexara"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -26,7 +26,7 @@ services:
     environment:
       APP_ENV: production
       DEBUG: "false"
-      DATABASE_URL: postgresql+asyncpg://cipherchat:${POSTGRES_PASSWORD:-cipherchat}@postgres:5432/cipherchat
+      DATABASE_URL: postgresql+asyncpg://nexara:${POSTGRES_PASSWORD:-nexara}@postgres:5432/nexara
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       MASTER_KEY: ${MASTER_KEY:?set MASTER_KEY in .env}
@@ -35,10 +35,10 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-CipherChat}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Nexara}
       COOKIE_SECURE: "true"
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://cipherchat.example.com}
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-cipherchat.example.com,localhost}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://nexara.example.com}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-nexara.example.com,localhost}
     volumes:
       - uploads:/app/uploads
     depends_on:

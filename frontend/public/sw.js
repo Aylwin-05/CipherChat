@@ -1,4 +1,4 @@
-/* CipherChat service worker — Web Push notifications.
+/* Nexara service worker — Web Push notifications.
 
  * Notifications never contain message content: message payloads
  * are end-to-end encrypted and the push payload only carries
@@ -54,7 +54,7 @@ function notificationTitle(payload) {
   if (payload.event === "story") {
     return "Status update";
   }
-  return "CipherChat";
+  return "Nexara";
 }
 
 self.addEventListener("push", (event) => {
@@ -82,7 +82,7 @@ self.addEventListener("push", (event) => {
           sender_name: payload.sender_name || "",
           event: payload.event || "message",
         },
-        tag: "cipherchat-" + (payload.conversation_id || "general"),
+        tag: "nexara-" + (payload.conversation_id || "general"),
         renotify: true,
         silent: false,
       };

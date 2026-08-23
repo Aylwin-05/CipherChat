@@ -11,7 +11,7 @@ class KeyService:
     """
     Handles public key management.
 
-    CipherChat design:
+    Nexara design:
 
     • Client generates RSA key pair.
     • Client stores the private key locally.

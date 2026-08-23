@@ -1,5 +1,5 @@
 // ==========================================================
-// CipherChat Signal Key Store (IndexedDB)
+// Nexara Signal Key Store (IndexedDB)
 //
 // Persists the device's Signal identity material, one-time
 // prekeys and ratchet session states in a browser IndexedDB.
@@ -22,7 +22,7 @@
 // IndexedDB layer keeps that boundary simple for now.
 // ==========================================================
 
-const DB_NAME = "cipherchat-signal";
+const DB_NAME = "nexara-signal";
 const DB_VERSION = 4;
 
 const STORE_IDENTITY = "identity";

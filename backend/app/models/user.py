@@ -23,7 +23,7 @@ from app.database.mixins import TimestampMixin
 
 class User(Base, TimestampMixin):
     """
-    Primary user model for CipherChat.
+    Primary user model for Nexara.
     """
 
     __tablename__ = "users"

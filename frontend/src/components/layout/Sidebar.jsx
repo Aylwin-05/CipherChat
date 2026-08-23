@@ -98,7 +98,7 @@ export default function Sidebar({
 
         <aside className="rail">
 
-            <div className="rail-logo" title="CipherChat">
+            <div className="rail-logo" title="Nexara">
 
                 <svg
                     width="34"

@@ -1,5 +1,5 @@
 // ==========================================================
-// CipherChat Byte Utilities
+// Nexara Byte Utilities
 //
 // Browser-compatible byte helpers: base64, hex, concat.
 // The backend uses raw 32-byte keys; the API layer uses base64.

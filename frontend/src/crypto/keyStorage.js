@@ -1,25 +1,25 @@
 // ==========================================================
-// CipherChat Key Storage
+// Nexara Key Storage
 //
 // Account RSA keypair persistence.
 //
 // Production:
-// IndexedDB ("cipherchat-keys"). Keys are never written to
+// IndexedDB ("nexara-keys"). Keys are never written to
 // localStorage.
 //
 // Migration:
 // Browsers that still hold the legacy localStorage copies
-// ("cipherchat_public_key" / "cipherchat_private_key") get
+// ("nexara_public_key" / "nexara_private_key") get
 // them lifted into IndexedDB on first DB open, after which
 // the localStorage entries are removed.
 // ==========================================================
 
-const DB_NAME = "cipherchat-keys";
+const DB_NAME = "nexara-keys";
 const DB_VERSION = 1;
 const STORE = "keys";
 
-const PUBLIC_KEY = "cipherchat_public_key";
-const PRIVATE_KEY = "cipherchat_private_key";
+const PUBLIC_KEY = "nexara_public_key";
+const PRIVATE_KEY = "nexara_private_key";
 
 let dbPromise = null;
 

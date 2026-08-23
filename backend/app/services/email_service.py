@@ -56,7 +56,7 @@ class EmailService:
         )
 
         message = MIMEMultipart("alternative")
-        message["Subject"] = "Your CipherChat Verification Code"
+        message["Subject"] = "Your Nexara Verification Code"
         message["From"] = f"{self.from_name} <{self.from_email}>"
         message["To"] = recipient_email
 
@@ -127,7 +127,7 @@ class EmailService:
             "max-width: 520px; margin: 0 auto; padding: 24px;'>"
             "<h2 style='color: #1f2937;'>Recover your recovery code</h2>"
             "<p style='color: #374151; line-height: 1.6;'>"
-            "You asked to see your CipherChat recovery code again. "
+            "You asked to see your Nexara recovery code again. "
             "To protect your account, open the link below and confirm "
             "with a verification code we will email you — then your "
             "new recovery code will be shown on screen."
@@ -136,7 +136,7 @@ class EmailService:
             f"<a href='{link_url}' style='background: #2563eb; "
             "color: #ffffff; text-decoration: none; padding: 12px 28px; "
             "border-radius: 8px; font-weight: bold; display: "
-            "inline-block;'>Open CipherChat</a>"
+            "inline-block;'>Open Nexara</a>"
             "</p>"
             "<p style='color: #6b7280; font-size: 13px;'>"
             "This link expires in 30 minutes. If you did not request "
@@ -147,7 +147,7 @@ class EmailService:
         )
 
         message = MIMEMultipart("alternative")
-        message["Subject"] = "CipherChat - Recover your recovery code"
+        message["Subject"] = "Nexara - Recover your recovery code"
         message["From"] = f"{self.from_name} <{self.from_email}>"
         message["To"] = recipient_email
 

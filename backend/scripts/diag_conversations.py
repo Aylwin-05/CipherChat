@@ -31,10 +31,10 @@ async def main():
     import asyncpg
 
     conn = await asyncpg.connect(
-        "postgresql://postgres:database@localhost:5432/cipherchat"
+        "postgresql://postgres:database@localhost:5432/nexara"
     )
     row = await conn.fetchrow(
-        "SELECT id, email FROM users WHERE email = 'cipherchat.dev@gmail.com'"
+        "SELECT id, email FROM users WHERE email = 'nexara.dev@gmail.com'"
     )
     await conn.close()
 

@@ -1,5 +1,5 @@
 // ==========================================================
-// CipherChat Signal Device Service (frontend)
+// Nexara Signal Device Service (frontend)
 //
 // Orchestrates first-run device registration:
 //   1. generate Ed25519 identity + signed prekey + OPK batch
@@ -40,7 +40,7 @@ function withDeviceLock(fn) {
     if (navigator?.locks?.request) {
 
         return navigator.locks.request(
-            "cipherchat-device-register",
+            "nexara-device-register",
             fn,
         );
 

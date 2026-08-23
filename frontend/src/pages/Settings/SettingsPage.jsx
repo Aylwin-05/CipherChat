@@ -63,7 +63,7 @@ const THEME_OPTIONS = [
     {
         id: "blue",
         label: "Blue",
-        description: "Nebula blue — the signature CipherChat look.",
+        description: "Nebula blue — the signature Nexara look.",
         colors: ["#7c5cff", "#22d3ee"],
     },
     {
@@ -1078,7 +1078,7 @@ export default function SettingsPage() {
                     <h3>Appearance</h3>
 
                     <p>
-                        Pick the CipherChat theme you like.
+                        Pick the Nexara theme you like.
                     </p>
 
                 </div>
@@ -1143,7 +1143,7 @@ export default function SettingsPage() {
 
                     <p>
                         Get browser notifications for new messages
-                        and status updates, even when CipherChat is
+                        and status updates, even when Nexara is
                         in the background or closed. Notifications
                         are privacy-safe: they never reveal message
                         content — it stays encrypted.
@@ -1639,7 +1639,7 @@ export default function SettingsPage() {
                     <h3>App lock</h3>
 
                     <p>
-                        Lock CipherChat on this device with a
+                        Lock Nexara on this device with a
                         4–6 digit PIN. It&apos;s local only — never
                         sent to our servers. Forgot it? Use
                         &quot;Forgot PIN&quot; on the lock screen to
@@ -1862,8 +1862,8 @@ export default function SettingsPage() {
 
                                 <small>
                                     {appLockEnabled
-                                        ? "CipherChat asks for this PIN when you open the app in this browser."
-                                        : "Anyone with this device can open CipherChat without a PIN."}
+                                        ? "Nexara asks for this PIN when you open the app in this browser."
+                                        : "Anyone with this device can open Nexara without a PIN."}
                                 </small>
 
                             </div>
@@ -2096,7 +2096,7 @@ export default function SettingsPage() {
                     <h3>Account</h3>
 
                     <p>
-                        Log out of CipherChat on this device.
+                        Log out of Nexara on this device.
                     </p>
 
                 </div>

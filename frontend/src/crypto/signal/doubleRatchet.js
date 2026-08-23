@@ -1,5 +1,5 @@
 // ==========================================================
-// CipherChat Double Ratchet
+// Nexara Double Ratchet
 //
 // JSX mirror of backend/app/crypto/signal/double_ratchet.py
 // Per https://signal.org/docs/specifications/doubleratchet/

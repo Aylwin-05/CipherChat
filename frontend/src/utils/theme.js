@@ -6,7 +6,7 @@
 // variable blocks in index.css.
 // ==========================================================
 
-const THEME_KEY = "cipherchat_theme";
+const THEME_KEY = "nexara_theme";
 
 export const THEMES = ["blue", "dark", "light"];
 

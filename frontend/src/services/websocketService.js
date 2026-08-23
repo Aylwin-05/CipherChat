@@ -65,7 +65,7 @@ class WebSocketService {
         const socket =
             new WebSocket(
                 url,
-                ["cipherchat." + this.token]
+                ["nexara." + this.token]
             );
 
         // Supersede guard: any socket no longer owned by the

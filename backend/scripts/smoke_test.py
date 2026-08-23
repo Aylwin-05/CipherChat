@@ -1,5 +1,5 @@
 """
-CipherChat live smoke test.
+Nexara live smoke test.
 
 Boots the real backend (uvicorn) against the PostgreSQL configured in
 backend/.env, then drives the full happy path over real HTTP + WebSocket:
@@ -7,7 +7,7 @@ backend/.env, then drives the full happy path over real HTTP + WebSocket:
   1. Register two users via email OTP (dev-mode OTPs are parsed from the
      server console log; live SMTP delivery is NOT required).
   2. User A opens a private conversation with B.
-  3. Both connect to /ws/me (subprotocol auth: "cipherchat.<token>").
+  3. Both connect to /ws/me (subprotocol auth: "nexara.<token>").
   4. A sends one encrypted message (payload is opaque to the backend).
   5. The "message" websocket event reaches B.
   6. B marks the message delivered + read -> A receives both receipts.
@@ -467,7 +467,7 @@ async def register_user(client: httpx.AsyncClient, reader: LogReader, email: str
 async def connect_ws(token: str):
     ws = await websockets.connect(
         WS_URL,
-        subprotocols=[f"cipherchat.{token}"],
+        subprotocols=[f"nexara.{token}"],
         open_timeout=TIMEOUT,
     )
     first = json.loads(await asyncio.wait_for(ws.recv(), TIMEOUT))

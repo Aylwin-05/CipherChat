@@ -1,5 +1,5 @@
 // ==========================================================
-// CipherChat Call E2EE (insertable streams)
+// Nexara Call E2EE (insertable streams)
 //
 // Voice/video media is encrypted frame-by-frame in the browser
 // with AES-256-GCM via RTCRtpScriptTransform (WebRTC encoded
@@ -11,7 +11,7 @@
 // compromised relay still cannot decrypt the conversation.
 //
 // Key schedule (caller/callee symmetric, no key exchange):
-//   base   = HKDF(secret, ikm=callId, info="CipherChatCall", 64)
+//   base   = HKDF(secret, ikm=callId, info="NexaraCall", 64)
 //   sendKey = base[0:32]   (derived with per-side label below)
 //   recvKey = base[32:64]
 // Direction labels make the streams independent per direction.
@@ -26,11 +26,11 @@ import { hkdf } from "./signal/primitives";
 import { utf8Encode, concatBytes } from "./signal/bytes";
 import { b64decode } from "./signal/bytes";
 
-const HKDF_INFO = utf8Encode("CipherChatCall");
-const HKDF_INFO_SEND = utf8Encode("CipherChatCallSend");
-const HKDF_INFO_RECV = utf8Encode("CipherChatCallRecv");
+const HKDF_INFO = utf8Encode("NexaraCall");
+const HKDF_INFO_SEND = utf8Encode("NexaraCallSend");
+const HKDF_INFO_RECV = utf8Encode("NexaraCallRecv");
 
-const AAD = utf8Encode("CipherChatCallFrame");
+const AAD = utf8Encode("NexaraCallFrame");
 
 export function supportsFrameEncryption() {
 

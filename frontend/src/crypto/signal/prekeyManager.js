@@ -1,5 +1,5 @@
 // ==========================================================
-// CipherChat One-Time PreKey Manager
+// Nexara One-Time PreKey Manager
 //
 // The client owns the private halves of every one-time prekey
 // (they must live in the local key store so this device can

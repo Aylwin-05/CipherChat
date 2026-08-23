@@ -21,7 +21,7 @@ logger = logging.getLogger("app.websocket.websocket_service")
 
 class WebSocketService:
     """
-    CipherChat WebSocket Service
+    Nexara WebSocket Service
 
     IMPORTANT
     ---------

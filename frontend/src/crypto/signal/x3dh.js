@@ -1,5 +1,5 @@
 // ==========================================================
-// CipherChat X3DH (Extended Triple Diffie-Hellman) Key Agreement
+// Nexara X3DH (Extended Triple Diffie-Hellman) Key Agreement
 //
 // JSX mirror of backend/app/crypto/signal/x3dh.py
 //

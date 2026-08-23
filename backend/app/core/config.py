@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # App
     # ======================================================
 
-    APP_NAME: str = "CipherChat"
+    APP_NAME: str = "Nexara"
     APP_ENV: str = "development"
     DEBUG: bool = True
 

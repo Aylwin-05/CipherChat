@@ -1,6 +1,6 @@
-# Contributing to CipherChat
+# Contributing to Nexara
 
-Thanks for your interest in improving CipherChat — a privacy-first,
+Thanks for your interest in improving Nexara — a privacy-first,
 end-to-end encrypted messaging platform.
 
 ## Development Setup
@@ -16,7 +16,7 @@ alembic upgrade head
 uvicorn app.main:app --reload                     # http://localhost:8000
 ```
 
-Prerequisites: PostgreSQL 14+ on `:5432` with a `cipherchat` database.
+Prerequisites: PostgreSQL 14+ on `:5432` with a `nexara` database.
 Redis is optional; without `REDIS_URL` the app falls back to in-memory rate
 limiting (single-instance only).
 

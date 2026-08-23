@@ -9,10 +9,10 @@
 // ==========================================================
 
 const PIN_PATTERN = /^\d{4,6}$/;
-const HMAC_KEY = "cipherchat_lock_hmac";
-const ATTEMPTS_KEY = "cipherchat_lock_attempts";
-const LOCKOUT_KEY = "cipherchat_lock_locked_until";
-const UNLOCK_FLAG = "cipherchat_app_unlocked";
+const HMAC_KEY = "nexara_lock_hmac";
+const ATTEMPTS_KEY = "nexara_lock_attempts";
+const LOCKOUT_KEY = "nexara_lock_locked_until";
+const UNLOCK_FLAG = "nexara_app_unlocked";
 const MAX_ATTEMPTS = 3;
 const LOCKOUT_MS = 30 * 60 * 1000;
 
@@ -25,7 +25,7 @@ let dbPromise = null;
 function openDb() {
     if (!dbPromise) {
         dbPromise = new Promise((resolve, reject) => {
-            const request = indexedDB.open("cipherchat-app-lock-pepper", 1);
+            const request = indexedDB.open("nexara-app-lock-pepper", 1);
             request.onupgradeneeded = () => {
                 const db = request.result;
                 if (!db.objectStoreNames.contains("pepper")) {
@@ -128,7 +128,7 @@ function safeEqual(a, b) {
 
 // ==========================================================
 // PIN Verification (HMAC-SHA256 with pepper)
-// Stored value: HMAC-SHA256(key = pepper || pin, "cipherchat-app-lock")
+// Stored value: HMAC-SHA256(key = pepper || pin, "nexara-app-lock")
 // ==========================================================
 
 async function computeHmac(pepperB64, pin) {
@@ -150,7 +150,7 @@ async function computeHmac(pepperB64, pin) {
     const signature = await crypto.subtle.sign(
         "HMAC",
         key,
-        new TextEncoder().encode("cipherchat-app-lock")
+        new TextEncoder().encode("nexara-app-lock")
     );
 
     return b64FromUint8(new Uint8Array(signature));

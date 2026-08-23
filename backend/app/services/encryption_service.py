@@ -9,7 +9,7 @@ from app.core.config import settings
 
 class EncryptionService:
     """
-    CipherChat Encryption Service
+    Nexara Encryption Service
 
     Responsibilities
     ----------------

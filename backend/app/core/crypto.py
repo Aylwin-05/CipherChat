@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 class CryptoService:
     """
-    CipherChat Cryptography Service
+    Nexara Cryptography Service
 
     Responsibilities
     ----------------
@@ -116,7 +116,7 @@ class CryptoService:
             algorithm=hashes.SHA256(),
             length=32,
             salt=None,
-            info=b"CipherChat",
+            info=b"Nexara",
         )
 
         return hkdf.derive(shared_secret)

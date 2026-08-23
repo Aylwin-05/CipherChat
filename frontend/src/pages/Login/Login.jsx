@@ -97,7 +97,7 @@ export default function Login() {
                 <div className="auth-card">
                     <ShieldLogo />
 
-                    <h1>CipherChat</h1>
+                    <h1>Nexara</h1>
 
                     <p className="auth-tagline">
                         End-to-end encrypted messaging,

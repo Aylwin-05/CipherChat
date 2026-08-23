@@ -1,6 +1,6 @@
 {
-    "appId": "com.cipherchat.app",
-    "appName": "CipherChat",
+    "appId": "com.nexara.app",
+    "appName": "Nexara",
     "webDir": "../frontend/dist",
     "server": {
         "androidScheme": "https",

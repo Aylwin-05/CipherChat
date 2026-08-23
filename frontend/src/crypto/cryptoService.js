@@ -1,5 +1,5 @@
 // ==========================================================
-// CipherChat Crypto Service
+// Nexara Crypto Service
 //
 // Hybrid Encryption
 //
@@ -40,8 +40,8 @@ import {
 // old history keeps working.
 // ==========================================================
 
-export const DM_AAD_PREFIX = "cipherchat-dm:";
-export const GROUP_AAD_PREFIX = "cipherchat-group:";
+export const DM_AAD_PREFIX = "nexara-dm:";
+export const GROUP_AAD_PREFIX = "nexara-group:";
 
 export function encodeAAD(aadString) {
 

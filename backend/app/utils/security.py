@@ -5,7 +5,7 @@ from hmac import compare_digest
 
 class SecurityUtils:
     """
-    Cryptographic helper functions used throughout CipherChat.
+    Cryptographic helper functions used throughout Nexara.
     """
 
     OTP_LENGTH = 6

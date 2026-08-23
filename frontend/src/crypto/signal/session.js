@@ -1,5 +1,5 @@
 // ==========================================================
-// CipherChat Signal Session Manager
+// Nexara Signal Session Manager
 //
 // JSX mirror of backend/app/crypto/signal/session.py
 //

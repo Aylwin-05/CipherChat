@@ -1,5 +1,5 @@
 """
-Generalized conversation-creation tool for CipherChat.
+Generalized conversation-creation tool for Nexara.
 
 Works against ANY running backend (default http://127.0.0.1:8000)
 and ANY users in the database. No hardcoded ids or emails.

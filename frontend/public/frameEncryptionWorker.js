@@ -1,5 +1,5 @@
 // ==========================================================
-// CipherChat frame encryption worker
+// Nexara frame encryption worker
 //
 // A classic (non-module) Web Worker loaded by RTCRtpScriptTransform.
 // Encrypts/decrypts WebRTC audio/video frames with AES-256-GCM.
