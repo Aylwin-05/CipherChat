@@ -97,11 +97,15 @@
         display: none;
     }
 
-    .app-shell:has(.conv-item.active) .conv-panel {
+    /* Pane swap driven by the .in-chat class that Dashboard
+       puts on .app-shell from React state. CSS :has() is NOT
+       used here: older Android System WebViews (< Chromium 105)
+       don't support it, which froze the list on phones. */
+    .app-shell.in-chat .conv-panel {
         display: none;
     }
 
-    .app-shell:has(.conv-item.active) .chat-panel {
+    .app-shell.in-chat .chat-panel {
         display: flex;
     }
 
@@ -119,6 +123,14 @@
 @media (min-width: 721px) {
 
     .mobile-tab-bar {
+        display: none;
+    }
+
+    /* The ⋮ overflow menu is a phone-only affordance;
+       desktop keeps every chip inline in the header. */
+    .kebab-btn,
+    .kebab-menu,
+    .kebab-backdrop {
         display: none;
     }
 
@@ -196,7 +208,7 @@
     }
 
     /* Hide the bar while a chat fills the screen */
-    .app-shell:has(.conv-item.active) .mobile-tab-bar {
+    .app-shell.in-chat .mobile-tab-bar {
         display: none;
     }
 
@@ -435,6 +447,115 @@
         gap: 4px;
     }
 
+    /* Non-call feature chips move into the ⋮ menu on phones;
+       voice/video call stay in the bar. */
+    .chat-header-actions > .header-extra {
+        display: none;
+    }
+
+    /* ---------- ⋮ overflow menu ---------- */
+
+    .kebab-btn {
+        width: 40px;
+        height: 40px;
+        flex-shrink: 0;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        color: var(--text-2);
+    }
+
+    .kebab-btn:active,
+    .kebab-btn.open {
+        background: var(--surface-2);
+    }
+
+    .kebab-btn.open {
+        color: var(--accent-2);
+    }
+
+    .kebab-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 88;
+    }
+
+    .kebab-menu {
+        position: fixed;
+        top: max(60px, calc(env(safe-area-inset-top) + 58px));
+        right: 8px;
+        z-index: 89;
+        min-width: 240px;
+        max-width: calc(100vw - 24px);
+        padding: 6px;
+        background: var(--glass-panel, rgba(14, 18, 38, 0.7));
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow:
+            0 18px 48px rgba(0, 0, 0, 0.45),
+            0 4px 14px rgba(0, 0, 0, 0.3);
+        animation: mobileSheet 0.22s var(--ease);
+    }
+
+    .kebab-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 13px 14px;
+        border-radius: 10px;
+        font-size: 14.5px;
+        font-weight: 500;
+        color: var(--text-1);
+        text-align: left;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .kebab-item svg {
+        flex-shrink: 0;
+        color: var(--text-3);
+    }
+
+    .kebab-item:active {
+        background: var(--surface-2);
+    }
+
+    .kebab-item-on {
+        color: var(--accent-2);
+    }
+
+    /* ---------- message reply/reaction menu ----------
+       Phones use WhatsApp-style gestures instead of the
+       hover ⋯ button: long-press opens the menu, horizontal
+       swipe replies. The dots remain web-only. */
+    .bubble-actions-btn {
+        display: none;
+    }
+
+    /* Long-press must not summon the native selection or
+       callout UI over our own menu. */
+    @media (hover: none) {
+        .message-bubble {
+            -webkit-touch-callout: none;
+            user-select: none;
+        }
+    }
+
+    .bubble-menu-item {
+        padding: 12px 14px;
+        font-size: 14.5px;
+    }
+
+    .bubble-reaction-btn {
+        font-size: 22px;
+        padding: 6px 0;
+    }
+
     .e2e-chip:not(.icon-chip) {
         display: none;
     }
@@ -452,7 +573,7 @@
 
     /* ---------- back button (ChatWindow.jsx header) ---------- */
 
-    .app-shell:not(:has(.conv-item.active)) .chat-back-btn {
+    .app-shell:not(.in-chat) .chat-back-btn {
         visibility: hidden;
     }
 
@@ -681,4 +802,32 @@
 html {
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+}
+
+/* ============================================================
+   9. Native shell (Capacitor) hardening
+   ------------------------------------------------------------
+   main.jsx adds html.native when running inside the Android/iOS
+   wrapper. Dynamic viewport units (100dvh) are mis-evaluated by
+   some Android System WebViews, which collapses the shell and
+   kills every inner scroll area — plain vh is exact in the
+   full-screen WebView (no browser chrome to account for).
+   ============================================================ */
+
+html.native .app-shell {
+    height: 100vh;
+}
+
+@media (max-width: 720px) {
+
+    /* Touch scrolling behaviour for the app's scroll areas */
+    .conv-list-body,
+    .message-list,
+    .settings-page,
+    .friends-page,
+    .status-page {
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+
 }

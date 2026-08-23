@@ -1,11 +1,19 @@
 import axios from "axios";
 
+// Absolute server origin when running outside a normal browser
+// origin (Capacitor/WebView builds). Empty in the web app, which
+// keeps every URL relative exactly as before.
+const SERVER_URL = import.meta.env.VITE_API_URL || "";
+
 const api = axios.create({
-    baseURL: "/api/v1",
+    baseURL: `${SERVER_URL}/api/v1`,
     headers: {
         "Content-Type": "application/json",
     },
     timeout: 10000,
+    // Required for the refresh-token cookie when the API lives
+    // on another origin (native shells); harmless same-origin.
+    withCredentials: true,
 });
 
 // ==========================================================
@@ -68,7 +76,9 @@ export async function refreshAccessToken() {
 
     const response =
         await axios.post(
-            "/api/v1/auth/refresh"
+            `${SERVER_URL}/api/v1/auth/refresh`,
+            null,
+            { withCredentials: true }
         );
 
     const newAccessToken =

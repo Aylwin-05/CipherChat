@@ -105,6 +105,152 @@ const [attachmentUrls, setAttachmentUrls] = useState({});
 
     onToggleMenuRef.current = onToggleMenu;
 
+    // ---- WhatsApp-style touch gestures --------------------
+    // • Long-press (~480 ms) opens this message's actions
+    //   menu (reactions / reply / …).
+    // • A horizontal drag swipes the bubble and replies on
+    //   release past 56 px.
+    // • Vertical movement always yields to native scrolling,
+    //   and desktop mouse input never touches any of this.
+
+    const pressTimerRef = useRef(null);
+
+    const longPressAtRef = useRef(0);
+
+    const touchRef = useRef({
+        active: false,
+        startX: 0,
+        startY: 0,
+        lastX: 0,
+        swiping: false,
+        longPressed: false,
+    });
+
+    const [swipeDx, setSwipeDx] = useState(0);
+
+    useEffect(() => () => {
+        clearTimeout(pressTimerRef.current);
+    }, []);
+
+    function handleBubbleTouchStart(event) {
+
+        if (deleted) return;
+
+        const touch = event.touches[0];
+
+        touchRef.current = {
+            active: true,
+            startX: touch.clientX,
+            startY: touch.clientY,
+            lastX: touch.clientX,
+            swiping: false,
+            longPressed: false,
+        };
+
+        clearTimeout(pressTimerRef.current);
+
+        pressTimerRef.current = setTimeout(() => {
+
+            const state = touchRef.current;
+
+            if (!state.active || state.swiping) return;
+
+            state.longPressed = true;
+
+            longPressAtRef.current = Date.now();
+
+            navigator.vibrate?.(35);
+
+            setConfirming(null);
+
+            onToggleMenuRef.current?.(true);
+
+        }, 480);
+
+    }
+
+    function handleBubbleTouchMove(event) {
+
+        const state = touchRef.current;
+
+        if (!state.active) return;
+
+        const touch = event.touches[0];
+
+        const dx = touch.clientX - state.startX;
+        const dy = touch.clientY - state.startY;
+
+        if (!state.swiping && !state.longPressed) {
+
+            if (
+                Math.abs(dy) > 10 &&
+                Math.abs(dy) >= Math.abs(dx)
+            ) {
+                // Vertical intent → let scrolling win.
+                clearTimeout(pressTimerRef.current);
+                state.active = false;
+                return;
+            }
+
+            if (Math.abs(dx) > 12) {
+                clearTimeout(pressTimerRef.current);
+                state.swiping = true;
+            }
+
+        }
+
+        if (!state.swiping) return;
+
+        // Rubber-band resistance past 72 px.
+        const capped =
+            Math.abs(dx) <= 72
+                ? dx
+                : Math.sign(dx) *
+                  (72 + (Math.abs(dx) - 72) * 0.25);
+
+        state.lastX = touch.clientX;
+
+        setSwipeDx(capped);
+
+    }
+
+    function handleBubbleTouchEnd(event) {
+
+        clearTimeout(pressTimerRef.current);
+
+        const state = touchRef.current;
+
+        state.active = false;
+
+        if (state.swiping) {
+
+            event.preventDefault();
+
+            state.swiping = false;
+
+            setSwipeDx(0);
+
+            const dx = state.lastX - state.startX;
+
+            if (Math.abs(dx) >= 56 && !deleted) {
+                onToggleMenuRef.current?.(false);
+                onReply?.(message);
+            }
+
+            return;
+
+        }
+
+        if (state.longPressed) {
+            // Swallow the synthetic click that follows a
+            // long-press — otherwise the document click
+            // handler would instantly re-close the menu we
+            // just opened.
+            event.preventDefault();
+        }
+
+    }
+
     // Close the actions menu when clicking elsewhere.
     // NOTE: deliberately NOT closed on scroll — the menu is
     // positioned inside its message row, so it scrolls along
@@ -113,7 +259,16 @@ const [attachmentUrls, setAttachmentUrls] = useState({});
 
         if (!menuOpen) return;
 
-        function closeMenu() {
+        function closeMenu(event) {
+
+            // Ignore the synthetic click fired right after a
+            // long-press opened this menu.
+            if (
+                event &&
+                Date.now() - longPressAtRef.current < 500
+            ) {
+                return;
+            }
 
             onToggleMenuRef.current?.(false);
 
@@ -541,7 +696,10 @@ const canForward =
 
     return (
 
-        <div className={messageRowClass}>
+        <div
+            className={messageRowClass}
+            style={menuOpen ? { zIndex: 60 } : undefined}
+        >
 
             <div
                 className={[
@@ -552,6 +710,25 @@ const canForward =
                         ? "tail"
                         : "",
                 ].join(" ")}
+                style={{
+                    transform: swipeDx
+                        ? `translateX(${swipeDx}px)`
+                        : undefined,
+                    transition: swipeDx
+                        ? "none"
+                        : "transform 0.18s ease-out",
+                }}
+                onTouchStart={handleBubbleTouchStart}
+                onTouchMove={handleBubbleTouchMove}
+                onTouchEnd={handleBubbleTouchEnd}
+                onContextMenu={(event) => {
+                    // Phones: long-press is ours — keep the
+                    // native text-selection popup out of the
+                    // way. Desktop right-click stays native.
+                    if (window.matchMedia("(hover: none)").matches) {
+                        event.preventDefault();
+                    }
+                }}
             >
 
                 {/* SENDER NAME (grouped other chats) */}

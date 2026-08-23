@@ -11,6 +11,8 @@ import { useAuth } from "../../context/AuthContext";
 import { useChatSocket } from "../../context/ChatSocketContext";
 import storyService from "../../services/storyService";
 
+import UserAvatar from "../UserAvatar";
+
 const STORY_DURATION_MS = 5000;
 
 // ==========================================================
@@ -344,15 +346,10 @@ export default function StoryViewer({
                 {/* Header */}
                 <div className="story-viewer-header">
                     <span className="story-viewer-avatar">
-                        {group?.owner?.avatar_url
-                            ? (
-                                <img
-                                    src={group.owner.avatar_url}
-                                    alt=""
-                                />
-                            )
-                            : group?.owner?.display_name?.[0]?.toUpperCase()
-                        }
+                        <UserAvatar
+                            user={group?.owner}
+                            className="story-viewer-user-avatar"
+                        />
                     </span>
                     <span className="story-viewer-name">
                         {group?.owner?.display_name}
@@ -542,15 +539,16 @@ export default function StoryViewer({
                                     className="story-viewer-row"
                                 >
                                     <span className="story-viewer-row-avatar">
-                                        {viewer.avatar_url
-                                            ? (
-                                                <img
-                                                    src={viewer.avatar_url}
-                                                    alt=""
-                                                />
-                                            )
-                                            : viewer.display_name?.[0]?.toUpperCase()
-                                        }
+                                        <UserAvatar
+                                            user={{
+                                                id: viewer.user_id,
+                                                display_name:
+                                                    viewer.display_name,
+                                                avatar_url:
+                                                    viewer.avatar_url,
+                                            }}
+                                            className="story-viewer-user-avatar"
+                                        />
                                     </span>
                                     <span className="story-viewer-row-name">
                                         {viewer.display_name}

@@ -6,6 +6,7 @@ import MobileTabBar from "../../components/mobile/MobileTabBar";
 
 import ConversationList from "../../components/chat/ConversationList";
 import ChatWindow from "../../components/chat/ChatWindow";
+import StatusPage from "../../components/story/StatusPage";
 import FriendsPage from "../../components/friends/FriendsPage";
 import SettingsPage from "../Settings/SettingsPage";
 import DeleteConversationModal from "../../components/chat/DeleteConversationModal";
@@ -15,6 +16,7 @@ import LockScreen from "../../components/lock/LockScreen";
 import conversationService from "../../services/conversationService";
 
 import appLock from "../../utils/appLock";
+import { useAndroidBack } from "../../utils/androidBack";
 
 import { useAuth } from "../../context/AuthContext";
 import {
@@ -64,6 +66,21 @@ function DashboardInner() {
         currentPage,
         setCurrentPage,
     ] = useState("chats");
+
+    // Android back button fallback: if the user is on a
+    // secondary tab (status / friends / settings), send them
+    // back to the chats tab. Returning false at the chats tab
+    // lets androidBack.js exit the app.
+    useAndroidBack(() => {
+
+        if (currentPage !== "chats") {
+            setCurrentPage("chats");
+            return true;
+        }
+
+        return false;
+
+    }, currentPage !== "chats");
 
     //------------------------------------------------------
     // App lock (local PIN gate). When configured, the app
@@ -272,7 +289,13 @@ function DashboardInner() {
 
     return (
 
-        <div className="app-shell">
+        <div
+            className={
+                activeConversationId
+                    ? "app-shell in-chat"
+                    : "app-shell"
+            }
+        >
 
             {appLocked && (
 
@@ -312,19 +335,31 @@ function DashboardInner() {
 
                     )
 
-                    : currentPage === "settings"
+                    : currentPage === "status"
 
                         ? (
 
-                            <div className="app-stage settings-stage">
+                            <div className="app-stage status-stage">
 
-                                <SettingsPage />
+                                <StatusPage />
 
                             </div>
 
                         )
 
-                        : (
+                        : currentPage === "settings"
+
+                            ? (
+
+                                <div className="app-stage settings-stage">
+
+                                    <SettingsPage />
+
+                                </div>
+
+                            )
+
+                            : (
 
                         <div className="app-stage">
 

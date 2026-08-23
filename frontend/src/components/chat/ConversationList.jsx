@@ -5,7 +5,6 @@ import "./ConversationList.css";
 import ConversationItem from "./ConversationItem";
 import GroupModal from "./GroupModal";
 import JoinGroupModal from "./JoinGroupModal";
-import StatusStrip from "../story/StatusStrip";
 
 import { useChatSocket } from "../../context/ChatSocketContext";
 
@@ -50,8 +49,6 @@ export default function ConversationList({
                     <h2 className="conv-title">Chats</h2>
 
                 </div>
-
-            <StatusStrip />
 
             <div className="conv-list-body">
 

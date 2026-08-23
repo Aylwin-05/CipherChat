@@ -9,8 +9,18 @@ import { AuthProvider } from "./context/AuthContext";
 import ErrorBoundary from "./components/layout/ErrorBoundary";
 import { applyTheme, getTheme } from "./utils/theme";
 import { registerServiceWorker } from "./services/pushService";
+import { initAndroidBack } from "./utils/androidBack";
 
 applyTheme(getTheme());
+
+// Flag the document when running inside the native Capacitor
+// shell (the runtime injects window.Capacitor there, absent in
+// normal browsers). CSS uses it to avoid dynamic-viewport
+// quirks of older Android WebViews.
+if (window.Capacitor?.isNativePlatform?.()) {
+    document.documentElement.classList.add("native");
+    initAndroidBack();
+}
 
 // Register the service worker for Web Push notifications.
 // Idempotent; safe to run before auth (subscription itself is

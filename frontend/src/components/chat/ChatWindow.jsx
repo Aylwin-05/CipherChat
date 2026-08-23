@@ -13,6 +13,7 @@ import StarredMessagesModal from "./StarredMessagesModal";
 
 import UserAvatar from "../UserAvatar";
 import { useAuth } from "../../context/AuthContext";
+import { useAndroidBack } from "../../utils/androidBack";
 import { useChatSocket } from "../../context/ChatSocketContext";
 import { useCall } from "../../context/CallContext";
 import blockService from "../../services/blockService";
@@ -193,6 +194,55 @@ export default function ChatWindow({
 
     const [highlightMessageId, setHighlightMessageId] =
         useState(null);
+
+    // Mobile ⋮ overflow menu for the chat header actions.
+    const [kebabOpen, setKebabOpen] =
+        useState(false);
+
+    // Android back button: close the topmost overlay first,
+    // then leave the conversation itself.
+    useAndroidBack(() => {
+
+        if (kebabOpen) {
+            setKebabOpen(false);
+            return true;
+        }
+
+        if (showTimerMenu) {
+            setShowTimerMenu(false);
+            return true;
+        }
+
+        if (blockConfirm) {
+            setBlockConfirm(false);
+            return true;
+        }
+
+        if (deleteOpen) {
+            setDeleteOpen(false);
+            return true;
+        }
+
+        if (starredOpen) {
+            setStarredOpen(false);
+            return true;
+        }
+
+        if (groupInfoOpen) {
+            setGroupInfoOpen(false);
+            return true;
+        }
+
+        if (showSearch) {
+            handleCloseSearch();
+            return true;
+        }
+
+        selectConversation(null);
+
+        return true;
+
+    });
 
     const searchTimerRef = useRef(null);
 
@@ -631,25 +681,23 @@ export default function ChatWindow({
 
                 <div className="chat-identity">
 
-                    {isGroup && groupDetail?.avatar_url ? (
-
-                        <img
-                            src={groupDetail.avatar_url}
-                            alt="Group"
-                            className="chat-avatar-img"
-                        />
-
-                    ) : (
-
-                        <UserAvatar
-                            user={isGroup
-                                ? {
-                                    display_name: groupName,
-                                    avatar_color: conversation.id,
-                                }
-                                : otherUser}
-                            className="chat-avatar"
-                        >
+                    <UserAvatar
+                        user={isGroup
+                            ? {
+                                id: conversation.id,
+                                display_name: groupName,
+                                avatar_url:
+                                    groupDetail?.avatar_url ??
+                                    conversation.avatar_url,
+                            }
+                            : otherUser}
+                        endpoint={
+                            isGroup
+                                ? `/conversations/${conversation.id}/avatar`
+                                : undefined
+                        }
+                        className="chat-avatar"
+                    >
 
                             {!isGroup && (
                                 <span
@@ -659,9 +707,7 @@ export default function ChatWindow({
                                 />
                             )}
 
-                        </UserAvatar>
-
-                    )}
+                    </UserAvatar>
 
                     <div className="chat-heading">
 
@@ -718,7 +764,7 @@ export default function ChatWindow({
                 <div className="chat-header-actions">
 
                     <span
-                        className="e2e-chip icon-chip"
+                        className="e2e-chip icon-chip header-extra"
                         title="Starred messages"
                     >
                         <button
@@ -743,7 +789,7 @@ export default function ChatWindow({
                         </button>
                     </span>
 
-                    <span className="e2e-chip icon-chip" title="Search messages">
+                    <span className="e2e-chip icon-chip header-extra" title="Search messages">
 
                         <button
                             type="button"
@@ -924,8 +970,8 @@ export default function ChatWindow({
                             <span
                                 className={
                                     blocked
-                                        ? "e2e-chip icon-chip chip-active"
-                                        : "e2e-chip icon-chip"
+                                        ? "e2e-chip icon-chip chip-active header-extra"
+                                        : "e2e-chip icon-chip header-extra"
                                 }
                                 title={
                                     blocked
@@ -1010,8 +1056,8 @@ export default function ChatWindow({
                     <span
                         className={
                             conversation.disappear_after_seconds
-                                ? "e2e-chip icon-chip chip-active"
-                                : "e2e-chip icon-chip"
+                                ? "e2e-chip icon-chip chip-active header-extra"
+                                : "e2e-chip icon-chip header-extra"
                         }
                         title={
                             conversation.disappear_after_seconds
@@ -1098,7 +1144,7 @@ export default function ChatWindow({
                     </span>
 
                     <span
-                        className="e2e-chip icon-chip"
+                        className="e2e-chip icon-chip header-extra"
                         title={
                             isGroup
                                 ? "Group info"
@@ -1149,6 +1195,156 @@ export default function ChatWindow({
                             )}
                         </button>
                     </span>
+
+                    {/* -------- mobile ⋮ overflow menu --------
+                        Holds every non-call header action on
+                        phones; the chips above keep desktop
+                        layout unchanged. */}
+
+                    <button
+                        type="button"
+                        className={
+                            kebabOpen
+                                ? "kebab-btn open"
+                                : "kebab-btn"
+                        }
+                        aria-label="More options"
+                        aria-expanded={kebabOpen}
+                        onClick={() =>
+                            setKebabOpen(v => !v)
+                        }
+                    >
+                        <svg
+                            width="20"
+                            height="20"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                        >
+                            <circle cx="12" cy="5" r="2" />
+                            <circle cx="12" cy="12" r="2" />
+                            <circle cx="12" cy="19" r="2" />
+                        </svg>
+                    </button>
+
+                    {kebabOpen && (
+
+                        <>
+
+                            <div
+                                className="kebab-backdrop"
+                                onClick={() =>
+                                    setKebabOpen(false)
+                                }
+                            />
+
+                            <div className="kebab-menu">
+
+                                <button
+                                    type="button"
+                                    className="kebab-item"
+                                    onClick={() => {
+                                        setStarredOpen(true);
+                                        setKebabOpen(false);
+                                    }}
+                                >
+                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                                    </svg>
+                                    Starred messages
+                                </button>
+
+                                <button
+                                    type="button"
+                                    className="kebab-item"
+                                    onClick={() => {
+                                        setShowSearch(v => !v);
+                                        if (showSearch) {
+                                            handleCloseSearch();
+                                        }
+                                        setKebabOpen(false);
+                                    }}
+                                >
+                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="11" cy="11" r="7" />
+                                        <path d="m21 21-4.35-4.35" />
+                                    </svg>
+                                    Search messages
+                                </button>
+
+                                {!isGroup && otherUser?.id && (
+                                    <button
+                                        type="button"
+                                        className="kebab-item"
+                                        disabled={blockBusy}
+                                        onClick={() => {
+                                            setBlockConfirm(v => !v);
+                                            setKebabOpen(false);
+                                        }}
+                                    >
+                                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                                            <circle cx="12" cy="12" r="10" />
+                                            <path d="M4.93 4.93l14.14 14.14" />
+                                        </svg>
+                                        {blocked
+                                            ? `Unblock ${otherUser.display_name}`
+                                            : `Block ${otherUser.display_name}`}
+                                    </button>
+                                )}
+
+                                <button
+                                    type="button"
+                                    className={
+                                        conversation.disappear_after_seconds
+                                            ? "kebab-item kebab-item-on"
+                                            : "kebab-item"
+                                    }
+                                    onClick={() => {
+                                        setShowTimerMenu(true);
+                                        setKebabOpen(false);
+                                    }}
+                                >
+                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="12" cy="12" r="9" />
+                                        <path d="M12 7v5l3 2" />
+                                    </svg>
+                                    Disappearing messages
+                                    {conversation.disappear_after_seconds
+                                        ? " · On"
+                                        : ""}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    className="kebab-item"
+                                    onClick={() => {
+                                        isGroup
+                                            ? setGroupInfoOpen(true)
+                                            : setDeleteOpen(true);
+                                        setKebabOpen(false);
+                                    }}
+                                >
+                                    {isGroup ? (
+                                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                                            <circle cx="12" cy="12" r="3" />
+                                            <circle cx="6" cy="6" r="3" />
+                                            <circle cx="18" cy="6" r="3" />
+                                            <path d="m8.2 8.8 2 2m3.6 0 2-2M8.2 15.2l2-2m3.6 0 2 2" />
+                                        </svg>
+                                    ) : (
+                                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M3 6h18" />
+                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                                            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                        </svg>
+                                    )}
+                                    {isGroup ? "Group info" : "Delete chat"}
+                                </button>
+
+                            </div>
+
+                        </>
+
+                    )}
 
                 </div>
 

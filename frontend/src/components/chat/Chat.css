@@ -772,7 +772,7 @@
     min-width: 190px;
     padding: 5px;
     border-radius: 12px;
-    background: var(--surface-2, #1e293b);
+    background: var(--glass-panel, rgba(14, 18, 38, 0.7));
     border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
     display: flex;
@@ -794,11 +794,21 @@
     bottom: calc(100% + 4px);
 }
 
-/* Long menus must never escape the window: cap and scroll */
+/* Long menus must never escape the window: cap and scroll.
+   The plain-vh line first — older Android WebViews don't
+   know dvh and would drop the whole declaration. */
 
 .bubble-menu {
+    max-height: min(420px, calc(100vh - 32px));
     max-height: min(420px, calc(100dvh - 32px));
     overflow-y: auto;
+}
+
+/* Horizontal message swipes belong to the JS gesture
+   handler; vertical panning stays native scrolling. */
+
+.message-bubble {
+    touch-action: pan-y;
 }
 
 .bubble-menu-item {

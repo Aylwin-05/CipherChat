@@ -55,6 +55,11 @@
         rgba(14, 18, 38, 0.85),
         rgba(9, 13, 28, 0.92)
     );
+
+    /* Solid panel fill + 70%-opaque glass used by floating
+       menus (⋮ dropdown, timer menu, modal cards). */
+    --surface-1: #10152c;
+    --glass-panel: rgba(14, 18, 38, 0.7);
     --rail-bg: linear-gradient(
         180deg,
         rgba(15, 20, 42, 0.92),
@@ -136,6 +141,11 @@
         rgba(16, 18, 23, 0.9),
         rgba(9, 11, 14, 0.96)
     );
+
+    /* Solid panel fill + 70%-opaque glass used by floating
+       menus (⋮ dropdown, timer menu, modal cards). */
+    --surface-1: #13151a;
+    --glass-panel: rgba(15, 17, 21, 0.7);
     --rail-bg: linear-gradient(
         180deg,
         rgba(17, 19, 23, 0.94),
@@ -227,6 +237,11 @@
         rgba(255, 255, 255, 0.98),
         rgba(244, 247, 251, 1)
     );
+
+    /* Solid panel fill + 70%-opaque glass used by floating
+       menus (⋮ dropdown, timer menu, modal cards). */
+    --surface-1: #ffffff;
+    --glass-panel: rgba(255, 255, 255, 0.7);
     --rail-bg: linear-gradient(
         180deg,
         rgba(255, 255, 255, 0.98),

@@ -2,6 +2,9 @@ import { useState } from "react";
 
 import useFriends from "../../hooks/useFriends";
 
+import { useAuth } from "../../context/AuthContext";
+import { useAndroidBack } from "../../utils/androidBack";
+
 import { avatarGradient, initials } from "../../utils/avatar";
 
 import UserAvatar from "../UserAvatar";
@@ -55,6 +58,8 @@ export default function FriendsPage({
 
     } = useFriends();
 
+    const { user } = useAuth();
+
     const [
 
         query,
@@ -78,6 +83,20 @@ export default function FriendsPage({
         setFriendToDelete,
 
     ] = useState(null);
+
+    // Android back button: dismiss the remove-friend
+    // confirmation first.
+    useAndroidBack(() => {
+
+        if (showDeleteModal) {
+            setFriendToDelete(null);
+            setShowDeleteModal(false);
+            return true;
+        }
+
+        return false;
+
+    }, showDeleteModal);
 
     //--------------------------------------------------
 
@@ -131,11 +150,17 @@ export default function FriendsPage({
 
     function friendDisplayName(friend) {
 
-        return friend.sender?.id === friend.receiver_id
+        // The other participant is whoever is NOT the
+        // logged-in user.
+        const otherUser =
 
-            ? (friend.receiver?.display_name ?? "Unknown User")
+            friend.sender?.id === user?.id
 
-            : (friend.sender?.display_name ?? "Unknown User");
+                ? friend.receiver
+
+                : friend.sender;
+
+        return otherUser?.display_name ?? "Unknown User";
 
     }
 
@@ -499,7 +524,10 @@ export default function FriendsPage({
 
                                 const otherUser =
 
-                                    friend.sender?.id === friend.receiver_id
+                                    // The other participant is
+                                    // whoever is NOT the logged-in
+                                    // user.
+                                    friend.sender?.id === user?.id
 
                                         ? friend.receiver
 
@@ -638,11 +666,15 @@ export default function FriendsPage({
 
                                     {
 
-                                        friendToDelete?.sender?.id === friendToDelete?.receiver_id
+                                        (
 
-                                            ? friendToDelete?.receiver?.display_name
+                                            friendToDelete?.sender?.id === user?.id
 
-                                            : friendToDelete?.sender?.display_name
+                                                ? friendToDelete?.receiver
+
+                                                : friendToDelete?.sender
+
+                                        )?.display_name ?? "Unknown User"
 
                                     }
 

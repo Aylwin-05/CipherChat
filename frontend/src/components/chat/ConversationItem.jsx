@@ -109,38 +109,35 @@ export default function ConversationItem({
 
             <div className="conv-avatar">
 
-                {isGroup && conversation.avatar_url ? (
+                <UserAvatar
+                    user={isGroup
+                        ? {
+                            id: conversation.id,
+                            display_name: groupName,
+                            avatar_url: conversation.avatar_url,
+                        }
+                        : user}
+                    endpoint={
+                        isGroup
+                            ? `/conversations/${conversation.id}/avatar`
+                            : undefined
+                    }
+                    className={
+                        isGroup
+                            ? "conv-group-avatar"
+                            : "conv-avatar-badge"
+                    }
+                >
 
-                    <img
-                        src={conversation.avatar_url}
-                        alt={groupName}
-                        className="conv-group-avatar-img"
-                        title={groupName}
-                    />
-
-                ) : isGroup ? (
-
-                    <div
-                        className="conv-group-avatar"
-                        title={groupName}
-                    >
-                        {groupName.slice(0, 1).toUpperCase()}
-                    </div>
-
-                ) : (
-
-                    <UserAvatar
-                        user={user}
-                        className="conv-avatar-badge"
-                    >
+                    {!isGroup && (
                         <span
                             className={`presence-dot ${
                                 online ? "online" : ""
                             }`}
                         />
-                    </UserAvatar>
+                    )}
 
-                )}
+                </UserAvatar>
 
             </div>
 

@@ -14,38 +14,38 @@ import { avatarGradient, initials } from "../utils/avatar";
 
 const avatarCache = new Map();
 
-function loadAvatar(userId) {
-    const cached = avatarCache.get(userId);
+function loadAvatar(cacheKey, requestUrl) {
+    const cached = avatarCache.get(cacheKey);
 
     if (cached?.promise) return cached.promise;
 
     const promise = (async () => {
         try {
             const response = await api.get(
-                `/users/${userId}/avatar`,
+                requestUrl,
                 { responseType: "blob" }
             );
 
             const url = URL.createObjectURL(response.data);
 
-            const existing = avatarCache.get(userId);
+            const existing = avatarCache.get(cacheKey);
 
             if (existing?.url) {
                 URL.revokeObjectURL(existing.url);
             }
 
-            avatarCache.set(userId, { url });
+            avatarCache.set(cacheKey, { url });
 
             return url;
         }
         catch (error) {
-            avatarCache.set(userId, { url: null });
+            avatarCache.set(cacheKey, { url: null });
 
             return null;
         }
     })();
 
-    avatarCache.set(userId, { promise });
+    avatarCache.set(cacheKey, { promise });
 
     return promise;
 }
@@ -68,6 +68,7 @@ export default function UserAvatar({
     user,
     className = "",
     children,
+    endpoint,
 }) {
 
     const [url, setUrl] = useState(null);
@@ -75,6 +76,13 @@ export default function UserAvatar({
     const [tick, setTick] = useState(0);
 
     const userId = user?.id;
+
+    // Group avatars live at /conversations/{id}/avatar;
+    // namespace their cache entries so they can never
+    // collide with user ids.
+    const cacheKey = endpoint
+        ? `group:${userId}`
+        : userId;
 
     const hasAvatar = !!user?.avatar_url;
 
@@ -87,20 +95,23 @@ export default function UserAvatar({
 
         let active = true;
 
-        const cached = avatarCache.get(userId);
+        const cached = avatarCache.get(cacheKey);
 
         if (cached?.url !== undefined) {
             setUrl(cached.url);
             return;
         }
 
-        loadAvatar(userId).then((loadedUrl) => {
+        loadAvatar(
+            cacheKey,
+            endpoint ?? `/users/${userId}/avatar`
+        ).then((loadedUrl) => {
             if (active) setUrl(loadedUrl);
         });
 
         return () => { active = false; };
 
-    }, [userId, hasAvatar, tick]);
+    }, [userId, hasAvatar, tick, cacheKey, endpoint]);
 
     useEffect(() => {
 

@@ -3,10 +3,10 @@ import { useChatSocket } from "../../context/ChatSocketContext";
 // ==========================================================
 // Mobile bottom tab bar (WhatsApp-style placement).
 //
-// Desktop shows the left icon rail; on phones the same three
-// destinations (Chats / Friends / Settings) live in a fixed
-// bottom bar. The bar is hidden while a conversation is open
-// and shows the total unread count on the Chats tab.
+// Desktop shows the left icon rail; on phones the same four
+// destinations (Chats / Status / Friends / Settings) live in a
+// fixed bottom bar. The bar is hidden while a conversation is
+// open and shows the total unread count on the Chats tab.
 //
 // Visibility is handled in mobile.css:
 //   • hidden above 720px (desktop keeps the rail)
@@ -29,6 +29,23 @@ function ChatIcon({ active }) {
             {active && (
                 <circle cx="9" cy="11.5" r="0.6" fill="currentColor" />
             )}
+        </svg>
+    );
+}
+
+function StatusIcon() {
+    return (
+        <svg
+            width="23"
+            height="23"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+        >
+            <circle cx="12" cy="12" r="9" strokeDasharray="3.6 3.2" />
+            <circle cx="12" cy="12" r="3.6" fill="currentColor" stroke="none" />
         </svg>
     );
 }
@@ -93,6 +110,11 @@ export default function MobileTabBar({
             label: "Chats",
             icon: ChatIcon,
             badge: totalUnread,
+        },
+        {
+            key: "status",
+            label: "Status",
+            icon: StatusIcon,
         },
         {
             key: "friends",
