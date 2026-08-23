@@ -6,6 +6,7 @@ import logging
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     HTTPException,
     Request,
@@ -117,6 +118,7 @@ def _extract_refresh_token(
 async def send_otp(
     request: Request,
     request_body: SendOTPRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
 
@@ -145,6 +147,7 @@ async def send_otp(
     await service.send_otp(
         request_body.email,
         client_ip=_client_ip(request),
+        background_tasks=background_tasks,
     )
 
     return MessageResponse(

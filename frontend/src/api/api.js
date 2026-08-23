@@ -10,7 +10,7 @@ const api = axios.create({
     headers: {
         "Content-Type": "application/json",
     },
-    timeout: 10000,
+    timeout: 30000,
     // Required for the refresh-token cookie when the API lives
     // on another origin (native shells); harmless same-origin.
     withCredentials: true,

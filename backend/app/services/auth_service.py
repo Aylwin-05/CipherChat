@@ -2,6 +2,8 @@ import logging
 
 from datetime import datetime, timedelta, timezone
 
+from fastapi import BackgroundTasks
+
 from app.core.config import settings
 from app.models.otp import OTPCode
 from app.models.user import User
@@ -41,6 +43,7 @@ class AuthService:
         self,
         email: str,
         client_ip: str | None = None,
+        background_tasks: BackgroundTasks | None = None,
     ) -> bool:
 
         await self.repository.delete_expired_otps()
@@ -75,10 +78,39 @@ class AuthService:
                 otp,
             )
 
-        await self.email_service.send_otp_email(
-            recipient_email=email,
-            otp=otp,
-        )
+        # ==================================================
+        # Send the email AFTER the response goes out when a
+        # BackgroundTasks handle is provided: slow SMTP (or a
+        # retry cycle) must not outlive the client's timeout
+        # and turn a successful send into a UI error.
+        # ==================================================
+
+        if background_tasks is not None:
+
+            async def _deliver():
+
+                try:
+
+                    await self.email_service.send_otp_email(
+                        recipient_email=email,
+                        otp=otp,
+                    )
+
+                except Exception:
+
+                    logger.exception(
+                        "OTP email delivery failed for %s",
+                        email,
+                    )
+
+            background_tasks.add_task(_deliver)
+
+        else:
+
+            await self.email_service.send_otp_email(
+                recipient_email=email,
+                otp=otp,
+            )
 
         return True
 
