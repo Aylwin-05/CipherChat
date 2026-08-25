@@ -327,7 +327,7 @@ class ConversationService:
 
                     other_user.online_status = (
                         "online"
-                        if manager.is_online(other_user.id)
+                        if await manager.is_online(other_user.id)
                         else "offline"
                     )
 
@@ -503,7 +503,7 @@ class ConversationService:
                 "is_admin": participant.is_admin,
                 "online_status": (
                     "online"
-                    if manager.is_online(user.id)
+                    if await manager.is_online(user.id)
                     else "offline"
                 ),
             })
@@ -694,6 +694,20 @@ class ConversationService:
 
         await self.conversation_repository.commit()
 
+        if added_users:
+            # Cached peer sets are stale now - refresh them
+            # everywhere so presence fan-out reaches the new
+            # member without waiting for reconnects.
+            members = (
+                await self.conversation_repository.get_participants(
+                    conversation_id
+                )
+            )
+
+            await manager.invalidate_members(
+                [row.user_id for row in members]
+            )
+
         return {
             "status": "added",
             "participant_count": count,
@@ -796,6 +810,10 @@ class ConversationService:
         await self.message_repository.create_message(message)
 
         await self.conversation_repository.commit()
+
+        await manager.invalidate_members(
+            [row[0].user_id for row in remaining_rows]
+        )
 
         return {"status": "left"}
 
@@ -931,6 +949,16 @@ class ConversationService:
         await self.message_repository.create_message(message)
 
         await self.conversation_repository.commit()
+
+        members = (
+            await self.conversation_repository.get_participants(
+                conversation_id
+            )
+        )
+
+        await manager.invalidate_members(
+            [row.user_id for row in members] + [user_id]
+        )
 
         return {"status": "removed"}
 
@@ -1180,6 +1208,16 @@ class ConversationService:
         await self.message_repository.create_message(message)
 
         await self.conversation_repository.commit()
+
+        members = (
+            await self.conversation_repository.get_participants(
+                conversation.id
+            )
+        )
+
+        await manager.invalidate_members(
+            [row.user_id for row in members]
+        )
 
         return {
             "status": "joined",

@@ -47,13 +47,11 @@ from pathlib import Path
 import time
 from datetime import datetime, timedelta, timezone
 import uuid
-from cryptography.fernet import Fernet
 from app.api.v1.api import api_router
 from app.crypto.signal.primitives import b64encode, ed25519_public_to_bytes, ed25519_sign, generate_ed25519_keypair, generate_x25519_keypair, x25519_public_to_bytes
 from app.crypto.signal.x3dh import derive_x25519_from_ed25519
 from app.dependencies.auth import get_current_user
 from app.models.user import User
-import app.services.encryption_service as encryption_service_module
 from sqlalchemy import delete
 from app.dependencies.rate_limit import _client_ip as limiter_client_ip
 from app.models.refresh_token import RefreshToken
@@ -874,11 +872,8 @@ def test_invalid_conversation_id_rejected(api_client):
 # source: tests/test_device_api.py
 # ======================================================================
 'API integration tests for the devices / key-bundle endpoints.'
-def _fernet_key() -> str:
-    return Fernet.generate_key().decode()
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setattr(encryption_service_module.settings, 'MASTER_KEY', _fernet_key())
     engine = create_async_engine('sqlite+aiosqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
     TestingSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 

@@ -3,7 +3,16 @@ import axios from "axios";
 // Absolute server origin when running outside a normal browser
 // origin (Capacitor/WebView builds). Empty in the web app, which
 // keeps every URL relative exactly as before.
-const SERVER_URL = import.meta.env.VITE_API_URL || "";
+//
+// A localStorage override ("nexara.server_url") wins over the
+// build-time value: native shells bake their target at compile
+// time, so without this a stale baked URL (or a plain `npm run
+// build`) silently points every request at the WebView's own
+// https://localhost asset server instead of the backend.
+const SERVER_URL =
+    localStorage.getItem("nexara.server_url") ||
+    import.meta.env.VITE_API_URL ||
+    "";
 
 const api = axios.create({
     baseURL: `${SERVER_URL}/api/v1`,

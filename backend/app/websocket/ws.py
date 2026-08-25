@@ -228,7 +228,7 @@ async def websocket_endpoint(
 
         finally:
 
-            manager.disconnect_user(
+            await manager.disconnect_user(
                 user_id,
                 websocket,
             )

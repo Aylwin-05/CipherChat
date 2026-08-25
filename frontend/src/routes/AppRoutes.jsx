@@ -1,9 +1,10 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 
 import Dashboard from "../pages/Dashboard/Dashboard";
 import Login from "../pages/Login/Login";
 import OTP from "../pages/OTP/OTP";
 import RecoverPage from "../pages/Recover/RecoverPage";
+import Splash from "../pages/Splash/Splash";
 import ProtectedRoute from "./ProtectedRoute";
 import PublicOnlyRoute from "./PublicOnlyRoute";
 
@@ -13,12 +14,7 @@ export default function AppRoutes() {
 
             <Route
                 path="/"
-                element={
-                    <Navigate
-                        to="/login"
-                        replace
-                    />
-                }
+                element={<Splash />}
             />
 
             <Route

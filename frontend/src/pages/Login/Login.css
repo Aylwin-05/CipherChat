@@ -82,6 +82,20 @@
     animation: riseIn 0.5s var(--ease);
 }
 
+/* Splash handover: the shield and wordmark are animated from
+   JS (FLIP), so the card's default rise is suppressed and the
+   remaining content gets its own soft, slightly delayed fade. */
+
+.auth-card-wrap.auth-handover {
+    animation: none;
+}
+
+.auth-handover .auth-tagline,
+.auth-handover .auth-card form,
+.auth-handover .auth-features {
+    animation: riseIn 0.55s 0.2s var(--ease) both;
+}
+
 .auth-card {
     display: flex;
     flex-direction: column;

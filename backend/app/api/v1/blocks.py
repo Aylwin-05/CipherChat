@@ -60,8 +60,8 @@ async def block_user(
 
         # Drop the cached block sets so live sockets stop relaying
         # to the blocked user immediately (and vice versa).
-        manager.invalidate_blocks(current_user.id)
-        manager.invalidate_blocks(request.user_id)
+        await manager.invalidate_blocks(current_user.id)
+        await manager.invalidate_blocks(request.user_id)
 
         return result
     except ValueError as e:
@@ -94,8 +94,8 @@ async def unblock_user(
 
         # Same cache invalidation as block: an unblock must take
         # effect immediately on the live sockets too.
-        manager.invalidate_blocks(current_user.id)
-        manager.invalidate_blocks(UUID(user_id))
+        await manager.invalidate_blocks(current_user.id)
+        await manager.invalidate_blocks(UUID(user_id))
 
         return result
     except ValueError as e:

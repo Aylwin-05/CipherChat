@@ -73,8 +73,15 @@ Remove-Item Env:\VITE_API_URL, Env:\VITE_WS_URL -ErrorAction SilentlyContinue
 Pop-Location
 
 # --- sync into the Android project ---------------------------
+# Always run from this script's folder: npx resolves the
+# Capacitor CLI from Mobile/node_modules, and a sync started
+# from another cwd (repo root, frontend/) silently fails.
+Push-Location $PSScriptRoot
+
 npx cap sync android
-if ($LASTEXITCODE -ne 0) { throw "cap sync failed" }
+if ($LASTEXITCODE -ne 0) { Pop-Location; throw "cap sync failed" }
+
+Pop-Location
 
 Write-Host ""
 Write-Host "Done. Now open in Android Studio and build the APK:" -ForegroundColor Green

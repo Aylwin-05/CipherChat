@@ -1953,11 +1953,6 @@ try {
                     isForwarded,
                 );
 
-            console.log(
-                "Backend response:",
-                savedMessage
-            );
-
             //--------------------------------------------------
             // Encrypt + upload attachment (if any)
             //--------------------------------------------------
@@ -1965,10 +1960,6 @@ try {
             let uploaded = null;
 
             if (file) {
-
-                console.log(
-                    "Encrypting attachment..."
-                );
 
                 const {
                     encryptedFile,
@@ -2056,11 +2047,6 @@ try {
                             viewOnce,
                         }
                     );
-
-                console.log(
-                    "Encrypted attachment uploaded:",
-                    uploaded
-                );
 
                 onProgress?.(100);
 

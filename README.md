@@ -67,7 +67,7 @@ cd frontend && npm test
 ## Production (Docker)
 
 ```bash
-cp .env.example .env    # SECRET_KEY, MASTER_KEY, SMTP_*, CORS_ORIGINS
+cp .env.example .env    # SECRET_KEY, SMTP_*, CORS_ORIGINS
 docker compose up --build
 ```
 

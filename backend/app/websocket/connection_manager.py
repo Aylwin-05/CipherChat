@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import WebSocket
 
 from app.database.session import AsyncSessionLocal
+from app.websocket.redis_bus import bus as redis_bus
 
 logger = logging.getLogger("app.websocket.connection_manager")
 
@@ -63,11 +64,14 @@ class ConnectionManager:
         self.user_blocked: dict[UUID, set[UUID]] = {}
         self.user_blocked_by: dict[UUID, set[UUID]] = {}
 
-        # user_id -> time.monotonic() of their most recent connect.
-        # Presence snapshots only report peers who were ALREADY
-        # online when the snapshot's user connected: peers that
-        # connect later announce themselves in their own connect
-        # broadcast, so echoing them here would be a duplicate.
+        # user_id -> time.time() of their most recent connect.
+        # Epoch (not monotonic) so it stays comparable with the
+        # Redis presence registry when several workers serve
+        # sockets. Presence snapshots only report peers who were
+        # ALREADY online when the snapshot's user connected:
+        # peers that connect later announce themselves in their
+        # own connect broadcast, so echoing them here would be a
+        # duplicate.
         self.user_connected_at: dict[UUID, float] = {}
 
         # call_id -> pending call_offer. Kept for PENDING_CALL_TTL so
@@ -85,14 +89,27 @@ class ConnectionManager:
         user_id: UUID,
         websocket: WebSocket,
     ):
-        if not self.user_connections[user_id]:
+        first_socket = not self.user_connections[user_id]
+
+        if first_socket:
             self.user_connected_at[user_id] = (
-                time.monotonic()
+                time.time()
             )
 
         self.user_connections[user_id].append(
             websocket
         )
+
+        if redis_bus.active and first_socket:
+            try:
+                await redis_bus.mark_online(
+                    user_id,
+                    self.user_connected_at[user_id],
+                )
+            except Exception as e:
+                logger.warning(
+                    "Presence registry write failed: %s", e
+                )
 
         logger.debug(
             "WS connect: user=%s online=%s",
@@ -104,11 +121,13 @@ class ConnectionManager:
     # Disconnect
     # ==========================================================
 
-    def disconnect_user(
+    async def disconnect_user(
         self,
         user_id: UUID,
         websocket: WebSocket,
     ):
+        went_offline = False
+
         if user_id in self.user_connections:
             self.user_connections[user_id] = [
                 ws
@@ -123,6 +142,18 @@ class ConnectionManager:
                 self.user_connected_at.pop(
                     user_id,
                     None,
+                )
+                went_offline = True
+
+        if redis_bus.active and went_offline:
+            # Only clear the shared registry when this node held
+            # the user's last socket; another worker may still be
+            # serving them.
+            try:
+                await redis_bus.mark_offline(user_id)
+            except Exception as e:
+                logger.warning(
+                    "Presence registry delete failed: %s", e
                 )
 
         logger.debug(
@@ -314,11 +345,25 @@ class ConnectionManager:
         return blocked | blocked_by
 
     # ==========================================================
-    # Block cache
+    # Block / membership caches
     # ==========================================================
 
-    def invalidate_blocks(self, user_id: UUID) -> None:
-        """Drop the cached block sets so the next relay re-reads them.
+    def drop_block_cache(self, user_id: UUID) -> None:
+        """Drop the cached block sets (local only)."""
+
+        self.user_blocked.pop(user_id, None)
+        self.user_blocked_by.pop(user_id, None)
+
+    def drop_member_cache(self, user_id: UUID) -> None:
+        """Drop the cached conversation-peer set (local only)."""
+
+        self.user_members.pop(user_id, None)
+
+    async def invalidate_blocks(
+        self,
+        user_id: UUID,
+    ) -> None:
+        """Drop the cached block sets on EVERY worker.
 
         Called by the block/unblock endpoints: without this, a block
         (or unblock) made while both users' sockets stay connected
@@ -326,11 +371,53 @@ class ConnectionManager:
         next reconnect.
         """
 
-        self.user_blocked.pop(user_id, None)
-        self.user_blocked_by.pop(user_id, None)
+        self.drop_block_cache(user_id)
+
+        if redis_bus.active:
+            try:
+                await redis_bus.publish_invalidate(
+                    [user_id],
+                    ["blocks"],
+                )
+            except Exception as e:
+                logger.warning(
+                    "Block-cache invalidation broadcast failed: %s",
+                    e,
+                )
+
+    async def invalidate_members(
+        self,
+        user_ids,
+    ) -> None:
+        """Drop cached conversation-peer sets everywhere.
+
+        Called when group membership changes: peers cached their
+        member sets at connect time, so presence fan-out would
+        miss the new/removed member until they reconnected.
+        """
+
+        for user_id in user_ids:
+            self.drop_member_cache(user_id)
+
+        if redis_bus.active:
+            try:
+                await redis_bus.publish_invalidate(
+                    user_ids,
+                    ["members"],
+                )
+            except Exception as e:
+                logger.warning(
+                    "Member-cache invalidation broadcast failed: %s",
+                    e,
+                )
 
     # ==========================================================
     # Pending calls
+    #
+    # With the bus active the registry lives in Redis (TTL =
+    # ring window) so a reconnect landing on a DIFFERENT worker
+    # still replays the offer; without it, the previous
+    # per-process dict is used.
     # ==========================================================
 
     async def deliver_pending_calls(self, user_id: UUID) -> None:
@@ -342,6 +429,29 @@ class ConnectionManager:
         browser tab. Offers expire after PENDING_CALL_TTL_SECONDS
         (or when the caller hangs up).
         """
+
+        if redis_bus.active:
+
+            try:
+                entries = await redis_bus.pending_calls()
+            except Exception as e:
+                logger.warning(
+                    "Pending-call lookup failed: %s", e
+                )
+                return
+
+            for entry in entries:
+                members = await self._member_ids(
+                    UUID(entry["conversation_id"])
+                )
+
+                if user_id in members:
+                    await self.deliver_local(
+                        user_id,
+                        entry["payload"],
+                    )
+
+            return
 
         self._sweep_pending_calls()
 
@@ -356,17 +466,31 @@ class ConnectionManager:
 
             if user_id in members:
 
-                await self.send_to_user(
+                await self.deliver_local(
                     user_id,
                     pending["payload"],
                 )
 
-    def store_pending_call(
+    async def store_pending_call(
         self,
         conversation_id: UUID,
         payload: dict,
     ) -> None:
         """Remember a ringing call_offer for offline members."""
+
+        if redis_bus.active:
+            try:
+                await redis_bus.store_pending_call(
+                    payload["call_id"],
+                    str(conversation_id),
+                    payload,
+                    PENDING_CALL_TTL_SECONDS,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Pending-call store failed: %s", e
+                )
+            return
 
         self._sweep_pending_calls()
 
@@ -379,13 +503,44 @@ class ConnectionManager:
             ),
         }
 
-    def drop_pending_call(self, call_id: str) -> None:
+    async def drop_pending_call(self, call_id: str) -> None:
         """Forget a call that ended, was declined or was answered."""
+
+        if redis_bus.active:
+            try:
+                await redis_bus.drop_pending_call(call_id)
+            except Exception as e:
+                logger.warning(
+                    "Pending-call drop failed: %s", e
+                )
+            return
 
         self.pending_calls.pop(call_id, None)
 
-    def connected_user_ids(self) -> set[UUID]:
-        """Users with at least one live socket (push fallback target)."""
+    def connected_local_user_ids(self) -> set[UUID]:
+        """Users with at least one socket on THIS worker."""
+
+        return set(self.user_connections.keys())
+
+    async def connected_user_ids(self) -> set[UUID]:
+        """Users with at least one live socket, across all workers.
+
+        Used to decide who gets a push fallback: an online user's
+        own sockets already received the event.
+        """
+
+        if redis_bus.active:
+            try:
+                raw = await redis_bus.online_user_ids()
+                return {
+                    UUID(value)
+                    for value in raw
+                    if value
+                }
+            except Exception as e:
+                logger.warning(
+                    "Online-set lookup failed: %s", e
+                )
 
         return set(self.user_connections.keys())
 
@@ -440,6 +595,12 @@ class ConnectionManager:
 
     # ==========================================================
     # Send to One User (all their devices)
+    #
+    # With the bus active the event is PUBLISHed to Redis and
+    # every worker (this one included) delivers it to its own
+    # sockets - a user's devices may be spread across workers.
+    # If the publish fails, fall back to local delivery so a
+    # Redis outage degrades instead of black-holing events.
     # ==========================================================
 
     async def send_to_user(
@@ -447,16 +608,35 @@ class ConnectionManager:
         user_id: UUID,
         message: dict,
     ):
+        if redis_bus.active:
+            try:
+                await redis_bus.publish_user_event(
+                    user_id,
+                    message,
+                )
+                return
+            except Exception as e:
+                logger.warning(
+                    "Redis publish failed (%s) - delivering locally.",
+                    e,
+                )
+
+        await self.deliver_local(user_id, message)
+
+    async def deliver_local(
+        self,
+        user_id: UUID,
+        message: dict,
+    ):
         if user_id not in self.user_connections:
             return
 
-        if user_id in self.user_connections:
-            logger.debug(
-                "Sending %s to %d sockets of user %s",
-                message.get("event"),
-                len(self.user_connections[user_id]),
-                user_id,
-            )
+        logger.debug(
+            "Sending %s to %d sockets of user %s",
+            message.get("event"),
+            len(self.user_connections[user_id]),
+            user_id,
+        )
 
         dead = []
 
@@ -485,6 +665,44 @@ class ConnectionManager:
     # Presence
     # ==========================================================
 
+    async def is_online(
+        self,
+        user_id: UUID,
+    ) -> bool:
+        """Online status, valid across workers when the bus runs."""
+
+        if redis_bus.active:
+            try:
+                return await redis_bus.is_online(user_id)
+            except Exception as e:
+                logger.warning(
+                    "Presence lookup failed (%s) - using local state.",
+                    e,
+                )
+
+        return (
+            user_id in self.user_connections
+            and len(self.user_connections[user_id]) > 0
+        )
+
+    async def _connected_at(
+        self,
+        user_id: UUID,
+    ):
+        """When the user's current online stretch began.
+
+        Redis value (bus active) or the local dict; None when
+        offline or unknown.
+        """
+
+        if redis_bus.active:
+            try:
+                return await redis_bus.connected_at(user_id)
+            except Exception:
+                return None
+
+        return self.user_connected_at.get(user_id)
+
     async def broadcast_presence(
         self,
         user_id: UUID,
@@ -511,14 +729,12 @@ class ConnectionManager:
         self,
         user_id: UUID,
     ):
-        peers = await self._peers_for(user_id)
-
-        connected_at = self.user_connected_at.get(
-            user_id
-        )
+        connected_at = await self._connected_at(user_id)
 
         if connected_at is None:
             return
+
+        peers = await self._peers_for(user_id)
 
         hidden = await self._blocked_peers(user_id)
 
@@ -526,11 +742,11 @@ class ConnectionManager:
             if peer_id in hidden:
                 continue
 
-            if not self.is_online(peer_id):
+            if not await self.is_online(peer_id):
                 continue
 
             peer_connected_at = (
-                self.user_connected_at.get(peer_id)
+                await self._connected_at(peer_id)
             )
 
             # Only peers who were already online when this user
@@ -555,18 +771,6 @@ class ConnectionManager:
     # ==========================================================
     # Utility Methods
     # ==========================================================
-
-    def is_online(
-        self,
-        user_id: UUID,
-    ) -> bool:
-
-        online = (
-            user_id in self.user_connections
-            and len(self.user_connections[user_id]) > 0
-        )
-
-        return online
 
     def online_users(self):
 

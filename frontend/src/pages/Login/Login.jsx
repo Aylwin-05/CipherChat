@@ -1,7 +1,15 @@
-import { useState } from "react";
+import {
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 
 import authService from "../../services/authService";
+import {
+    takeSplashRects,
+} from "../../utils/splashTransition";
 
 import "./Login.css";
 
@@ -51,6 +59,99 @@ export default function Login() {
     const [error, setError] =
         useState("");
 
+    const cardWrapRef = useRef(null);
+
+    // Shared-element handover from the splash screen: the shield
+    // and "Nexara" wordmark were frozen on screen at recorded
+    // positions; start them there (transformed) and glide into
+    // the card. Runs before paint so there is never a visible
+    // jump between the two screens.
+    //
+    // WebView notes: the transform is committed with a forced
+    // style flush instead of nested requestAnimationFrame (flaky
+    // on older Androids), and reduced-motion is intentionally not
+    // honoured here — Android "animation scale 0" reports it even
+    // when the user wants the app's own transitions.
+    useLayoutEffect(() => {
+        const from = takeSplashRects();
+        const wrap = cardWrapRef.current;
+
+        if (!from || !wrap) {
+            return;
+        }
+
+        const mark = wrap.querySelector(".auth-logo-mark");
+        const title = wrap.querySelector(".auth-card h1");
+
+        if (!mark || !title || !from.mark || !from.title) {
+            return;
+        }
+
+        try {
+            // The card's default rise-in would move our measuring
+            // targets — suppress it and let FLIP drive the entrance.
+            wrap.classList.add("auth-handover");
+
+            [mark, title].forEach((el) => {
+                el.style.transition = "none";
+                el.style.transform = "";
+            });
+
+            const toMark = mark.getBoundingClientRect();
+            const toTitle = title.getBoundingClientRect();
+
+            const glide = (el, fromRect, toRect) => {
+                const dx =
+                    fromRect.left + fromRect.width / 2 -
+                    (toRect.left + toRect.width / 2);
+                const dy =
+                    fromRect.top + fromRect.height / 2 -
+                    (toRect.top + toRect.height / 2);
+                const scale = fromRect.width / toRect.width;
+
+                el.style.transformOrigin = "center center";
+                el.style.transition = "none";
+                el.style.transform =
+                    `translate(${dx}px, ${dy}px) scale(${scale})`;
+            };
+
+            glide(mark, from.mark, toMark);
+            glide(title, from.title, toTitle);
+
+            // Commit the starting transforms synchronously…
+            void document.body.offsetWidth;
+
+            // …then release them into a transition on the next frame.
+            [mark, title].forEach((el) => {
+                el.style.transition =
+                    "transform 0.6s cubic-bezier(0.22, 1, 0.36, 1)";
+                el.style.transform = "";
+            });
+
+            setTimeout(() => {
+                mark.style.transition = "";
+                title.style.transition = "";
+                mark.style.transformOrigin = "";
+                title.style.transformOrigin = "";
+            }, 700);
+        } catch {
+            // Handover is cosmetic — never break the login page.
+        }
+    }, []);
+
+    // Focus the email field only AFTER the handover settles — an
+    // immediate keyboard would resize the viewport mid-animation
+    // on Android and knock the landing position off.
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            cardWrapRef.current
+                ?.querySelector("input[type='email']")
+                ?.focus({ preventScroll: true });
+        }, 800);
+
+        return () => clearTimeout(timer);
+    }, []);
+
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -93,7 +194,7 @@ export default function Login() {
                 <div className="orb orb-c" />
             </div>
 
-            <div className="auth-card-wrap">
+            <div className="auth-card-wrap" ref={cardWrapRef}>
                 <div className="auth-card">
                     <ShieldLogo />
 
@@ -135,7 +236,6 @@ export default function Login() {
                                         e.target.value
                                     )
                                 }
-                                autoFocus
                             />
                         </div>
 

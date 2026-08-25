@@ -81,12 +81,6 @@ class Settings(BaseSettings):
     REDIS_URL: str | None = None
 
     # ======================================================
-    # Encryption
-    # ======================================================
-
-    MASTER_KEY: str
-
-    # ======================================================
     # SMTP
     # ======================================================
 
@@ -138,16 +132,6 @@ def get_settings():
                 "32 characters (generate one with "
                 "`python -c \"import secrets; "
                 "print(secrets.token_urlsafe(48))\"`)"
-            )
-
-        if (
-            not instance.MASTER_KEY
-            or instance.MASTER_KEY == "CHANGE_ME"
-        ):
-            problems.append(
-                "MASTER_KEY must be set (generate one with "
-                "`python -c \"from cryptography.fernet import "
-                "Fernet; print(Fernet.generate_key().decode())\"`)"
             )
 
         if instance.ALLOWED_HOSTS == "*":

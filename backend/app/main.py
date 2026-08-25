@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
@@ -16,11 +17,24 @@ from app.core.middleware import (
     SecurityHeadersMiddleware,
 )
 from app.database.session import get_db
+from app.websocket.redis_bus import bus
 from app.websocket.ws import router as websocket_router
 
 setup_logging()
 
 logger = logging.getLogger("app.main")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Cross-worker WebSocket fan-out + presence (no-op without
+    # REDIS_URL). Must start before the first socket connects.
+    from app.websocket.connection_manager import manager
+
+    await bus.start(manager)
+    yield
+    await bus.stop()
+
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -28,6 +42,7 @@ app = FastAPI(
     version="1.0.0",
     debug=settings.DEBUG,
     redirect_slashes=False,
+    lifespan=lifespan,
     contact={
         "name": "Nexara API",
         "email": settings.SMTP_FROM_EMAIL,

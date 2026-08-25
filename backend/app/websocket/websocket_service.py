@@ -141,8 +141,6 @@ class WebSocketService:
 
             "call_end": self.handle_call,
 
-            "ping": self.handle_ping,
-
         }
 
         handler = handlers.get(event)
@@ -158,7 +156,8 @@ class WebSocketService:
             current_user,
             data,
         )
-            # ======================================================
+
+    # ======================================================
     # MESSAGE
     #
     # IMPORTANT
@@ -311,7 +310,8 @@ class WebSocketService:
             conversation_id,
             current_user,
         )
-            # ======================================================
+
+    # ======================================================
     # EDIT MESSAGE
     # ======================================================
 
@@ -657,7 +657,7 @@ class WebSocketService:
         # members with no live socket at all.
         if event == "call_offer":
 
-            manager.store_pending_call(
+            await manager.store_pending_call(
                 conversation_id,
                 payload,
             )
@@ -670,7 +670,7 @@ class WebSocketService:
 
         elif event == "call_end":
 
-            manager.drop_pending_call(
+            await manager.drop_pending_call(
                 data["call_id"]
             )
 
@@ -892,7 +892,7 @@ class WebSocketService:
                 conversation_id
             )
 
-            connected = manager.connected_user_ids()
+            connected = await manager.connected_user_ids()
 
             offline_members = [
                 member_id

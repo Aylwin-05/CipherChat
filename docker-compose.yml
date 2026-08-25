@@ -29,7 +29,6 @@ services:
       DATABASE_URL: postgresql+asyncpg://nexara:${POSTGRES_PASSWORD:-nexara}@postgres:5432/nexara
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
-      MASTER_KEY: ${MASTER_KEY:?set MASTER_KEY in .env}
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME}

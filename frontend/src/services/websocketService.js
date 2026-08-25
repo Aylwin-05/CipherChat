@@ -52,8 +52,16 @@ class WebSocketService {
 
         this.shouldReconnect = true;
 
-        const configured =
-            import.meta.env.VITE_WS_URL;
+        // Same override as api.js ("nexara.server_url"): lets a
+        // native build be repointed at the backend without a
+        // rebuild. http(s) is upgraded to ws(s).
+        const storedServer = localStorage.getItem(
+            "nexara.server_url"
+        );
+
+        const configured = storedServer
+            ? storedServer.replace(/^http/, "ws")
+            : import.meta.env.VITE_WS_URL;
 
         const url = configured
             ? `${configured}/ws/me`
@@ -227,10 +235,6 @@ class WebSocketService {
             );
 
         this.reconnectAttempts += 1;
-
-        console.log(
-            `WebSocket reconnect in ${delay}ms`
-        );
 
         this.reconnectTimer =
             setTimeout(

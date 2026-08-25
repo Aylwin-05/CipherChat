@@ -16,8 +16,9 @@ import "./RecoveryModal.css";
 // 2. "enter-code": this account already has a recovery key but
 //    this browser hasn't unlocked the sync secret — the user
 //    must type the code so old history becomes readable here.
-//    Skipping is allowed (new messages still work); the prompt
-//    simply returns on the next login.
+//    Skipping is allowed (new messages still work); dismissal
+//    is remembered per account, and history can be unlocked
+//    later from Settings > Support.
 // ==========================================================
 
 export default function RecoveryModal({
