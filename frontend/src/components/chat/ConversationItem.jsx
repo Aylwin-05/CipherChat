@@ -1,3 +1,4 @@
+import { memo } from "react";
 import UserAvatar from "../UserAvatar";
 
 import "./ConversationList.css";
@@ -67,7 +68,7 @@ function ArchiveIcon() {
     );
 }
 
-export default function ConversationItem({
+const ConversationItem = memo(function ConversationItem({
     conversation,
     selected,
     onSelect,
@@ -297,4 +298,6 @@ export default function ConversationItem({
 
     );
 
-}
+});
+
+export default ConversationItem;

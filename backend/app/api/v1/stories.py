@@ -1,4 +1,4 @@
-import traceback
+import logging
 from uuid import UUID
 
 from fastapi import (
@@ -10,11 +10,17 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import rate_limit
+from app.models.story import Story, StoryView
+from app.models.story_reaction import StoryReaction
 from app.models.user import User
 from app.repositories.friend_repository import FriendRepository
 from app.repositories.story_repository import StoryRepository
@@ -89,9 +95,151 @@ async def create_story(
             detail=str(error),
         ) from error
 
-    except Exception:
-        traceback.print_exc()
-        raise
+
+# ==========================================================
+# Story Reactions
+# ==========================================================
+
+class StoryReactionRequest(BaseModel):
+    emoji: str
+
+
+@router.post("/{story_id}/react")
+async def react_to_story(
+    story_id: UUID,
+    req: StoryReactionRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        story = await _service(db).ensure_visible(
+            current_user,
+            story_id,
+        )
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+    existing = await db.execute(
+        select(StoryReaction).where(
+            StoryReaction.story_id == story_id,
+            StoryReaction.user_id == current_user.id,
+        )
+    )
+    existing_reaction = existing.scalar_one_or_none()
+
+    if existing_reaction:
+        if existing_reaction.emoji == req.emoji:
+            await db.delete(existing_reaction)
+            await db.commit()
+            return {"success": True, "action": "removed", "emoji": None}
+        existing_reaction.emoji = req.emoji
+        await db.commit()
+        return {"success": True, "action": "updated", "emoji": req.emoji}
+
+    reaction = StoryReaction(
+        story_id=story_id,
+        user_id=current_user.id,
+        emoji=req.emoji,
+    )
+    db.add(reaction)
+    await db.commit()
+    return {"success": True, "action": "added", "emoji": req.emoji}
+
+
+@router.delete("/{story_id}/react")
+async def remove_story_reaction(
+    story_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await _service(db).ensure_visible(
+            current_user,
+            story_id,
+        )
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+    result = await db.execute(
+        select(StoryReaction).where(
+            StoryReaction.story_id == story_id,
+            StoryReaction.user_id == current_user.id,
+        )
+    )
+    reaction = result.scalar_one_or_none()
+    if reaction:
+        await db.delete(reaction)
+        await db.commit()
+
+    return {"success": True, "action": "removed"}
+
+
+# ==========================================================
+# Story Replies
+# ==========================================================
+
+class StoryReplyRequest(BaseModel):
+    ciphertext: str
+    encrypted_key_sender: str
+    encrypted_key_receiver: str
+    nonce: str
+
+
+@router.post("/{story_id}/reply")
+async def reply_to_story(
+    story_id: UUID,
+    req: StoryReplyRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        story = await _service(db).ensure_visible(
+            current_user,
+            story_id,
+        )
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+    if story.user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot reply to your own story.")
+
+    from app.repositories.conversation_repository import ConversationRepository
+    from app.repositories.message_repository import MessageRepository
+    from app.services.conversation_service import ConversationService
+    from app.models.message import Message
+
+    conversation = await ConversationService(
+        ConversationRepository(db),
+        MessageRepository(db),
+    ).get_or_create_private_conversation(
+        current_user,
+        story.user_id,
+    )
+
+    message = Message(
+        conversation_id=conversation.id,
+        sender_id=current_user.id,
+        ciphertext=req.ciphertext,
+        encrypted_key_sender=req.encrypted_key_sender,
+        encrypted_key_receiver=req.encrypted_key_receiver,
+        nonce=req.nonce,
+        message_type="text",
+    )
+    db.add(message)
+    await db.commit()
+    await db.refresh(message)
+
+    return {
+        "success": True,
+        "conversation_id": str(conversation.id),
+        "message": "Reply sent.",
+    }
 
 
 # ==========================================================

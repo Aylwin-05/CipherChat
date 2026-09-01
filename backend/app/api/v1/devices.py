@@ -1,8 +1,15 @@
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+logger = logging.getLogger(__name__)
+
+from app.core.rate_limit import (
+    RateLimitExceeded,
+    get_limiter,
+)
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 
@@ -17,10 +24,17 @@ from app.schemas.device import (
     DeviceActionResponse,
     DeviceInfo,
     DeviceListResponse,
+    DeviceTrustActionResponse,
+    DeviceTrustInfo,
+    DeviceTrustListResponse,
+    DeviceTrustSetRequest,
+    DeviceUpdateRequest,
     KeyBundleResponse,
     RegisterDeviceRequest,
     RegisterDeviceResponse,
     ReplenishPreKeysResponse,
+    RotateSignedPreKeyRequest,
+    RotateSignedPreKeyResponse,
     UploadPreKeysRequest,
 )
 
@@ -44,6 +58,8 @@ def _device_info(device: Device) -> DeviceInfo:
         device_id=device.device_id,
         device_name=device.device_name,
         platform=device.platform,
+        platform_version=device.platform_version,
+        app_version=device.app_version,
         is_primary=device.is_primary,
         is_active=device.is_active,
         last_seen=(
@@ -70,6 +86,16 @@ async def register_device(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    try:
+        await get_limiter().check(
+            f"devices.register.{current_user.id}", 10, 60
+        )
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests.",
+            headers={"Retry-After": str(exc.retry_after)},
+        )
 
     service = _service(db)
 
@@ -134,6 +160,16 @@ async def get_key_bundle(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    try:
+        await get_limiter().check(
+            f"devices.bundle.{current_user.id}", 30, 60
+        )
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests.",
+            headers={"Retry-After": str(exc.retry_after)},
+        )
 
     service = _service(db)
 
@@ -161,6 +197,16 @@ async def upload_prekeys(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    try:
+        await get_limiter().check(
+            f"devices.prekeys.{current_user.id}", 10, 60
+        )
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests.",
+            headers={"Retry-After": str(exc.retry_after)},
+        )
 
     repository = DeviceRepository(db)
 
@@ -203,6 +249,236 @@ async def upload_prekeys(
 
 
 # ==========================================================
+# Rotate Signed PreKey
+# ==========================================================
+
+@router.post(
+    "/prekeys/signed",
+    response_model=RotateSignedPreKeyResponse,
+)
+async def rotate_signed_prekey(
+    request: RotateSignedPreKeyRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await get_limiter().check(
+            f"devices.spk.{current_user.id}", 5, 60
+        )
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests.",
+            headers={"Retry-After": str(exc.retry_after)},
+        )
+
+    repository = DeviceRepository(db)
+
+    device = await repository.get_by_device_id(
+        request.device_id
+    )
+
+    if device is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Device not found.",
+        )
+
+    if device.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="This device belongs to another account.",
+        )
+
+    service = _service(db)
+
+    result = await service.rotate_signed_prekey(
+        device,
+        key_id=request.key_id,
+        public_key=request.public_key,
+        signature=request.signature,
+    )
+
+    try:
+        from app.repositories.conversation_repository import (
+            ConversationRepository,
+        )
+        from app.websocket.connection_manager import manager
+
+        conv_repo = ConversationRepository(db)
+        conversations = await conv_repo.get_user_conversations(
+            current_user.id
+        )
+        notification = {
+            "event": "key_rotated",
+            "user_id": str(current_user.id),
+            "device_id": request.device_id,
+            "key_id": result["key_id"],
+        }
+        for conv in conversations:
+            await manager.broadcast(
+                conv.id,
+                notification,
+                exclude_user_ids={current_user.id},
+            )
+    except Exception:
+        logger.warning(
+            "Failed to broadcast key rotation notification",
+            exc_info=True,
+        )
+
+    return {
+        "success": True,
+        **result,
+    }
+
+
+# ==========================================================
+# Device Trust (TOFU)
+# ==========================================================
+
+@router.post(
+    "/trust",
+    response_model=DeviceTrustActionResponse,
+)
+async def set_device_trust(
+    request: DeviceTrustSetRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await get_limiter().check(
+            f"devices.trust.{current_user.id}", 10, 60
+        )
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests.",
+            headers={"Retry-After": str(exc.retry_after)},
+        )
+    from app.repositories.device_trust_repository import (
+        DeviceTrustRepository,
+    )
+
+    repository = DeviceRepository(db)
+    device = await repository.get_by_device_id(
+        request.device_id
+    )
+    if device is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Device not found.",
+        )
+
+    trust_repo = DeviceTrustRepository(db)
+    trust = await trust_repo.set_trust_level(
+        owner_id=current_user.id,
+        device_id=device.id,
+        level=request.trust_level,
+        fingerprint=request.identity_key_fingerprint,
+    )
+    await db.commit()
+
+    return {
+        "success": True,
+        "trust_level": trust.trust_level,
+        "message": f"Device {request.device_id} marked as {request.trust_level}.",
+    }
+
+
+@router.get(
+    "/trust",
+    response_model=DeviceTrustListResponse,
+)
+async def list_trusted_devices(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await get_limiter().check(
+            f"devices.trust.list.{current_user.id}", 30, 60
+        )
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests.",
+            headers={"Retry-After": str(exc.retry_after)},
+        )
+    from app.repositories.device_trust_repository import (
+        DeviceTrustRepository,
+    )
+
+    trust_repo = DeviceTrustRepository(db)
+    trusts = await trust_repo.get_all_trusted_devices(
+        current_user.id
+    )
+
+    device_repo = DeviceRepository(db)
+
+    device_ids = [t.device_id for t in trusts]
+    devices = await device_repo.get_by_ids(device_ids)
+    device_map = {d.id: d for d in devices}
+
+    items = []
+    for t in trusts:
+        dev = device_map.get(t.device_id)
+        items.append({
+            "device_id": dev.device_id if dev else str(t.device_id),
+            "trust_level": t.trust_level,
+            "identity_key_fingerprint": t.identity_key_fingerprint,
+            "trusted_at": t.trusted_at.isoformat() if t.trusted_at else None,
+        })
+
+    return {"trusts": items}
+
+
+@router.delete(
+    "/trust/{device_id}",
+    response_model=DeviceTrustActionResponse,
+)
+async def remove_device_trust(
+    device_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await get_limiter().check(
+            f"devices.trust.remove.{current_user.id}", 10, 60
+        )
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests.",
+            headers={"Retry-After": str(exc.retry_after)},
+        )
+    from app.repositories.device_trust_repository import (
+        DeviceTrustRepository,
+    )
+
+    repository = DeviceRepository(db)
+    device = await repository.get_by_device_id(device_id)
+    if device is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Device not found.",
+        )
+
+    trust_repo = DeviceTrustRepository(db)
+    removed = await trust_repo.remove_trust(
+        current_user.id, device.id
+    )
+    await db.commit()
+
+    return {
+        "success": True,
+        "trust_level": "unknown",
+        "message": f"Trust removed for device {device_id}."
+        if removed
+        else f"No trust record for device {device_id}.",
+    }
+
+
+# ==========================================================
 # List My Devices
 # ==========================================================
 
@@ -214,6 +490,16 @@ async def list_my_devices(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    try:
+        await get_limiter().check(
+            f"devices.me.{current_user.id}", 30, 60
+        )
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests.",
+            headers={"Retry-After": str(exc.retry_after)},
+        )
 
     repository = DeviceRepository(db)
 
@@ -230,6 +516,54 @@ async def list_my_devices(
 
 
 # ==========================================================
+# Update Device Metadata
+# ==========================================================
+
+@router.patch(
+    "/{device_id}",
+    response_model=DeviceActionResponse,
+)
+async def update_device_metadata(
+    device_id: str,
+    request: DeviceUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await get_limiter().check(
+            f"devices.update.{current_user.id}", 20, 60
+        )
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests.",
+            headers={"Retry-After": str(exc.retry_after)},
+        )
+    repository = DeviceRepository(db)
+
+    device = await repository.get_by_device_id(device_id)
+
+    if device is None or device.user_id != current_user.id:
+        raise HTTPException(
+            status_code=404,
+            detail="Device not found.",
+        )
+
+    await repository.update_metadata(
+        device.id,
+        device_name=request.device_name,
+        platform_version=request.platform_version,
+        app_version=request.app_version,
+    )
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": f"Device {device_id} metadata updated.",
+    }
+
+
+# ==========================================================
 # Remove Device
 # ==========================================================
 
@@ -242,6 +576,16 @@ async def remove_device(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    try:
+        await get_limiter().check(
+            f"devices.remove.{current_user.id}", 5, 60
+        )
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests.",
+            headers={"Retry-After": str(exc.retry_after)},
+        )
 
     repository = DeviceRepository(db)
 
@@ -268,6 +612,21 @@ async def remove_device(
     await repository.disable_device(device.id)
 
     await repository.commit()
+
+    try:
+        from app.websocket.connection_manager import manager
+        await manager.send_to_user(
+            current_user.id,
+            {
+                "event": "device_revoked",
+                "device_id": device_id,
+            },
+        )
+    except Exception:
+        logger.warning(
+            "Failed to send device revocation notification",
+            exc_info=True,
+        )
 
     return {
         "success": True,

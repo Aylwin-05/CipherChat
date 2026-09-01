@@ -124,6 +124,23 @@ export default function ActiveCallOverlay() {
 
                 )}
 
+                {!isVideo && remoteStream && (
+
+                    /* Voice calls have no <video> element, so the
+                       remote audio track must be bound to an output
+                       — otherwise the peer is completely silent. */
+                    <audio
+                        ref={audio => {
+                            if (audio) {
+                                audio.srcObject = remoteStream;
+                            }
+                        }}
+                        autoPlay
+                        playsInline
+                    />
+
+                )}
+
                 {localStream && isVideo && (
 
                     <video

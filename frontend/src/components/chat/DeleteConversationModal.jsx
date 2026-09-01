@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 
 import { useAuth } from "../../context/AuthContext";
 import { useChatSocket } from "../../context/ChatSocketContext";
+import { useModalAnimation } from "../../hooks/useModalAnimation";
 
 import "./DeleteConversationModal.css";
 
@@ -52,6 +53,8 @@ export default function DeleteConversationModal({
     } = useChatSocket();
 
     const [busy, setBusy] = useState(false);
+
+    const { contentRef } = useModalAnimation();
 
     if (!conversation) return null;
 
@@ -243,7 +246,11 @@ export default function DeleteConversationModal({
         >
 
             <div
+                ref={contentRef}
                 className="delete-conv-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Delete conversation"
                 onClick={(event) =>
                     event.stopPropagation()
                 }

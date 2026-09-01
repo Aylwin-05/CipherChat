@@ -155,6 +155,38 @@ export function AuthProvider({ children }) {
     }
 
     // ==========================================================
+    // Session expired anywhere in the app
+    //
+    // The response interceptor fires this when a refresh attempt
+    // fails (e.g. an expired refresh cookie or revoked family).
+    // Drop local state so the route guards send the user to the
+    // login screen without a hard page reload.
+    // ==========================================================
+
+    useEffect(() => {
+
+        const onSessionExpired = () => {
+
+            setUser(null);
+
+            setAccessToken(null);
+
+        };
+
+        window.addEventListener(
+            "nexara:auth-expired",
+            onSessionExpired
+        );
+
+        return () =>
+            window.removeEventListener(
+                "nexara:auth-expired",
+                onSessionExpired
+            );
+
+    }, []);
+
+    // ==========================================================
     // Initialize Authentication
     // ==========================================================
 
@@ -164,8 +196,20 @@ export function AuthProvider({ children }) {
 
             if (!accessToken) {
 
-                setLoading(false);
-                return;
+                // No in-memory token (e.g. page reload).
+                // Attempt a silent refresh using the HttpOnly
+                // cookie before giving up — the session may
+                // still be valid on the server.
+                try {
+                    const refreshed =
+                        await authService.refreshAccessToken();
+                    setAccessToken(refreshed);
+                    return;
+                } catch {
+                    // No valid refresh cookie — truly logged out.
+                    setLoading(false);
+                    return;
+                }
 
             }
 

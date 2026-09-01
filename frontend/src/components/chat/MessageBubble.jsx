@@ -1,8 +1,9 @@
 import { useAuth } from "../../context/AuthContext";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import attachmentService, { AttachmentDecryptError } from "../../services/attachmentService";
 import ImageLightbox from "./ImageLightbox";
+import { animateBubbleIn, animateReactionPop } from "../../utils/animations";
 
 // ==========================================================
 // Quick-reaction emoji row (WhatsApp-style)
@@ -61,12 +62,12 @@ function viewOnceKind(attachment) {
 
 }
 
-export default function MessageBubble({
+const MessageBubble = memo(function MessageBubble({
     message,
     onDelete,
     onReply,
     onEdit,
-onForward,
+    onForward,
     onInfo,
     onToggleReaction,
     onToggleStar,
@@ -127,6 +128,58 @@ const [attachmentUrls, setAttachmentUrls] = useState({});
     });
 
     const [swipeDx, setSwipeDx] = useState(0);
+
+    const bubbleRef = useRef(null);
+    const reactionsRef = useRef(null);
+
+    const reactionGroups =
+        Object.values(
+            (message.reactions || []).reduce(
+                (groups, reaction) => {
+
+                    if (!groups[reaction.emoji]) {
+
+                        groups[reaction.emoji] = {
+                            emoji: reaction.emoji,
+                            count: 0,
+                            mine: false,
+                        };
+
+                    }
+
+                    groups[reaction.emoji].count += 1;
+
+                    if (
+                        reaction.user_id ===
+                        String(user?.id)
+                    ) {
+
+                        groups[reaction.emoji].mine = true;
+
+                    }
+
+                    return groups;
+
+                },
+                {},
+            )
+        );
+
+    const prevReactionCount = useRef(reactionGroups.length);
+
+    useEffect(() => {
+        animateBubbleIn(bubbleRef.current);
+    }, []);
+
+    useEffect(() => {
+        if (reactionGroups.length > prevReactionCount.current) {
+            const chips = reactionsRef.current?.querySelectorAll(".reaction-chip");
+            if (chips?.length) {
+                animateReactionPop(chips[chips.length - 1]);
+            }
+        }
+        prevReactionCount.current = reactionGroups.length;
+    }, [reactionGroups.length]);
 
     useEffect(() => () => {
         clearTimeout(pressTimerRef.current);
@@ -644,39 +697,6 @@ const canForward =
                 String(user?.id)
         );
 
-    const reactionGroups =
-        Object.values(
-            (message.reactions || []).reduce(
-                (groups, reaction) => {
-
-                    if (!groups[reaction.emoji]) {
-
-                        groups[reaction.emoji] = {
-                            emoji: reaction.emoji,
-                            count: 0,
-                            mine: false,
-                        };
-
-                    }
-
-                    groups[reaction.emoji].count += 1;
-
-                    if (
-                        reaction.user_id ===
-                        String(user?.id)
-                    ) {
-
-                        groups[reaction.emoji].mine = true;
-
-                    }
-
-                    return groups;
-
-                },
-                {},
-            )
-        );
-
     const repliedSenderName =
         repliedDisplayName ||
         (repliedMessage?.sender_id === user?.id
@@ -702,6 +722,7 @@ const canForward =
         >
 
             <div
+                ref={bubbleRef}
                 className={[
                     "message-bubble",
                     isMine ? "mine" : "other",
@@ -774,6 +795,8 @@ const canForward =
                             type="button"
                             className="bubble-actions-btn"
                             aria-label="Message actions"
+                            aria-expanded={menuOpen}
+                            aria-haspopup="menu"
                             onMouseDown={(event) =>
                                 event.preventDefault()
                             }
@@ -1359,7 +1382,7 @@ case "video":
 
                 {reactionGroups.length > 0 && !deleted && (
 
-                    <div className="message-reactions">
+                    <div className="message-reactions" ref={reactionsRef}>
 
                         {reactionGroups.map(group => (
 
@@ -1526,5 +1549,7 @@ case "video":
 
     );
 
-}
+});
+
+export default MessageBubble;
 

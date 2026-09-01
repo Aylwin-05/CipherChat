@@ -8,6 +8,7 @@ import toast from "react-hot-toast";
 import VoiceRecorder from "./VoiceRecorder";
 
 import { useAuth } from "../../context/AuthContext";
+import { animateSendPulse } from "../../utils/animations";
 
 import "./Chat.css";
 
@@ -215,6 +216,9 @@ export default function ChatInput({
         useState(false);
 
     const emojiRef =
+        useRef(null);
+
+    const sendBtnRef =
         useRef(null);
 
     // Close the emoji picker when clicking elsewhere
@@ -451,6 +455,10 @@ export default function ChatInput({
         finally {
 
             abortRef.current = null;
+
+            if (!editTarget && text.trim()) {
+                animateSendPulse(sendBtnRef.current);
+            }
 
             setText("");
 
@@ -961,6 +969,7 @@ export default function ChatInput({
 
                     type="button"
 
+                    ref={sendBtnRef}
                     className="send-btn"
 
                     aria-label={editTarget

@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from jose import jwt
 
+from app.core.config import settings
 from app.database.session import AsyncSessionLocal
 from app.models.push_subscription import PushSubscription
 from app.repositories.push_repository import PushRepository
@@ -20,9 +21,9 @@ logger = logging.getLogger("app.services.push")
 
 VAPID_KEYS_SETTING = "vapid.private_key"
 VAPID_PUBLIC_SETTING = "vapid.public_key"
-VAPID_MAILTO = "admin@nexara.local"
 VAPID_TOKEN_TTL_SECONDS = 12 * 60 * 60
 PUSH_TTL_SECONDS = 600
+CALL_PUSH_TTL_SECONDS = 1800
 
 # Pre-shared httpx client with HTTP/2 enabled: Web Push endpoints
 # require HTTP/2. A single long-lived client keeps the connection
@@ -124,6 +125,8 @@ class PushService:
         repo: PushRepository,
         subscription: PushSubscription,
         payload: dict,
+        ttl: int | None = None,
+        urgency: str | None = None,
     ) -> bool:
         """
         Deliver one encrypted push. Returns False when the
@@ -145,7 +148,7 @@ class PushService:
                 "aud": audience,
                 "exp": int(time.time())
                 + VAPID_TOKEN_TTL_SECONDS,
-                "sub": f"mailto:{VAPID_MAILTO}",
+                "sub": f"mailto:{settings.SMTP_FROM_EMAIL}",
             },
             private_pem,
             algorithm="ES256",
@@ -176,9 +179,11 @@ class PushService:
             "Authorization":
                 f"vapid t={token}, k={public_b64}",
             "Content-Encoding": "aes128gcm",
-            "TTL": str(PUSH_TTL_SECONDS),
+            "TTL": str(ttl or PUSH_TTL_SECONDS),
             "Content-Type": "application/octet-stream",
         }
+        if urgency:
+            headers["Urgency"] = urgency
 
         response = await _http_client().post(
             subscription.endpoint,
@@ -210,6 +215,9 @@ class PushService:
         self,
         user_id: UUID,
         payload: dict,
+        *,
+        ttl: int | None = None,
+        urgency: str | None = None,
     ) -> None:
 
         try:
@@ -232,6 +240,8 @@ class PushService:
                             repo,
                             subscription,
                             payload,
+                            ttl=ttl,
+                            urgency=urgency,
                         )
                     )
 
@@ -325,6 +335,74 @@ class PushService:
                 conversation_id,
             )
 
+    # ==========================================================
+    # Message deleted notification
+    #
+    # Lets clients clear stale notifications when a message is
+    # deleted server-side or by the sender.  Same muting logic
+    # as new-message pushes.
+    # ==========================================================
+
+    async def notify_message_deleted(
+        self,
+        *,
+        recipient_ids: list[UUID],
+        sender_id: UUID,
+        conversation_id: UUID,
+        message_id: str,
+    ) -> None:
+        if not recipient_ids:
+            return
+
+        try:
+            async with AsyncSessionLocal() as db:
+                from sqlalchemy import select
+                from app.models.conversation_participant import (
+                    ConversationParticipant,
+                )
+
+                now = datetime.now(timezone.utc)
+                result = await db.execute(
+                    select(
+                        ConversationParticipant.user_id,
+                        ConversationParticipant.muted_until,
+                    ).where(
+                        ConversationParticipant.conversation_id
+                        == conversation_id,
+                        ConversationParticipant.user_id.in_(
+                            recipient_ids
+                        ),
+                    )
+                )
+                muted = {
+                    uid
+                    for uid, muted_until in result.all()
+                    if (
+                        muted_until is not None
+                        and self._muted_at(muted_until) > now
+                    )
+                }
+
+                for recipient_id in recipient_ids:
+                    if recipient_id == sender_id:
+                        continue
+                    if recipient_id in muted:
+                        continue
+                    await self.notify_user(
+                        recipient_id,
+                        {
+                            "event": "message_deleted",
+                            "sender_id": str(sender_id),
+                            "conversation_id": str(conversation_id),
+                            "message_id": message_id,
+                        },
+                    )
+        except Exception:
+            logger.exception(
+                "Deleted-message push failed for conversation=%s",
+                conversation_id,
+            )
+
     def _muted_at(self, muted_until):
         if muted_until.tzinfo is None:
             return muted_until.replace(tzinfo=timezone.utc)
@@ -371,6 +449,8 @@ class PushService:
                         "call_type": call_type,
                         "call_id": str(call_id),
                     },
+                    ttl=CALL_PUSH_TTL_SECONDS,
+                    urgency="high",
                 )
 
         except Exception:

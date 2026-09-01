@@ -3,6 +3,7 @@ from uuid import uuid4
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    Index,
     UniqueConstraint,
     func,
 )
@@ -29,6 +30,7 @@ class MessageStar(Base):
             "user_id",
             name="uq_message_star_user",
         ),
+        Index("ix_message_star_message_id", "message_id"),
     )
 
     # ==========================================================

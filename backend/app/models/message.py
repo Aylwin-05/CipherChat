@@ -4,6 +4,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     TypeDecorator,
@@ -74,6 +75,18 @@ class Message(Base):
     """
 
     __tablename__ = "messages"
+
+    __table_args__ = (
+        Index("ix_messages_conversation_id", "conversation_id"),
+        Index("ix_messages_sender_id", "sender_id"),
+        Index("ix_messages_expires_at", "expires_at"),
+        Index("ix_messages_created_at", "created_at"),
+        Index(
+            "ix_messages_conv_created",
+            "conversation_id",
+            "created_at",
+        ),
+    )
 
     # ==========================================================
     # Identity
@@ -240,6 +253,12 @@ class Message(Base):
     # View-once media has been opened by the recipient: the
     # server has already deleted the attachment file + rows.
     view_once_opened: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    is_pinned: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         nullable=False,

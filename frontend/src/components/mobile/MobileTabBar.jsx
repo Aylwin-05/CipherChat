@@ -3,8 +3,8 @@ import { useChatSocket } from "../../context/ChatSocketContext";
 // ==========================================================
 // Mobile bottom tab bar (WhatsApp-style placement).
 //
-// Desktop shows the left icon rail; on phones the same four
-// destinations (Chats / Status / Friends / Settings) live in a
+// Desktop shows the left icon rail; on phones the same five
+// destinations (Chats / Status / Friends / Calls / Settings) live in a
 // fixed bottom bar. The bar is hidden while a conversation is
 // open and shows the total unread count on the Chats tab.
 //
@@ -70,6 +70,26 @@ function UsersIcon() {
     );
 }
 
+function CallsIcon({ active }) {
+    return (
+        <svg
+            width="23"
+            height="23"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+            {active && (
+                <path d="M9 12h.01M12 12h.01M15 12h.01" strokeWidth="2.4" />
+            )}
+        </svg>
+    );
+}
+
 function SettingsIcon() {
     return (
         <svg
@@ -120,6 +140,11 @@ export default function MobileTabBar({
             key: "friends",
             label: "Friends",
             icon: UsersIcon,
+        },
+        {
+            key: "calls",
+            label: "Calls",
+            icon: CallsIcon,
         },
         {
             key: "settings",

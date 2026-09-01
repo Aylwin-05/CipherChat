@@ -3,6 +3,7 @@ from uuid import uuid4
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    Index,
     String,
     UniqueConstraint,
     func,
@@ -31,6 +32,7 @@ class MessageReaction(Base):
             "user_id",
             name="uq_message_reaction_user",
         ),
+        Index("ix_message_reaction_message_id", "message_id"),
     )
 
     # ==========================================================

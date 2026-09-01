@@ -84,6 +84,8 @@ class ConnectionManager:
     # Connect
     # ==========================================================
 
+    MAX_CONNECTIONS_PER_USER = 5
+
     async def connect_user(
         self,
         user_id: UUID,
@@ -95,6 +97,18 @@ class ConnectionManager:
             self.user_connected_at[user_id] = (
                 time.time()
             )
+
+        # Prevent a single user from exhausting memory with
+        # thousands of connections. Drop the oldest socket.
+        if (
+            len(self.user_connections[user_id])
+            >= self.MAX_CONNECTIONS_PER_USER
+        ):
+            oldest = self.user_connections[user_id].pop(0)
+            try:
+                await oldest.close(code=1000)
+            except Exception:
+                pass
 
         self.user_connections[user_id].append(
             websocket
@@ -304,10 +318,16 @@ class ConnectionManager:
     async def _blocked_peers(
         self,
         user_id: UUID,
+        cached_only: bool = False,
     ) -> set[UUID]:
         """
         User ids the given user must not interact with: everyone
         they blocked plus everyone who blocked them.
+
+        ``cached_only`` skips the database and treats a missing
+        cache as "no blocks".  It is used on the disconnect path,
+        where opening an async DB session during teardown can
+        deadlock against other sockets / session closes.
         """
 
         blocked = self.user_blocked.get(user_id)
@@ -315,7 +335,14 @@ class ConnectionManager:
 
         if blocked is None or blocked_by is None:
 
+            if cached_only:
+                return (
+                    (blocked or set())
+                    | (blocked_by or set())
+                )
+
             from app.models.block import Block
+            from sqlalchemy import select
 
             async with AsyncSessionLocal() as db:
 
@@ -655,11 +682,13 @@ class ConnectionManager:
                 dead.append(websocket)
 
         if dead:
-            self.user_connections[user_id] = [
-                ws
-                for ws in self.user_connections[user_id]
-                if ws not in dead
-            ]
+
+            for ws in dead:
+
+                await self.disconnect_user(
+                    user_id,
+                    ws,
+                )
 
     # ==========================================================
     # Presence
@@ -707,10 +736,14 @@ class ConnectionManager:
         self,
         user_id: UUID,
         online: bool,
+        cached_only: bool = False,
     ):
         peers = await self._peers_for(user_id)
 
-        hidden = await self._blocked_peers(user_id)
+        hidden = await self._blocked_peers(
+            user_id,
+            cached_only=cached_only,
+        )
 
         for peer_id in peers:
             if peer_id in hidden:

@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,6 +24,7 @@ class ConversationParticipant(Base):
             "user_id",
             name="uq_conversation_user",
         ),
+        Index("ix_conv_participant_user_id", "user_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -82,4 +83,10 @@ class ConversationParticipant(Base):
     muted_until: Mapped[DateTime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+
+    wallpaper: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Per-chat wallpaper URL or data URI.",
     )

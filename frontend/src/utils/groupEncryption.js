@@ -254,6 +254,15 @@ export async function decryptGroupMessage(
                                 base64ToArrayBuffer(
                                     message.nonce
                                 ),
+                            // Must match the AAD used at
+                            // encrypt time (see
+                            // encryptGroupMessage), otherwise
+                            // GCM authentication always fails.
+                            additionalData:
+                                encodeAAD(
+                                    GROUP_AAD_PREFIX +
+                                    message.conversation_id
+                                ),
                         },
                         aesKey,
                         base64ToArrayBuffer(

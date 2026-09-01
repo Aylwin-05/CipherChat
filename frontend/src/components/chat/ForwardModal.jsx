@@ -6,6 +6,8 @@ import { useAuth } from "../../context/AuthContext";
 
 import UserAvatar from "../UserAvatar";
 
+import { useModalAnimation } from "../../hooks/useModalAnimation";
+
 import "./Chat.css";
 
 export default function ForwardModal({
@@ -26,6 +28,8 @@ export default function ForwardModal({
     const [sending, setSending] = useState(false);
 
     const [error, setError] = useState(null);
+
+    const { contentRef } = useModalAnimation();
 
     useEffect(() => {
 
@@ -197,7 +201,11 @@ export default function ForwardModal({
         >
 
             <div
+                ref={contentRef}
                 className="forward-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Forward message"
                 onClick={(event) =>
                     event.stopPropagation()
                 }

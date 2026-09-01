@@ -1,8 +1,12 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rate_limit import (
+    RateLimitExceeded,
+    get_limiter,
+)
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 
@@ -41,6 +45,16 @@ async def upload_public_key(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    try:
+        await get_limiter().check(
+            f"keys.upload.{current_user.id}", 10, 60
+        )
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests.",
+            headers={"Retry-After": str(exc.retry_after)},
+        )
 
     repository = UserKeyRepository(db)
 
@@ -65,6 +79,16 @@ async def get_public_key(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    try:
+        await get_limiter().check(
+            f"keys.get.{current_user.id}", 60, 60
+        )
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests.",
+            headers={"Retry-After": str(exc.retry_after)},
+        )
 
     repository = UserKeyRepository(db)
 

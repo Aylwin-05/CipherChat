@@ -1637,3 +1637,319 @@ test("sync copies without a stored secret return null", async () => {
     assert.equal(await decryptSyncBytes(env), null);
 });
 });
+
+// ───────────────────────────────────────────────────────────
+// source: Phase 0.1 — Encrypted IndexedDB store
+// ───────────────────────────────────────────────────────────
+describe("suite: encryptedStore", () => {
+    let EncryptedStore, createEncryptedStore, getEncryptedStore;
+
+    beforeEach(async () => {
+        const mod = await import("./src/crypto/signal/encryptedStore.js");
+        EncryptedStore = mod.EncryptedStore;
+        createEncryptedStore = mod.createEncryptedStore;
+        getEncryptedStore = mod.getEncryptedStore;
+        await signalKeyStore.clearAll();
+    });
+
+    test("identity roundtrip through encrypted store", async () => {
+        const enc = new EncryptedStore(signalKeyStore);
+        await enc.unlock("test-passphrase");
+
+        const identity = {
+            deviceId: "enc-test-device",
+            identityKeyPrivate: "priv-b64-abc",
+            identityKeyPublic: "pub-b64-abc",
+            x25519IdentityKeyPublic: "x25519-b64-abc",
+        };
+
+        await enc.saveIdentity(identity);
+        const loaded = await enc.getIdentity();
+
+        assert.equal(loaded.deviceId, "enc-test-device");
+        assert.equal(loaded.identityKeyPrivate, "priv-b64-abc");
+        assert.equal(loaded.identityKeyPublic, "pub-b64-abc");
+        assert.equal(loaded.x25519IdentityKeyPublic, "x25519-b64-abc");
+    });
+
+    test("wrong passphrase is rejected", async () => {
+        const enc = new EncryptedStore(signalKeyStore);
+        await enc.unlock("correct-passphrase");
+
+        const enc2 = new EncryptedStore(signalKeyStore);
+        await assert.rejects(
+            enc2.unlock("wrong-passphrase"),
+            (err) => {
+                assert.ok(err.message.includes("Wrong passphrase"));
+                return true;
+            },
+        );
+    });
+
+    test("plaintext fallback when not unlocked", async () => {
+        const plain = new SignalKeyStore();
+        await plain.saveMeta({ id: "device", hello: "world" });
+        const meta = await plain.getMeta();
+        assert.equal(meta.hello, "world");
+    });
+
+    test("lock then unlock resumes decryption", async () => {
+        const enc = new EncryptedStore(signalKeyStore);
+        await enc.unlock("pass-123");
+
+        await enc.saveIdentity({
+            deviceId: "lock-test",
+            identityKeyPrivate: "secret-priv",
+            identityKeyPublic: "pub",
+            x25519IdentityKeyPublic: "x-pub",
+        });
+
+        enc.lock();
+        assert.equal(enc.isUnlocked, false);
+
+        await enc.unlock("pass-123");
+        const loaded = await enc.getIdentity();
+        assert.equal(loaded.identityKeyPrivate, "secret-priv");
+    });
+
+    test("signed prekey roundtrip through encrypted store", async () => {
+        const enc = new EncryptedStore(signalKeyStore);
+        await enc.unlock("spk-pass");
+
+        const spk = {
+            keyId: 42,
+            publicKey: "spk-pub",
+            signature: "spk-sig",
+            privateKey: "spk-priv",
+        };
+
+        await enc.saveSignedPrekey(spk);
+        const loaded = await enc.getSignedPrekey(42);
+
+        assert.equal(loaded.keyId, 42);
+        assert.equal(loaded.publicKey, "spk-pub");
+        assert.equal(loaded.signature, "spk-sig");
+        assert.equal(loaded.privateKey, "spk-priv");
+    });
+
+    test("session roundtrip through encrypted store", async () => {
+        const enc = new EncryptedStore(signalKeyStore);
+        await enc.unlock("sess-pass");
+
+        const keys = { ourDeviceId: "a", remoteDeviceId: "b", conversationId: "c" };
+        const state = { chainKey: "ck-value", messageNumber: 7 };
+
+        await enc.saveSession(keys, state);
+        const loaded = await enc.getSession(keys);
+
+        assert.equal(loaded.chainKey, "ck-value");
+        assert.equal(loaded.messageNumber, 7);
+    });
+
+    test("plaintext cache roundtrip through encrypted store", async () => {
+        const enc = new EncryptedStore(signalKeyStore);
+        await enc.unlock("cache-pass");
+
+        await enc.savePlaintext("conv-1", "msg-1", "hello world", "cipher-data");
+        const text = await enc.getPlaintext("conv-1", "msg-1");
+
+        assert.equal(text, "hello world");
+    });
+
+    test("clearAll wipes everything and locks", async () => {
+        const enc = new EncryptedStore(signalKeyStore);
+        await enc.unlock("clear-pass");
+
+        await enc.saveIdentity({
+            deviceId: "clear-test",
+            identityKeyPrivate: "priv",
+            identityKeyPublic: "pub",
+            x25519IdentityKeyPublic: "x-pub",
+        });
+
+        await enc.clearAll();
+        assert.equal(enc.isUnlocked, false);
+
+        const loaded = await signalKeyStore.getIdentity();
+        assert.equal(loaded, null);
+    });
+
+    test("empty passphrase is rejected", async () => {
+        const enc = new EncryptedStore(signalKeyStore);
+        await assert.rejects(
+            enc.unlock(""),
+            (err) => {
+                assert.ok(err.message.includes("empty"));
+                return true;
+            },
+        );
+    });
+
+    test("createEncryptedStore factory returns same instance", async () => {
+        const s1 = createEncryptedStore(signalKeyStore);
+        const s2 = createEncryptedStore(signalKeyStore);
+        const g = getEncryptedStore();
+        assert.deepEqual(s1, s2);
+        assert.deepEqual(s1, g);
+    });
+});
+
+// ───────────────────────────────────────────────────────────
+// source: Phase 0.3 — WebSocket offline queue
+// ───────────────────────────────────────────────────────────
+describe("suite: websocketOfflineQueue", () => {
+    test("messages are queued when socket is null", () => {
+        const svc = {
+            socket: null,
+            _pendingQueue: [],
+            _pendingQueueMax: 100,
+            _enqueue(msg) {
+                this._pendingQueue.push({ ...msg, _queuedAt: Date.now() });
+                if (this._pendingQueue.length > this._pendingQueueMax) {
+                    this._pendingQueue.shift();
+                }
+            },
+            _flushPendingQueue() {
+                const queue = [...this._pendingQueue];
+                this._pendingQueue = [];
+                for (const msg of queue) {
+                    if (!this.socket || this.socket.readyState !== 1) {
+                        this._pendingQueue.push(msg);
+                        continue;
+                    }
+                    this.socket.send(JSON.stringify(msg));
+                }
+            },
+        };
+
+        svc._enqueue({ event: "message", conversation_id: "c1", ciphertext: "enc1" });
+        svc._enqueue({ event: "message", conversation_id: "c2", ciphertext: "enc2" });
+
+        assert.equal(svc._pendingQueue.length, 2);
+        assert.equal(svc._pendingQueue[0].event, "message");
+        assert.equal(svc._pendingQueue[0].conversation_id, "c1");
+        assert.equal(svc._pendingQueue[1].conversation_id, "c2");
+    });
+
+    test("queue drops oldest when exceeding max", () => {
+        const svc = {
+            socket: null,
+            _pendingQueue: [],
+            _pendingQueueMax: 3,
+            _enqueue(msg) {
+                this._pendingQueue.push({ ...msg, _queuedAt: Date.now() });
+                if (this._pendingQueue.length > this._pendingQueueMax) {
+                    this._pendingQueue.shift();
+                }
+            },
+        };
+
+        svc._enqueue({ event: "message", id: 1 });
+        svc._enqueue({ event: "message", id: 2 });
+        svc._enqueue({ event: "message", id: 3 });
+        svc._enqueue({ event: "message", id: 4 });
+
+        assert.equal(svc._pendingQueue.length, 3);
+        assert.equal(svc._pendingQueue[0].id, 2);
+        assert.equal(svc._pendingQueue[2].id, 4);
+    });
+
+    test("flush sends queued messages and clears queue", () => {
+        const sent = [];
+        const svc = {
+            socket: { readyState: 1, send(data) { sent.push(JSON.parse(data)); } },
+            _pendingQueue: [],
+            _pendingQueueMax: 100,
+            _enqueue(msg) {
+                this._pendingQueue.push({ ...msg, _queuedAt: Date.now() });
+                if (this._pendingQueue.length > this._pendingQueueMax) {
+                    this._pendingQueue.shift();
+                }
+            },
+            _flushPendingQueue() {
+                const queue = [...this._pendingQueue];
+                this._pendingQueue = [];
+                for (const msg of queue) {
+                    if (!this.socket || this.socket.readyState !== 1) {
+                        this._pendingQueue.push(msg);
+                        continue;
+                    }
+                    const { _queuedAt: _, ...payload } = msg;
+                    this.socket.send(JSON.stringify(payload));
+                }
+            },
+        };
+
+        svc._enqueue({ event: "message", id: 1 });
+        svc._enqueue({ event: "edit", id: 2 });
+
+        svc._flushPendingQueue();
+
+        assert.equal(svc._pendingQueue.length, 0);
+        assert.equal(sent.length, 2);
+        assert.equal(sent[0].event, "message");
+        assert.equal(sent[1].event, "edit");
+    });
+
+    test("flush re-queues messages when socket is closed", () => {
+        const svc = {
+            socket: { readyState: 3 },
+            _pendingQueue: [],
+            _pendingQueueMax: 100,
+            _enqueue(msg) {
+                this._pendingQueue.push({ ...msg, _queuedAt: Date.now() });
+                if (this._pendingQueue.length > this._pendingQueueMax) {
+                    this._pendingQueue.shift();
+                }
+            },
+            _flushPendingQueue() {
+                const queue = [...this._pendingQueue];
+                this._pendingQueue = [];
+                for (const msg of queue) {
+                    if (!this.socket || this.socket.readyState !== 1) {
+                        this._pendingQueue.push(msg);
+                        continue;
+                    }
+                    this.socket.send(JSON.stringify(msg));
+                }
+            },
+        };
+
+        svc._enqueue({ event: "message", id: 1 });
+        svc._flushPendingQueue();
+
+        assert.equal(svc._pendingQueue.length, 1);
+        assert.equal(svc._pendingQueue[0].id, 1);
+    });
+
+    test("_queuedAt is stripped during flush", () => {
+        const sent = [];
+        const svc = {
+            socket: { readyState: 1, send(data) { sent.push(JSON.parse(data)); } },
+            _pendingQueue: [],
+            _pendingQueueMax: 100,
+            _enqueue(msg) {
+                this._pendingQueue.push({ ...msg, _queuedAt: 12345 });
+            },
+            _flushPendingQueue() {
+                const queue = [...this._pendingQueue];
+                this._pendingQueue = [];
+                for (const msg of queue) {
+                    if (!this.socket || this.socket.readyState !== 1) {
+                        this._pendingQueue.push(msg);
+                        continue;
+                    }
+                    const { _queuedAt: _, ...payload } = msg;
+                    this.socket.send(JSON.stringify(payload));
+                }
+            },
+        };
+
+        svc._enqueue({ event: "message", id: 1 });
+        svc._flushPendingQueue();
+
+        assert.equal(sent.length, 1);
+        assert.equal(sent[0]._queuedAt, undefined);
+        assert.equal(sent[0].event, "message");
+    });
+});

@@ -9,6 +9,7 @@ import {
 } from "../utils/fileEncryption";
 import friendService from "./friendService";
 import keyService from "./keyService";
+import { logger } from '../utils/logger.js';
 
 // ==========================================================
 // Stories (24h status updates, WhatsApp style)
@@ -94,7 +95,7 @@ const storyService = {
             }
             catch (error) {
 
-                console.debug(
+                logger.debug(
                     "[STORY-KEYS] skipping",
                     other.id,
                     error
@@ -247,6 +248,22 @@ const storyService = {
 
         return blob;
 
+    },
+
+    // ==========================================================
+    // Story Reactions
+    // ==========================================================
+
+    async reactToStory(storyId, emoji) {
+        const { data } = await api.post(`/stories/${storyId}/react`, {
+            emoji,
+        });
+        return data;
+    },
+
+    async removeStoryReaction(storyId) {
+        const { data } = await api.delete(`/stories/${storyId}/react`);
+        return data;
     },
 
 };

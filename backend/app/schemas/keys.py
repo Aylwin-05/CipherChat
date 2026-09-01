@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ==========================================================
@@ -6,7 +6,7 @@ from pydantic import BaseModel
 # ==========================================================
 
 class UploadPublicKeyRequest(BaseModel):
-    public_key: str
+    public_key: str = Field(max_length=2000)
 
 
 # ==========================================================

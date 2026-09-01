@@ -59,9 +59,39 @@ const recoveryService = {
 
         }
 
+        // Guard: if the browser already holds a sync secret and
+        // the newly-unwrapped one is different, refuse the
+        // overwrite. Silently replacing the secret would make
+        // every existing sync copy unreadable.
+        const existing =
+            await signalKeyStore.getSyncSecret();
+
+        if (
+            existing &&
+            existing !== secret
+        ) {
+
+            throw new Error(
+                "This recovery code decrypts to a different "
+                + "key than the one already on this device. "
+                + "Using it would erase access to your "
+                + "existing messages. Enter the original "
+                + "recovery code on a fresh browser instead, "
+                + "or use the code from another device that "
+                + "still has your history."
+            );
+
+        }
+
         await signalKeyStore.saveSyncSecret(secret, email);
 
         clearSyncKeyCache();
+
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(
+                new Event("nexara:sync-unlocked")
+            );
+        }
 
         return secret;
 
@@ -97,6 +127,12 @@ const recoveryService = {
 
         clearSyncKeyCache();
 
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(
+                new Event("nexara:sync-unlocked")
+            );
+        }
+
         return secret;
 
     },
@@ -111,12 +147,13 @@ const recoveryService = {
     // sent; the code itself is only revealed after the OTP step.
     // ======================================================
 
-    async requestRecoveryCode(secretB64 = null) {
+    async requestRecoveryCode(secretB64 = null, forceNew = false) {
 
         const response = await api.post(
             "/recovery/request",
             {
                 secret_b64: secretB64 ?? null,
+                force_new: forceNew,
             }
         );
 

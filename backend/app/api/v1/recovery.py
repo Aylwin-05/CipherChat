@@ -6,7 +6,7 @@ from fastapi import (
     Depends,
     HTTPException,
 )
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -17,6 +17,7 @@ from app.core.rate_limit import (
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import rate_limit
+from app.models.message import Message
 from app.models.user import User
 from app.repositories.auth_repository import AuthRepository
 from app.schemas.recovery import (
@@ -135,6 +136,51 @@ async def request_recovery_code(
             detail=str(exc),
         )
 
+    # ----------------------------------------------------------
+    # Fresh-mint safety guard
+    #
+    # Minting a NEW account key (secret_b64 absent) overwrites the
+    # stored code-wrapped secret and permanently orphans every sync
+    # copy this account has already written — those copies can only
+    # be decrypted with the OLD secret, which is lost the moment the
+    # blob is replaced. This is safe only when there is no history
+    # to orphan. If the account has sent any message with a sync
+    # copy, refuse the fresh mint unless the user explicitly opts
+    # in (force_new=true).
+    # ----------------------------------------------------------
+    if not request_body.secret_b64 and not request_body.force_new:
+
+        orphaned_count = (
+            await db.scalar(
+                select(func.count())
+                .select_from(Message)
+                .where(
+                    Message.sender_id == current_user.id,
+                    Message.sync_envelope.is_not(None),
+                )
+            )
+        ) or 0
+
+        if orphaned_count > 0:
+
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Requesting a new code from this browser would "
+                    f"create a new account key and permanently lock "
+                    f"{orphaned_count} existing message(s) beyond "
+                    "reach — they are only decodable with the current "
+                    "secret, and that secret cannot be recovered once "
+                    "overwritten. Request the code from a browser that "
+                    "has already unlocked your history to keep it "
+                    "intact, or re-enter your code to unlock on this "
+                    "browser first."
+                ),
+                headers={
+                    "X-Orphaned-Messages": str(orphaned_count),
+                },
+            )
+
     user_row = (
         await db.execute(
             select(User).where(User.id == current_user.id)
@@ -155,9 +201,9 @@ async def request_recovery_code(
 
     # One pending link per user: a re-request invalidates the
     # previous one (its code no longer matches the stored salt).
-    recovery_token_store.revoke_for_user(user_row.id)
+    await recovery_token_store.revoke_for_user(user_row.id)
 
-    token = recovery_token_store.issue(
+    token = await recovery_token_store.issue(
         user_id=user_row.id,
         email=user_row.email,
         code=recovery["code"],
@@ -227,7 +273,7 @@ async def verify_recovery_otp(
     db: AsyncSession = Depends(get_db),
 ):
 
-    entry = recovery_token_store.take(
+    entry = await recovery_token_store.take(
         request_body.token
     )
 
@@ -264,15 +310,21 @@ async def verify_recovery_otp(
             detail="Invalid or expired OTP.",
         )
 
-    recovery_token_store.discard(request_body.token)
-
     user_row = (
         await db.execute(
             select(User).where(
                 User.id == uuid.UUID(entry["user_id"])
             )
         )
-    ).scalar_one()
+    ).scalar_one_or_none()
+
+    if user_row is None:
+        raise HTTPException(
+            status_code=404,
+            detail="User no longer exists.",
+        )
+
+    await recovery_token_store.discard(request_body.token)
 
     logger.info(
         "Recovery code re-issued for user %s",

@@ -35,6 +35,32 @@ import {
 
 let registrationPromise = null;
 
+// Err on the side of keeping the local device: only report
+// "gone" when the server positively confirms it does NOT list
+// the device. A transient network/HTTP failure must never
+// trigger a data-wiping re-registration mid-flight.
+async function deviceExistsOnServer(deviceId) {
+
+    try {
+
+        const { devices = [] } =
+            await deviceService.listDevices();
+
+        return devices.some(
+            (device) =>
+                String(device.device_id) ===
+                String(deviceId)
+        );
+
+    }
+    catch {
+
+        return true;
+
+    }
+
+}
+
 function withDeviceLock(fn) {
 
     if (navigator?.locks?.request) {
@@ -75,11 +101,33 @@ export function ensureDeviceRegistered({
 
             if (existing?.deviceId) {
 
-                return {
-                    deviceId: existing.deviceId,
-                    isPrimary: existing.isPrimary,
-                    generated: false,
-                };
+                // A persisted device is only trustworthy if the
+                // server still knows about it. The dev DB (or a
+                // remote account) may have been reset since this
+                // browser last registered, leaving a stale
+                // deviceId that makes the server 404 on every
+                // key-bundle fetch and message send. Re-register
+                // (after wiping this device's local key material)
+                // when the server no longer lists the device.
+                const stillKnown =
+                    await deviceExistsOnServer(
+                        existing.deviceId
+                    );
+
+                if (stillKnown) {
+
+                    return {
+                        deviceId: existing.deviceId,
+                        isPrimary: existing.isPrimary,
+                        generated: false,
+                    };
+
+                }
+
+                // Server lost the device — clear stale key
+                // material (keeping the sync secret) and fall
+                // through to a fresh registration below.
+                await signalKeyStore.clearDeviceMaterial();
 
             }
 
@@ -133,28 +181,52 @@ export function ensureDeviceRegistered({
             // The account's recovery key was created by THIS
             // registration: unlock the sync secret right away and
             // surface the code so the UI can show it once.
+            //
+            // IMPORTANT: never overwrite an existing sync secret.
+            // A second registration (e.g. after clearing data)
+            // may return a FRESH recovery code that unwraps to a
+            // DIFFERENT secret — saving it would break every
+            // previously-written sync copy on the server.
             let recoveryCode = null;
 
             if (response.recovery_code) {
 
-                try {
+                const existingSecret =
+                    await signalKeyStore.getSyncSecret();
 
-                    await recoveryService.unlockFromRegistration({
-                        code: response.recovery_code,
-                        salt: response.recovery_salt,
-                        wrapped_key: response.recovery_wrapped_key,
-                        email,
-                    });
+                if (!existingSecret) {
 
-                    recoveryCode = response.recovery_code;
+                    try {
+
+                        await recoveryService
+                            .unlockFromRegistration({
+                                code:
+                                    response.recovery_code,
+                                salt:
+                                    response.recovery_salt,
+                                wrapped_key:
+                                    response.recovery_wrapped_key,
+                                email,
+                            });
+
+                        recoveryCode =
+                            response.recovery_code;
+
+                    }
+                    catch (error) {
+
+                        console.error(
+                            "Recovery auto-unlock failed:",
+                            error
+                        );
+
+                    }
 
                 }
-                catch (error) {
+                else {
 
-                    console.error(
-                        "Recovery auto-unlock failed:",
-                        error
-                    );
+                    recoveryCode =
+                        response.recovery_code;
 
                 }
 

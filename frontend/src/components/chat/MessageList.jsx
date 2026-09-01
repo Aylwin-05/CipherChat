@@ -1,5 +1,6 @@
 import {
     useEffect,
+    useMemo,
     useRef,
     useState,
 } from "react";
@@ -268,6 +269,105 @@ export default function MessageList({
 
     }, [loading, conversationId]);
 
+    // ==========================================================
+    // Date separators + grouping metadata
+    // ==========================================================
+
+    const rows = useMemo(() => {
+
+        const result = [];
+
+        messages.forEach((message, index) => {
+
+            const currentDate =
+                new Date(message.created_at);
+
+            const previous =
+                messages[index - 1];
+
+            const previousDate =
+                previous
+                    ? new Date(previous.created_at)
+                    : null;
+
+            // Date divider between days
+            if (
+                !previousDate ||
+                !isSameDay(currentDate, previousDate)
+            ) {
+
+                result.push({
+                    kind: "divider",
+                    label: formatDivider(currentDate),
+                });
+
+            }
+
+            // Grouping: same sender, close in time, no deletes
+            // between them.
+            const previousSender =
+                previous?.sender_id;
+
+            const gapOk =
+                previous &&
+                previousDate &&
+                currentDate - previousDate <
+                    GROUP_GAP_MS;
+
+            const sameSender =
+                message.sender_id === previousSender;
+
+            const groupStart =
+                !sameSender || !gapOk;
+
+            const next =
+                messages[index + 1];
+
+            const nextSender =
+                next?.sender_id;
+
+            const nextGap =
+                next
+                    ? new Date(next.created_at) -
+                        currentDate
+                    : Number.MAX_SAFE_INTEGER;
+
+            const groupEnd =
+                message.sender_id !== nextSender ||
+                nextGap >= GROUP_GAP_MS;
+
+            const showName =
+                !groupStart &&
+                message.sender_id !== user?.id;
+
+            const displayName =
+                message.sender_id === user?.id
+                    ? user?.display_name ||
+                        "You"
+                    : (participantsMap?.[
+                            message.sender_id
+                        ]?.display_name ??
+                        otherUser?.display_name) ||
+                        "Unknown";
+
+            result.push({
+                kind: "message",
+                message,
+                index,
+                groupInfo: {
+                    firstInGroup: groupStart,
+                    lastInGroup: groupEnd,
+                    showName,
+                    displayName,
+                },
+            });
+
+        });
+
+        return result;
+
+    }, [messages, user, otherUser, participantsMap]);
+
     if (loading) {
 
         return (
@@ -340,99 +440,6 @@ export default function MessageList({
         );
 
     }
-
-    // ==========================================================
-    // Date separators + grouping metadata
-    // ==========================================================
-
-    const rows = [];
-
-    messages.forEach((message, index) => {
-
-        const currentDate =
-            new Date(message.created_at);
-
-        const previous =
-            messages[index - 1];
-
-        const previousDate =
-            previous
-                ? new Date(previous.created_at)
-                : null;
-
-        // Date divider between days
-        if (
-            !previousDate ||
-            !isSameDay(currentDate, previousDate)
-        ) {
-
-            rows.push({
-                kind: "divider",
-                label: formatDivider(currentDate),
-            });
-
-        }
-
-        // Grouping: same sender, close in time, no deletes
-        // between them.
-        const previousSender =
-            previous?.sender_id;
-
-        const gapOk =
-            previous &&
-            previousDate &&
-            currentDate - previousDate <
-                GROUP_GAP_MS;
-
-        const sameSender =
-            message.sender_id === previousSender;
-
-        const groupStart =
-            !sameSender || !gapOk;
-
-        const next =
-            messages[index + 1];
-
-        const nextSender =
-            next?.sender_id;
-
-        const nextGap =
-            next
-                ? new Date(next.created_at) -
-                    currentDate
-                : Number.MAX_SAFE_INTEGER;
-
-        const groupEnd =
-            message.sender_id !== nextSender ||
-            nextGap >= GROUP_GAP_MS;
-
-        const showName =
-            !groupStart &&
-            message.sender_id !== user?.id;
-
-        const displayName =
-            message.sender_id === user?.id
-                ? user?.display_name ||
-                    "You"
-                : (participantsMap?.[
-                        message.sender_id
-                    ]?.display_name ??
-                    otherUser?.display_name) ||
-                    "Unknown";
-
-        rows.push({
-            kind: "message",
-            message,
-            index,
-            groupInfo: {
-                firstInGroup: groupStart,
-                lastInGroup: groupEnd,
-                showName,
-                displayName,
-            },
-        });
-
-    });
 
     return (
 

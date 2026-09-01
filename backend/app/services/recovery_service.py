@@ -157,30 +157,121 @@ def unlock_sync_secret(code: str, salt_hex: str, wrapped_key: dict) -> str | Non
 
 
 # ==========================================================
-# Recovery link tokens (in-memory, short-lived)
+# Recovery link tokens
 #
 # The "recover my code" flow delivers the new code ONLY after the
 # user clicks the emailed link AND proves the OTP. The code is
-# held in a process-memory dict keyed by an unguessable token
+# held in a short-lived store keyed by an unguessable token
 # (32 random bytes, embedded in the link), expiring after
 # TOKEN_TTL_SECONDS. It never touches the database, so a stolen
 # DB still yields nothing.
 #
-# NOTE: single-process (uvicorn) holds all tokens; with multiple
-# workers the request and the verify could land on different
-# processes. Acceptable for now — the app runs one worker — and
-# the production path is a shared cache (same shape, zero API
-# changes).
+# When REDIS_URL is configured the tokens live in Redis (safe
+# for multi-worker deployments); otherwise an in-process dict
+# is used (single-worker fallback).
 # ==========================================================
 
+import json
 
-class RecoveryTokenStore:
+
+class _RedisTokenStore:
+    """Redis-backed recovery token store."""
+
+    _PREFIX = "nexara:recovery:token:"
+    _USER_PREFIX = "nexara:recovery:user:"
+
+    def __init__(self, ttl_seconds: int = TOKEN_TTL_SECONDS):
+        self._ttl = ttl_seconds
+        self._client = None
+
+    def _get_client(self):
+        if self._client is None:
+            import redis.asyncio as aioredis
+            from app.core.config import settings
+            self._client = aioredis.from_url(
+                settings.REDIS_URL,
+                encoding="utf-8",
+                decode_responses=True,
+            )
+        return self._client
+
+    async def issue(
+        self,
+        user_id: str,
+        email: str,
+        code: str,
+        code_display: str,
+    ) -> str:
+        token = secrets.token_urlsafe(32)
+        client = self._get_client()
+        entry = json.dumps({
+            "user_id": str(user_id),
+            "email": email.lower(),
+            "code": code,
+            "code_display": code_display,
+        })
+        pipe = client.pipeline()
+        pipe.set(
+            f"{self._PREFIX}{token}",
+            entry,
+            ex=self._ttl,
+        )
+        pipe.set(
+            f"{self._USER_PREFIX}{user_id}",
+            token,
+            ex=self._ttl,
+        )
+        await pipe.execute()
+        return token
+
+    async def revoke_for_user(self, user_id: str) -> None:
+        client = self._get_client()
+        previous = await client.get(
+            f"{self._USER_PREFIX}{user_id}"
+        )
+        if previous is not None:
+            pipe = client.pipeline()
+            pipe.delete(f"{self._PREFIX}{previous}")
+            pipe.delete(f"{self._USER_PREFIX}{user_id}")
+            await pipe.execute()
+
+    async def take(self, token: str) -> dict | None:
+        client = self._get_client()
+        raw = await client.get(f"{self._PREFIX}{token}")
+        if raw is None:
+            return None
+        entry = json.loads(raw)
+        await client.delete(f"{self._PREFIX}{token}")
+        return entry
+
+    async def discard(self, token: str) -> None:
+        client = self._get_client()
+        await client.delete(f"{self._PREFIX}{token}")
+
+    async def clear(self) -> None:
+        client = self._get_client()
+        keys = []
+        async for key in client.scan_iter(
+            f"{self._PREFIX}*"
+        ):
+            keys.append(key)
+        async for key in client.scan_iter(
+            f"{self._USER_PREFIX}*"
+        ):
+            keys.append(key)
+        if keys:
+            await client.delete(*keys)
+
+
+class _MemoryTokenStore:
+    """In-memory fallback (single worker only)."""
+
     def __init__(self, ttl_seconds: int = TOKEN_TTL_SECONDS):
         self._ttl = ttl_seconds
         self._tokens: dict[str, dict] = {}
         self._user_tokens: dict[str, str] = {}
 
-    def issue(
+    async def issue(
         self,
         user_id: str,
         email: str,
@@ -198,14 +289,12 @@ class RecoveryTokenStore:
         self._user_tokens[str(user_id)] = token
         return token
 
-    def revoke_for_user(self, user_id: str) -> None:
-        """Drop any earlier pending link for this user (re-request)."""
+    async def revoke_for_user(self, user_id: str) -> None:
         previous = self._user_tokens.pop(str(user_id), None)
         if previous is not None:
             self._tokens.pop(previous, None)
 
-    def take(self, token: str) -> dict | None:
-        """Return the pending code entry (consumed on success)."""
+    async def take(self, token: str) -> dict | None:
         entry = self._tokens.get(token)
         if entry is None:
             return None
@@ -214,16 +303,22 @@ class RecoveryTokenStore:
             return None
         return entry
 
-    def discard(self, token: str) -> None:
+    async def discard(self, token: str) -> None:
         self._tokens.pop(token, None)
-        for user_id, tok in list(self._user_tokens.items()):
+        for uid, tok in list(self._user_tokens.items()):
             if tok == token:
-                self._user_tokens.pop(user_id, None)
+                self._user_tokens.pop(uid, None)
 
-    def clear(self) -> None:
-        """Drop every pending link (tests / re-request storms)."""
+    async def clear(self) -> None:
         self._tokens.clear()
         self._user_tokens.clear()
 
 
-recovery_token_store = RecoveryTokenStore()
+def _create_store():
+    from app.core.config import settings
+    if settings.REDIS_URL:
+        return _RedisTokenStore()
+    return _MemoryTokenStore()
+
+
+recovery_token_store = _create_store()

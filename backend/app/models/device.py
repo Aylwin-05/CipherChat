@@ -354,3 +354,90 @@ class OneTimePreKey(Base):
     
     def __repr__(self) -> str:
         return f"<OneTimePreKey(device_id={self.device_id}, key_id={self.key_id}, consumed={self.consumed})>"
+
+
+# ==========================================================
+# Device Trust (TOFU)
+# ==========================================================
+
+
+class DeviceTrustLevel(PyEnum):
+    unknown = "unknown"
+    trusted = "trusted"
+    verified = "verified"
+
+
+class DeviceTrust(Base):
+    """
+    Trust-on-first-use (TOFU) record for a remote device.
+
+    When a user first sees a peer's device, the trust level is
+    ``unknown``.  After the user confirms the device (e.g. by
+    scanning a safety-number QR code), the level moves to
+    ``trusted`` or ``verified``.  If the device's identity key
+    changes the record can be reset to ``unknown`` so the user
+    is warned.
+    """
+
+    __tablename__ = "device_trust"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "owner_id",
+            "device_id",
+            name="uq_device_trust_owner_device",
+        ),
+        Index("ix_device_trust_owner", "owner_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    owner_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="The user who owns this trust record",
+    )
+
+    device_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="The remote device being trusted",
+    )
+
+    trust_level: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=DeviceTrustLevel.unknown.value,
+        comment="unknown | trusted | verified",
+    )
+
+    identity_key_fingerprint: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="SHA-256 of the device identity key at trust time",
+    )
+
+    trusted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When trust was established",
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

@@ -1,6 +1,10 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 from fastapi import Depends, FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,12 +15,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.api import api_router
 from app.core.config import settings
+from app.core.exceptions import NexaraException
 from app.core.logging import setup_logging
 from app.core.middleware import (
     RequestIdMiddleware,
+    RequestBodySizeLimitMiddleware,
     SecurityHeadersMiddleware,
+    MetricsMiddleware,
+    get_metrics,
 )
-from app.database.session import get_db
+from app.database.session import get_db, AsyncSessionLocal
 from app.websocket.redis_bus import bus
 from app.websocket.ws import router as websocket_router
 
@@ -24,16 +32,129 @@ setup_logging()
 
 logger = logging.getLogger("app.main")
 
+# ==========================================================
+# Sentry (observability)
+# ==========================================================
+
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.APP_ENV,
+        traces_sample_rate=0.1 if settings.APP_ENV == "production" else 1.0,
+        profiles_sample_rate=0.1 if settings.APP_ENV == "production" else 1.0,
+        integrations=[
+            FastApiIntegration(),
+            SqlalchemyIntegration(),
+        ],
+    )
+
+# How often the background purge task runs (seconds).
+PURGE_INTERVAL_SECONDS = 60
+
+
+async def _disappearing_messages_loop():
+    """Periodically hard-delete messages whose expiry has passed.
+
+    Runs as a background task for the entire lifespan of the
+    application.  Each tick opens a fresh session, calls
+    ``purge_expired()``, and (when the bus is active) broadcasts
+    a ``message_purged`` event so connected clients can evict
+    the rows from their local caches.
+    """
+
+    from app.repositories.message_repository import (
+        MessageRepository,
+    )
+    from app.websocket.connection_manager import manager
+
+    # A lock ensures a slow tick can never overlap with the next
+    # one (which could double-purge and emit duplicate broadcasts
+    # under heavy load). Recovery code is idempotent so re-running
+    # is harmless, but skipping the overlap keeps things tidy.
+    purge_lock = asyncio.Lock()
+
+    async def _tick():
+        async with AsyncSessionLocal() as db:
+            repo = MessageRepository(db)
+            purged = await repo.purge_expired()
+            await db.commit()
+
+        if purged and bus.active:
+            from uuid import UUID
+
+            conv_ids = {
+                str(cid) for cid, _ in purged
+            }
+            msg_ids = {
+                str(mid) for _, mid in purged
+            }
+
+            for cid in conv_ids:
+                await manager.broadcast(
+                    UUID(cid),
+                    {
+                        "event": "message_purged",
+                        "conversation_id": cid,
+                        "message_ids": [
+                            mid
+                            for mid in msg_ids
+                        ],
+                    },
+                )
+
+        if purged:
+            logger.info(
+                "Disappearing-message purge: removed %d messages",
+                len(purged),
+            )
+
+    while True:
+        try:
+            async with purge_lock:
+                # Shield the DB work so a cancellation delivered at
+                # teardown (purge_task.cancel()) never interrupts an
+                # in-flight aiosqlite call. aiosqlite runs DB ops in
+                # a separate thread; cancelling mid-call leaves that
+                # thread's future unresolved and the TestClient / anyio
+                # portal hangs forever joining it. With the shield the
+                # CancelledError is deferred until the session exits
+                # cleanly, then propagated.
+                await asyncio.shield(_tick())
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "Disappearing-message purge task failed"
+            )
+
+        try:
+            await asyncio.sleep(PURGE_INTERVAL_SECONDS)
+        except asyncio.CancelledError:
+            raise
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Cross-worker WebSocket fan-out + presence (no-op without
-    # REDIS_URL). Must start before the first socket connects.
     from app.websocket.connection_manager import manager
 
     await bus.start(manager)
-    yield
-    await bus.stop()
+
+    purge_task = asyncio.create_task(
+        _disappearing_messages_loop()
+    )
+
+    try:
+        yield
+    finally:
+        purge_task.cancel()
+        try:
+            await purge_task
+        except asyncio.CancelledError:
+            pass
+        await bus.stop()
+
+        from app.core.redis import close_redis_client
+        await close_redis_client()
 
 
 app = FastAPI(
@@ -93,6 +214,13 @@ app.add_middleware(
     logger=logger,
 )
 
+app.add_middleware(MetricsMiddleware)
+
+app.add_middleware(
+    RequestBodySizeLimitMiddleware,
+    max_bytes=settings.MAX_REQUEST_BODY_SIZE,
+)
+
 # ==========================================================
 # Global Exception Handlers (always JSON, never plain text)
 # ==========================================================
@@ -129,6 +257,24 @@ async def validation_exception_handler(
     )
 
 
+@app.exception_handler(NexaraException)
+async def nexara_exception_handler(
+    request: Request,
+    exc: NexaraException,
+):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.detail,
+            "request_id": getattr(
+                request.state,
+                "request_id",
+                None,
+            ),
+        },
+    )
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(
     request: Request,
@@ -140,6 +286,9 @@ async def unhandled_exception_handler(
         request.url.path,
         exc,
     )
+
+    if settings.SENTRY_DSN:
+        sentry_sdk.capture_exception(exc)
 
     error_response = JSONResponse(
         status_code=500,
@@ -167,6 +316,33 @@ async def unhandled_exception_handler(
             },
         )
     return error_response
+
+# ==========================================================
+# Health check (load balancer / orchestrator probe)
+# ==========================================================
+
+@app.get("/healthz", tags=["ops"])
+async def health_check():
+    try:
+        async with AsyncSessionLocal() as db:
+            await db.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        db_ok = False
+
+    return JSONResponse(
+        status_code=200 if db_ok else 503,
+        content={
+            "status": "healthy" if db_ok else "degraded",
+            "database": "ok" if db_ok else "unreachable",
+        },
+    )
+
+
+@app.get("/metrics", tags=["ops"])
+async def metrics():
+    return get_metrics()
+
 
 # ==========================================================
 # REST API Routes

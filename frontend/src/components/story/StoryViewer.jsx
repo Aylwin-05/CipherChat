@@ -522,7 +522,11 @@ export default function StoryViewer({
                     </div>
                 )}
 
-                {/* Viewers (own stories only) */}
+                {/* Story Reactions */}
+                {!isMine && !showViewers && (
+                    <StoryReactionBar storyId={story.id} />
+                )}
+
                 {isMine && showViewers && (
                     <div className="story-viewers-panel">
                         <h4>
@@ -565,6 +569,52 @@ export default function StoryViewer({
         </div>
     );
 
+}
+
+// ==========================================================
+// Story Reaction Bar
+// ==========================================================
+
+const STORY_REACTIONS = ["❤️", "😂", "😮", "😢", "🔥", "👏"];
+
+function StoryReactionBar({ storyId }) {
+    const [myReaction, setMyReaction] = useState(null);
+    const [sending, setSending] = useState(false);
+
+    async function handleReact(emoji) {
+        if (sending) return;
+        setSending(true);
+        try {
+            const res = await storyService.reactToStory(storyId, emoji);
+            if (res.action === "removed") {
+                setMyReaction(null);
+            } else {
+                setMyReaction(emoji);
+            }
+        } catch {
+            // silent
+        } finally {
+            setSending(false);
+        }
+    }
+
+    return (
+        <div className="story-reaction-bar">
+            {STORY_REACTIONS.map((emoji) => (
+                <button
+                    key={emoji}
+                    className={`story-reaction-btn ${
+                        myReaction === emoji ? "active" : ""
+                    }`}
+                    onClick={() => handleReact(emoji)}
+                    disabled={sending}
+                    title={emoji}
+                >
+                    {emoji}
+                </button>
+            ))}
+        </div>
+    );
 }
 
 function formatTime(value) {

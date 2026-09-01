@@ -1,5 +1,6 @@
 import {
     createContext,
+    useCallback,
     useContext,
     useEffect,
     useRef,
@@ -15,6 +16,10 @@ import websocketService from "../services/websocketService";
 import {
     getAccessToken,
 } from "../api/api";
+
+import { useAppLifecycle } from "../hooks/useAppLifecycle";
+import { dequeueMessages } from "../utils/offlineCache";
+import { logger } from '../utils/logger.js';
 
 const ChatSocketContext = createContext(null);
 
@@ -44,6 +49,12 @@ export function ChatSocketProvider({ children }) {
 
     const userRef = useRef(user);
 
+    const loadedRef = useRef(false);
+
+    const lastConversationsLoadAt = useRef(0);
+
+    const CONVERSATIONS_COOLDOWN_MS = 10_000;
+
     useEffect(() => {
 
         userRef.current = user;
@@ -64,7 +75,15 @@ export function ChatSocketProvider({ children }) {
     function emit(event) {
 
         listenersRef.current.forEach(
-            listener => listener(event)
+            listener => {
+                try {
+                    Promise.resolve(listener(event)).catch(err => {
+                        console.error("Event listener error:", err);
+                    });
+                } catch (err) {
+                    console.error("Event listener error:", err);
+                }
+            }
         );
 
     }
@@ -84,6 +103,10 @@ export function ChatSocketProvider({ children }) {
                 await conversationService.getConversations();
 
             setConversations(data);
+
+            loadedRef.current = true;
+
+            lastConversationsLoadAt.current = Date.now();
 
             // Desktop shows list + chat side by side, so the
             // first conversation is pre-selected. On phones the
@@ -128,6 +151,23 @@ export function ChatSocketProvider({ children }) {
     }
 
     //=====================================================
+    // REST fallback: load conversations immediately on
+    // mount so the sidebar is never stuck on skeletons
+    // if the WebSocket "connected" event is delayed or
+    // never arrives.
+    //=====================================================
+
+    useEffect(() => {
+
+        if (!user) return;
+
+        if (loadedRef.current) return;
+
+        loadConversations();
+
+    }, [user]);
+
+    //=====================================================
     // Socket lifecycle: ONE user-scoped connection keeps
     // the whole UI (sidebar included) live.
     //=====================================================
@@ -147,7 +187,14 @@ export function ChatSocketProvider({ children }) {
 
                     case "connected":
 
-                        await loadConversations();
+                        setPresence({});
+
+                        if (
+                            !loadedRef.current ||
+                            Date.now() - lastConversationsLoadAt.current > CONVERSATIONS_COOLDOWN_MS
+                        ) {
+                            await loadConversations();
+                        }
 
                         await refreshStories();
 
@@ -466,9 +513,40 @@ export function ChatSocketProvider({ children }) {
 
             websocketService.disconnect();
 
+            loadedRef.current = false;
+
+            lastConversationsLoadAt.current = 0;
+
         };
 
     }, [user]);
+
+    // ==========================================================
+    // App lifecycle: reconnect WS on foreground + flush offline queue
+    // ==========================================================
+
+    useAppLifecycle({
+        onForeground: () => {
+            if (user && !websocketService.isConnected()) {
+                websocketService.connect(getAccessToken());
+            }
+        },
+        onOnline: async () => {
+            if (user) {
+                if (!websocketService.isConnected()) {
+                    websocketService.connect(getAccessToken());
+                }
+                try {
+                    const queued = await dequeueMessages();
+                    for (const msg of queued) {
+                        websocketService.sendMessage(msg);
+                    }
+                } catch {
+                    // silent
+                }
+            }
+        },
+    });
 
     //=====================================================
     // Select a conversation: live UI state + reset unread
@@ -752,7 +830,7 @@ export function ChatSocketProvider({ children }) {
     // Raw event subscription for per-conversation hooks
     //=====================================================
 
-    function subscribe(listener) {
+    const subscribe = useCallback(function subscribe(listener) {
 
         listenersRef.current.add(listener);
 
@@ -762,7 +840,7 @@ export function ChatSocketProvider({ children }) {
 
         };
 
-    }
+    }, []);
 
     //=====================================================
     // Stories (24h status updates)
@@ -858,7 +936,7 @@ export function ChatSocketProvider({ children }) {
         }
         catch (error) {
 
-            console.debug(
+            logger.debug(
                 "[STORY-VIEW]",
                 error
             );

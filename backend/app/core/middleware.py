@@ -1,6 +1,11 @@
+from starlette.responses import JSONResponse
+
 # ==========================================================
 # Security middleware
 # ==========================================================
+
+import time
+from collections import defaultdict
 
 from fastapi import Request
 
@@ -106,3 +111,118 @@ class RequestIdMiddleware:
             )
 
         await self.app(scope, receive, send_wrapper)
+
+
+# ==========================================================
+# Request body size limit (memory-DoS backstop)
+# ==========================================================
+
+
+class RequestBodySizeLimitMiddleware:
+    """
+    Rejects HTTP requests whose ``Content-Length`` exceeds the
+    configured ceiling.  The rejection is immediate — no body
+    bytes are consumed — so a malicious oversized JSON payload
+    never reaches the application.
+
+    File-upload routes already enforce per-type size caps via
+    their own streamed checks; this middleware is a final
+    defence-in-depth for endpoints that only accept small JSON
+    bodies (auth, friends, messages, etc.).
+    """
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        content_length = 0
+        for header_name, header_value in scope.get(
+            "headers", []
+        ):
+            if header_name == b"content-length":
+                try:
+                    content_length = int(header_value)
+                except (TypeError, ValueError):
+                    content_length = 0
+                break
+
+        if content_length > self.max_bytes:
+            response = JSONResponse(
+                status_code=413,
+                content={
+                    "detail": "Request body too large.",
+                },
+            )
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+
+
+
+# Global counters — reset on process restart.
+_metrics = {
+    "requests_total": 0,
+    "errors_total": 0,
+    "status_codes": defaultdict(int),
+    "latencies_ms": [],
+}
+_MAX_LATENCY_SAMPLES = 1000
+
+
+class MetricsMiddleware:
+    """
+    Lightweight request metrics.  Data is exposed via the
+    ``/metrics`` endpoint (see ``app.main``).
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        start = time.perf_counter()
+        status_code = 0
+
+        async def send_wrapper(message):
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message.get("status", 0)
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
+        _metrics["requests_total"] += 1
+        _metrics["status_codes"][status_code] += 1
+        if status_code >= 500:
+            _metrics["errors_total"] += 1
+        if len(_metrics["latencies_ms"]) < _MAX_LATENCY_SAMPLES:
+            _metrics["latencies_ms"].append(round(elapsed_ms, 2))
+
+
+def get_metrics():
+    """Return a snapshot of the current metrics."""
+    latencies = sorted(_metrics["latencies_ms"])
+    n = len(latencies)
+    return {
+        "requests_total": _metrics["requests_total"],
+        "errors_total": _metrics["errors_total"],
+        "status_codes": dict(_metrics["status_codes"]),
+        "latency": {
+            "samples": n,
+            "p50_ms": latencies[n // 2] if n else 0,
+            "p95_ms": latencies[int(n * 0.95)] if n else 0,
+            "p99_ms": latencies[int(n * 0.99)] if n else 0,
+        },
+    }

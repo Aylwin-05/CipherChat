@@ -33,6 +33,8 @@ import authService from "../../services/authService";
 
 import appLock from "../../utils/appLock";
 
+import api from "../../api/api";
+
 import "./SettingsPage.css";
 
 const PRIVACY_OPTIONS = [
@@ -105,6 +107,8 @@ export default function SettingsPage() {
     const [theme, setThemeState] = useState(getTheme());
 
     const [confirmLogout, setConfirmLogout] = useState(false);
+    const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false);
+    const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
     // ==========================================================
     // Web push notifications
@@ -603,6 +607,8 @@ export default function SettingsPage() {
 
     const [confirmFreshKey, setConfirmFreshKey] = useState(false);
 
+    const [forceNewConfirm, setForceNewConfirm] = useState(false);
+
     // Enter-an-existing-code box (already-logged-in unlock)
     const [unlockCode, setUnlockCode] = useState("");
 
@@ -684,7 +690,7 @@ export default function SettingsPage() {
 
     }
 
-    async function handleRecoverCode() {
+    async function handleRecoverCode(forceNew = false) {
 
         if (
             recoveryBusy ||
@@ -702,16 +708,24 @@ export default function SettingsPage() {
 
         setConfirmFreshKey(false);
 
+        setForceNewConfirm(false);
+
         try {
 
             // Re-wrap the SAME secret when this browser has it
-            // (lossless), otherwise mint a fresh account key.
+            // (lossless: every existing sync copy stays valid).
+            // When this device holds no secret yet, the backend
+            // refuses to mint a fresh key if the account has sync
+            // copies that would be orphaned (409) — this device
+            // must then confirm the loss explicitly (forceNew)
+            // after the forceNewConfirm stage.
             const secret =
                 await signalKeyStore.getSyncSecret();
 
             const data =
                 await recoveryService.requestRecoveryCode(
-                    secret
+                    secret || null,
+                    forceNew,
                 );
 
             setRecoverySent(true);
@@ -730,7 +744,29 @@ export default function SettingsPage() {
             const retryAfter =
                 err?.response?.headers?.["retry-after"];
 
-            if (retryAfter) {
+            if (err?.response?.status === 409 && !forceNew) {
+
+                const orphaned =
+                    err?.response?.headers?.[
+                        "x-orphaned-messages"
+                    ];
+
+                setForceNewConfirm(true);
+
+                setRecoveryError(
+                    orphaned
+                        ? `This account has ${orphaned} synced ` +
+                          "message(s) that a new key would lock " +
+                          "forever. Enter your recovery code to " +
+                          "unlock here first, or request from a " +
+                          "browser that already has your history."
+                        : err?.response?.data?.detail ||
+                          "A new key is blocked because it would " +
+                          "lock existing history."
+                );
+
+            }
+            else if (retryAfter) {
 
                 setRecoveryCooldown(Number(retryAfter));
 
@@ -863,65 +899,93 @@ export default function SettingsPage() {
         logout();
     }
 
+    // ==========================================================
+    // Account Deletion (GDPR)
+    // ==========================================================
+
+    async function handleDeleteAccount() {
+        if (deleteConfirmText !== "YES_DELETE") return;
+
+        try {
+            await api.delete("/auth/account?confirm=YES_DELETE");
+            toast.success("Account deleted.");
+            logout();
+        } catch (err) {
+            toast.error(
+                err.response?.data?.detail ||
+                "Failed to delete account."
+            );
+        }
+    }
+
     // Enter-an-existing-code box — shown in EVERY support state
     // (idle, fresh-key confirm, link-sent) so the user can unlock
     // without leaving the page.
     const recoveryUnlockBox = (
-        !recoveryHasSecret && (
-            <div className="recovery-unlock-box">
-                <details>
-                    <summary>
-                        Already have your code? Unlock
-                        this browser
-                    </summary>
+        <div className="recovery-unlock-box">
+            <details>
+                <summary>
+                    {recoveryHasSecret
+                        ? "Have a different code? Re-unlock this browser"
+                        : "Already have your code? Unlock this browser"}
+                </summary>
 
-                    <form
-                        className="recovery-unlock-form"
-                        onSubmit={handleUnlockCode}
+                {recoveryHasSecret && (
+                    <p className="recovery-support-hint">
+                        This browser already has a sync secret stored.
+                        Entering a code that decrypts to a
+                        <strong> different </strong>
+                        key will be refused to protect your existing
+                        messages.
+                    </p>
+                )}
+
+                <form
+                    className="recovery-unlock-form"
+                    onSubmit={handleUnlockCode}
+                >
+                    <input
+                        type="text"
+                        className="recovery-unlock-input"
+                        placeholder="XXXXXX-XXXXXX-XXXXXX-XXXXXX"
+                        value={unlockCode}
+                        onChange={event =>
+                            setUnlockCode(
+                                event.target.value.toUpperCase()
+                            )
+                        }
+                        spellCheck={false}
+                    />
+
+                    <button
+                        type="submit"
+                        className="btn-ghost"
+                        disabled={
+                            unlockBusy ||
+                            unlockCode.length < 20
+                        }
                     >
-                        <input
-                            type="text"
-                            className="recovery-unlock-input"
-                            placeholder="XXXXXX-XXXXXX-XXXXXX-XXXXXX"
-                            value={unlockCode}
-                            onChange={event =>
-                                setUnlockCode(
-                                    event.target.value.toUpperCase()
-                                )
-                            }
-                            spellCheck={false}
-                        />
+                        {unlockBusy
+                            ? "Unlocking…"
+                            : "Unlock"}
+                    </button>
+                </form>
 
-                        <button
-                            type="submit"
-                            className="btn-ghost"
-                            disabled={
-                                unlockBusy ||
-                                unlockCode.length < 20
-                            }
-                        >
-                            {unlockBusy
-                                ? "Unlocking…"
-                                : "Unlock"}
-                        </button>
-                    </form>
+                {unlockError && (
+                    <p className="recovery-support-error">
+                        {unlockError}
+                    </p>
+                )}
 
-                    {unlockError && (
-                        <p className="recovery-support-error">
-                            {unlockError}
-                        </p>
-                    )}
-
-                    {unlocked && (
-                        <p className="recovery-unlock-ok">
-                            This browser is now unlocked —
-                            the full history is readable
-                            here.
-                        </p>
-                    )}
-                </details>
-            </div>
-        )
+                {unlocked && (
+                    <p className="recovery-unlock-ok">
+                        This browser is now unlocked —
+                        the full history is readable
+                        here.
+                    </p>
+                )}
+            </details>
+        </div>
     );
 
     return (
@@ -2000,6 +2064,56 @@ export default function SettingsPage() {
 
                     </div>
 
+                ) : forceNewConfirm ? (
+
+                    <div className="settings-actions">
+
+                        <div className="logout-confirm">
+                            <span>
+                                This account already has synced history.
+                                Creating a <strong>new account key</strong>{" "}
+                                will permanently lock that history on{" "}
+                                <strong>every</strong> browser — it cannot
+                                be recovered, even with your old code.
+                                <br />
+                                <br />
+                                You can still unlock the existing histories
+                                by entering your current recovery code
+                                below. Only choose &quot;Lock history
+                                anyway&quot; if you are certain you no
+                                longer need the old messages.
+                            </span>
+
+                            <div className="logout-actions">
+                                <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    onClick={() =>
+                                        setForceNewConfirm(false)
+                                    }
+                                >
+                                    Back
+                                </button>
+
+                                <button
+                                    type="button"
+                                    className="btn-danger"
+                                    onClick={() =>
+                                        handleRecoverCode(true)
+                                    }
+                                    disabled={recoveryBusy}
+                                >
+                                    {recoveryBusy
+                                        ? "Sending…"
+                                        : "Lock history anyway"}
+                                </button>
+                            </div>
+                        </div>
+
+                        {recoveryUnlockBox}
+
+                    </div>
+
                 ) : (
 
                     <div className="settings-actions">
@@ -2096,7 +2210,7 @@ export default function SettingsPage() {
                     <h3>Account</h3>
 
                     <p>
-                        Log out of Nexara on this device.
+                        Log out or permanently delete your Nexara account.
                     </p>
 
                 </div>

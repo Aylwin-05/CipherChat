@@ -103,7 +103,9 @@ class UpdateConversationSettingsRequest(BaseModel):
 
     muted_until: datetime | None = None
 
-    disappear_after_seconds: int | None = None
+    disappear_after_seconds: int | None = Field(
+        default=None, ge=0, le=86400
+    )
 
 
 # ==========================================================

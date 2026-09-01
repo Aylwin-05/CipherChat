@@ -9,6 +9,8 @@ import UserAvatar from "../UserAvatar";
 import friendService from "../../services/friendService";
 import conversationService from "../../services/conversationService";
 
+import { useModalAnimation } from "../../hooks/useModalAnimation";
+
 import "./GroupModal.css";
 
 export default function GroupModal({
@@ -30,6 +32,8 @@ export default function GroupModal({
 
     const [loadingFriends, setLoadingFriends] =
         useState(true);
+
+    const { contentRef } = useModalAnimation();
 
     useEffect(() => {
 
@@ -153,7 +157,11 @@ export default function GroupModal({
         <div className="modal-backdrop" onMouseDown={onClose}>
 
             <div
+                ref={contentRef}
                 className="group-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Create group"
                 onMouseDown={e => e.stopPropagation()}
             >
 

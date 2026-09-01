@@ -1,4 +1,5 @@
 import api from "../api/api";
+import { logger } from '../utils/logger.js';
 
 // ==========================================================
 // Web Push (browser notifications) — WhatsApp-style
@@ -121,7 +122,7 @@ export async function subscribe() {
     }
     catch (error) {
 
-        console.debug(
+        logger.debug(
             "Push subscription skipped:",
             error?.message ?? error
         );
@@ -174,7 +175,7 @@ export async function unsubscribe() {
             }
             catch (error) {
 
-                console.debug(
+                logger.debug(
                     "Push backend cleanup failed:",
                     error?.message ?? error
                 );
@@ -188,7 +189,7 @@ export async function unsubscribe() {
     }
     catch (error) {
 
-        console.debug(
+        logger.debug(
             "Push unsubscription failed:",
             error?.message ?? error
         );

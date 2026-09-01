@@ -1,3 +1,6 @@
+import { getAccessToken, getConfiguredServer } from "../api/api";
+import { logger } from '../utils/logger.js';
+
 class WebSocketService {
 
     constructor() {
@@ -26,6 +29,25 @@ class WebSocketService {
 
         this.staleThreshold = 60_000;
 
+        // Offline message queue: messages that were attempted
+        // while the socket was not OPEN are stored here and
+        // replayed once the connection is re-established.
+        this._pendingQueue = [];
+
+        // Maximum number of queued messages before oldest are dropped
+        this._pendingQueueMax = 100;
+
+    }
+
+    // ======================================================
+    // STATUS
+    // ======================================================
+
+    isConnected() {
+        return (
+            this.socket != null &&
+            this.socket.readyState === WebSocket.OPEN
+        );
     }
 
     // ======================================================
@@ -52,28 +74,52 @@ class WebSocketService {
 
         this.shouldReconnect = true;
 
-        // Same override as api.js ("nexara.server_url"): lets a
-        // native build be repointed at the backend without a
-        // rebuild. http(s) is upgraded to ws(s).
-        const storedServer = localStorage.getItem(
-            "nexara.server_url"
+        // Same source of truth as api.js (getConfiguredServer):
+        // "nexara.server_url" localStorage override first, then the
+        // build-time VITE_API_URL. http(s) is upgraded to ws(s).
+        // VITE_WS_URL is honoured too if it is set on its own.
+        const server =
+            getConfiguredServer() ||
+            import.meta.env.VITE_WS_URL;
+
+        const isNative = !!(
+            typeof window !== "undefined" &&
+            window.Capacitor?.isNativePlatform?.()
         );
 
-        const configured = storedServer
-            ? storedServer.replace(/^http/, "ws")
-            : import.meta.env.VITE_WS_URL;
+        // No server is configured. In the web app the SPA and the API
+        // share an origin, so fall back to window.location. In the
+        // native Capacitor shell the WebView origin is the app's own
+        // asset server (https://localhost) — connecting there would
+        // silently web-socket to the wrong place and loop forever,
+        // so refuse rather than misbehave.
+        let url;
 
-        const url = configured
-            ? `${configured}/ws/me`
-            : `${window.location.protocol === "https:"
+        if (server) {
+            url = `${server.replace(/^http/, "ws")}/ws/me`;
+        }
+        else if (!isNative) {
+            url = `${window.location.protocol === "https:"
                 ? "wss"
                 : "ws"
             }://${window.location.host}/ws/me`;
+        }
+        else {
+            url = null;
+        }
+
+        if (!url) {
+            this.socket = null;
+            this.shouldReconnect = false;
+            return;
+        }
+
+        const freshToken = getAccessToken() || this.token;
 
         const socket =
             new WebSocket(
                 url,
-                ["nexara." + this.token]
+                ["nexara." + freshToken]
             );
 
         // Supersede guard: any socket no longer owned by the
@@ -95,6 +141,8 @@ class WebSocketService {
             this.reconnectAttempts = 0;
 
             this._startHeartbeat();
+
+            this._flushPendingQueue();
 
         };
 
@@ -281,7 +329,7 @@ class WebSocketService {
 
         if (now - this.lastAliveAt > this.staleThreshold) {
 
-            console.warn(
+            logger.warn(
                 "WebSocket heartbeat timeout, reconnecting"
             );
 
@@ -304,7 +352,7 @@ class WebSocketService {
 
         catch (error) {
 
-            console.warn(
+            logger.warn(
                 "WebSocket send failed, reconnecting",
                 error,
             );
@@ -316,29 +364,62 @@ class WebSocketService {
     }
 
     // ======================================================
+    // OFFLINE QUEUE
+    // ======================================================
+
+    _enqueue(message) {
+        this._pendingQueue.push({
+            ...message,
+            _queuedAt: Date.now(),
+        });
+        if (this._pendingQueue.length > this._pendingQueueMax) {
+            this._pendingQueue.shift();
+        }
+    }
+
+    _flushPendingQueue() {
+        if (this._pendingQueue.length === 0) return;
+
+        const queue = [...this._pendingQueue];
+        this._pendingQueue = [];
+
+        for (const msg of queue) {
+            if (
+                !this.socket ||
+                this.socket.readyState !== WebSocket.OPEN
+            ) {
+                this._pendingQueue.push(msg);
+                continue;
+            }
+            const { _queuedAt: _, ...payload } = msg;
+            try {
+                this.socket.send(JSON.stringify(payload));
+            } catch {
+                this._pendingQueue.push(msg);
+            }
+        }
+    }
+
+    // ======================================================
     // SEND MESSAGE
     // ======================================================
 
     sendMessage(message) {
 
+        const payload = {
+            event: "message",
+            ...message,
+        };
+
         if (
             !this.socket ||
             this.socket.readyState !== WebSocket.OPEN
         ) {
+            this._enqueue(payload);
             return;
         }
 
-        this.socket.send(
-
-            JSON.stringify({
-
-                event: "message",
-
-                ...message,
-
-            })
-
-        );
+        this.socket.send(JSON.stringify(payload));
 
     }
 
@@ -474,44 +555,27 @@ class WebSocketService {
         encrypted,
     }) {
 
+        const payload = {
+            event: "edit",
+            conversation_id: conversationId,
+            message_id: messageId,
+            ciphertext: encrypted.ciphertext,
+            encrypted_key_sender: encrypted.encrypted_key_sender,
+            encrypted_key_receiver: encrypted.encrypted_key_receiver,
+            nonce: encrypted.nonce,
+            recipient_keys: encrypted.recipient_keys || [],
+            envelopes: encrypted.envelopes || [],
+        };
+
         if (
             !this.socket ||
             this.socket.readyState !== WebSocket.OPEN
         ) {
+            this._enqueue(payload);
             return;
         }
 
-        this.socket.send(
-
-            JSON.stringify({
-
-                event: "edit",
-
-                conversation_id: conversationId,
-
-                message_id: messageId,
-
-                ciphertext:
-                    encrypted.ciphertext,
-
-                encrypted_key_sender:
-                    encrypted.encrypted_key_sender,
-
-                encrypted_key_receiver:
-                    encrypted.encrypted_key_receiver,
-
-                nonce:
-                    encrypted.nonce,
-
-                recipient_keys:
-                    encrypted.recipient_keys || [],
-
-                envelopes:
-                    encrypted.envelopes || [],
-
-            })
-
-        );
+        this.socket.send(JSON.stringify(payload));
 
     }
 
@@ -524,26 +588,21 @@ class WebSocketService {
         messageId,
     ) {
 
+        const payload = {
+            event: "delete",
+            conversation_id: conversationId,
+            message_id: messageId,
+        };
+
         if (
             !this.socket ||
             this.socket.readyState !== WebSocket.OPEN
         ) {
+            this._enqueue(payload);
             return;
         }
 
-        this.socket.send(
-
-            JSON.stringify({
-
-                event: "delete",
-
-                conversation_id: conversationId,
-
-                message_id: messageId,
-
-            })
-
-        );
+        this.socket.send(JSON.stringify(payload));
 
     }
 
@@ -657,6 +716,8 @@ class WebSocketService {
         this._closeSocket();
 
         this.removeListeners();
+
+        this._pendingQueue = [];
 
     }
 

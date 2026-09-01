@@ -23,6 +23,7 @@ from app.core.rate_limit import (
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import rate_limit
+from app.dependencies.turnstile import verify_turnstile
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.refresh_token_repository import (
     RefreshTokenError,
@@ -42,6 +43,7 @@ from app.schemas.auth import (
 from app.services.auth_service import AuthService
 from app.services.jwt_service import JWTService
 from app.services.refresh_token_service import RefreshTokenService
+from app.models.user import User
 
 router = APIRouter(
     prefix="/auth",
@@ -113,6 +115,7 @@ def _extract_refresh_token(
     response_model=MessageResponse,
     dependencies=[
         rate_limit("otp.send.ip", 50, 600),
+        Depends(verify_turnstile),
     ],
 )
 async def send_otp(
@@ -164,6 +167,7 @@ async def send_otp(
     "/verify-otp",
     dependencies=[
         rate_limit("otp.verify.ip", 50, 600),
+        Depends(verify_turnstile),
     ],
 )
 async def verify_otp(
@@ -363,12 +367,35 @@ async def verify_two_fa(
                    "Please request a new code.",
         )
 
+    email = payload["email"]
+
+    # Per-user PIN attempt lockout: max 5 attempts per 10 minutes
+    PIN_MAX_ATTEMPTS = 5
+    PIN_WINDOW_SECONDS = 600
+    try:
+        await get_limiter().check(
+            f"twofa.pin.{email.lower()}",
+            PIN_MAX_ATTEMPTS,
+            PIN_WINDOW_SECONDS,
+        )
+    except RateLimitExceeded as exc:
+        logger.warning(
+            "2FA PIN lockout triggered: email=%s",
+            email,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed attempts. Please wait "
+                   "10 minutes or reset via email.",
+            headers={"Retry-After": str(exc.retry_after)},
+        )
+
     repository = AuthRepository(db)
 
     service = AuthService(repository)
 
     user = await service.verify_two_fa(
-        payload["email"],
+        email,
         request_body.pin,
     )
 
@@ -603,4 +630,124 @@ async def logout(
     return MessageResponse(
         success=True,
         message="Logged out.",
+    )
+
+
+# ==========================================================
+# Account Deletion (GDPR)
+# ==========================================================
+
+from sqlalchemy import or_, select, delete as sa_delete
+from app.models.user_key import UserKey
+from app.models.device import Device
+from app.models.signal_session import SignalSession
+from app.models.message import Message
+from app.models.message_reaction import MessageReaction
+from app.models.message_star import MessageStar
+from app.models.conversation_participant import ConversationParticipant
+from app.models.friendship import Friendship
+from app.models.otp import OTPCode
+from app.models.refresh_token import RefreshToken
+from app.models.story import Story, StoryView
+from app.models.story_reaction import StoryReaction
+from app.models.call_log import CallLog
+from app.models.block import Block
+from app.models.push_subscription import PushSubscription
+
+
+@router.delete(
+    "/account",
+    dependencies=[
+        rate_limit("auth.delete_account", 3, 86400),
+    ],
+)
+async def delete_account(
+    confirm: str = "",
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """GDPR right to erasure.  Pass ?confirm=YES_DELETE to confirm."""
+
+    if confirm != "YES_DELETE":
+        raise HTTPException(
+            status_code=400,
+            detail="Pass confirm=YES_DELETE to permanently delete your account.",
+        )
+
+    uid = current_user.id
+
+    # 1. Wipe messages sent by this user (server only stores ciphertext)
+    await db.execute(
+        sa_delete(Message).where(Message.sender_id == uid)
+    )
+
+    # 2. Remove user from all conversations
+    await db.execute(
+        sa_delete(ConversationParticipant).where(
+            ConversationParticipant.user_id == uid
+        )
+    )
+
+    # 3. Remove friendships
+    await db.execute(
+        sa_delete(Friendship).where(
+            (Friendship.sender_id == uid)
+            | (Friendship.receiver_id == uid)
+        )
+    )
+
+    # 4. Remove blocks
+    await db.execute(
+        sa_delete(Block).where(
+            (Block.blocker_id == uid) | (Block.blocked_id == uid)
+        )
+    )
+
+    # 5. Remove reactions, stars, OTPs, refresh tokens, stories
+    await db.execute(sa_delete(MessageReaction).where(MessageReaction.user_id == uid))
+    await db.execute(sa_delete(MessageStar).where(MessageStar.user_id == uid))
+    await db.execute(sa_delete(OTPCode).where(OTPCode.email == current_user.email))
+    await db.execute(sa_delete(RefreshToken).where(RefreshToken.user_id == uid))
+    await db.execute(sa_delete(Story).where(Story.user_id == uid))
+    await db.execute(sa_delete(StoryView).where(StoryView.user_id == uid))
+    await db.execute(sa_delete(StoryReaction).where(StoryReaction.user_id == uid))
+    await db.execute(sa_delete(CallLog).where((CallLog.caller_id == uid) | (CallLog.receiver_id == uid)))
+    await db.execute(sa_delete(PushSubscription).where(PushSubscription.user_id == uid))
+
+    # 6. Remove devices + sessions + identity keys
+    my_device_ids = (
+        await db.scalars(
+            select(Device.id).where(Device.user_id == uid)
+        )
+    ).all()
+    if my_device_ids:
+        await db.execute(
+            sa_delete(SignalSession).where(
+                or_(
+                    SignalSession.device_id.in_(my_device_ids),
+                    SignalSession.remote_device_id.in_(my_device_ids),
+                )
+            )
+        )
+    await db.execute(sa_delete(Device).where(Device.user_id == uid))
+    await db.execute(sa_delete(UserKey).where(UserKey.user_id == uid))
+
+    # 7. Anonymise & deactivate user (keep row for FK integrity)
+    anon_suffix = str(uid)[:8]
+    current_user.email = f"deleted_{anon_suffix}@nexara.deleted"
+    current_user.username = f"deleted_{anon_suffix}"
+    current_user.display_name = "Deleted User"
+    current_user.bio = None
+    current_user.avatar_url = None
+    current_user.is_active = False
+    current_user.two_fa_enabled = False
+    current_user.two_fa_secret = None
+    current_user.recovery_salt = None
+    current_user.recovery_wrapped_key = None
+
+    await db.commit()
+
+    return MessageResponse(
+        success=True,
+        message="Account permanently deleted.",
     )

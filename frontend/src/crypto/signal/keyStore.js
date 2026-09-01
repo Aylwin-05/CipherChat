@@ -16,14 +16,16 @@
 //                         receiver's first handshake prekey is
 //                         consumed and deleted).
 //
-// All values are base64 strings (the raw bytes live at the JS
-// layer only). In a hardened product these records would be
-// additionally encrypted with a passphrase-derived key; the
-// IndexedDB layer keeps that boundary simple for now.
+// All sensitive values are encrypted with AES-256-GCM using a key
+// derived from the user's passphrase via PBKDF2 (600k iterations).
+// The salt is stored alongside the encrypted data.
 // ==========================================================
 
+import { encryptForStorage, decryptFromStorage, hasEncryptionKey } from "../indexeddb-encryption.js";
+import { logger } from "../../utils/logger.js";
+
 const DB_NAME = "nexara-signal";
-const DB_VERSION = 4;
+const DB_VERSION = 5; // Incremented for encryption schema
 
 const STORE_IDENTITY = "identity";
 const STORE_SIGNED_PREKEY = "signed_prekey";
@@ -43,6 +45,16 @@ const STORE_DEFS = [
     { name: STORE_META, keyPath: "id" },
     { name: STORE_PLAINTEXT_CACHE, keyPath: "id" },
 ];
+
+// Stores that contain sensitive data and should be encrypted
+const ENCRYPTED_STORES = new Set([
+    STORE_IDENTITY,
+    STORE_SIGNED_PREKEY,
+    STORE_ONE_TIME_PREKEYS,
+    STORE_SESSIONS,
+    STORE_PLAINTEXT_CACHE,
+    // META store is partially encrypted (sync secret, device info not encrypted)
+]);
 
 function upgradeSchema(request) {
     const db = request.result;
@@ -91,6 +103,76 @@ function promisify(request) {
 }
 
 // ==========================================================
+// Encryption helpers
+// ==========================================================
+
+async function _encryptedPut(db, storeName, record) {
+    if (!hasEncryptionKey() || !ENCRYPTED_STORES.has(storeName)) {
+        return promisify(tx(db, storeName, "readwrite").put(record));
+    }
+    
+    // Identify the key field from the record
+    const isIdKeyed = 'id' in record && record.id !== undefined;
+    const keyValue = isIdKeyed ? record.id : record.keyId;
+    
+    // Encrypt the entire record (including metadata fields)
+    const encrypted = await encryptForStorage(record);
+    
+    // Re-attach the key field unencrypted for IndexedDB indexing
+    if (isIdKeyed) {
+        encrypted.id = keyValue;
+    } else {
+        encrypted.keyId = keyValue;
+    }
+    
+    return promisify(tx(db, storeName, "readwrite").put(encrypted));
+}
+
+async function _encryptedGet(db, storeName, key) {
+    const record = await promisify(tx(db, storeName, "readonly").get(key));
+    if (!record) return null;
+    
+    if (!hasEncryptionKey() || !ENCRYPTED_STORES.has(storeName)) {
+        return record;
+    }
+    
+    // Check if encrypted (has version field v=1)
+    if (record.v === 1) {
+        const decrypted = await decryptFromStorage(record);
+        return decrypted;
+    }
+    
+    // Legacy unencrypted record - return as-is
+    return record;
+}
+
+async function _encryptedGetAll(db, storeName) {
+    const records = await promisify(tx(db, storeName, "readonly").getAll());
+    if (!hasEncryptionKey() || !ENCRYPTED_STORES.has(storeName)) {
+        return records;
+    }
+    
+    const results = [];
+    for (const record of records) {
+        if (record.v === 1) {
+            const decrypted = await decryptFromStorage(record);
+            results.push(decrypted);
+        } else {
+            results.push(record);
+        }
+    }
+    return results;
+}
+
+async function _encryptedDelete(db, storeName, key) {
+    return promisify(tx(db, storeName, "readwrite").delete(key));
+}
+
+async function _encryptedClear(db, storeName) {
+    return promisify(tx(db, storeName, "readwrite").clear());
+}
+
+// ==========================================================
 // Key Store
 // ==========================================================
 
@@ -117,7 +199,7 @@ export class SignalKeyStore {
         if (!STORE_DEFS.every(spec =>
             db.objectStoreNames.contains(spec.name)
         )) {
-            console.warn(
+            logger.warn(
                 "Signal store schema incomplete — repairing",
                 [...db.objectStoreNames],
             );
@@ -129,7 +211,7 @@ export class SignalKeyStore {
     }
 
     // ------------------------------------------------------
-    // Meta (device record)
+    // Meta (device record) - not fully encrypted (device info public)
     // ------------------------------------------------------
 
     async saveMeta(meta) {
@@ -149,7 +231,15 @@ export class SignalKeyStore {
     async peekMeta(id) {
         const db = await this._db();
         const record = await promisify(tx(db, STORE_META, "readonly").get(id));
-        return record ?? null;
+        if (!record) return null;
+        
+        // Decrypt sync secret if present
+        if (id === "sync" && record.secret && record.v === 1) {
+            const { v, s, n, c, secret, ...rest } = record;
+            const decrypted = await decryptFromStorage({ v, s, n, c });
+            return { ...rest, ...decrypted };
+        }
+        return record;
     }
 
     async clearMeta() {
@@ -171,11 +261,20 @@ export class SignalKeyStore {
 
     async saveSyncSecret(secretB64, email = null) {
         const db = await this._db();
-        await promisify(tx(db, STORE_META, "readwrite").put({
-            id: "sync",
-            secret: secretB64,
-            email: email ?? null,
-        }));
+        if (hasEncryptionKey()) {
+            const encrypted = await encryptForStorage({ secret: secretB64 });
+            await promisify(tx(db, STORE_META, "readwrite").put({
+                id: "sync",
+                ...encrypted,
+                email: email ?? null,
+            }));
+        } else {
+            await promisify(tx(db, STORE_META, "readwrite").put({
+                id: "sync",
+                secret: secretB64,
+                email: email ?? null,
+            }));
+        }
     }
 
     async getSyncSecret() {
@@ -193,26 +292,36 @@ export class SignalKeyStore {
     }
 
     // ------------------------------------------------------
+    // Internal helpers used by EncryptedStore (raw DB ops)
+    // ------------------------------------------------------
+
+    _txWrapped(db, storeName, mode) {
+        return tx(db, storeName, mode);
+    }
+
+    _promisify(request) {
+        return promisify(request);
+    }
+
+    // ------------------------------------------------------
     // Identity keys
     // ------------------------------------------------------
 
     async saveIdentity(identity) {
         const db = await this._db();
-        const store = tx(db, STORE_IDENTITY, "readwrite");
-        await promisify(store.put({
+        await _encryptedPut(db, STORE_IDENTITY, {
             id: "device",
             deviceId: identity.deviceId,
             identityKeyPrivate: identity.identityKeyPrivate,       // b64 Ed25519 priv
             identityKeyPublic: identity.identityKeyPublic,       // b64 Ed25519 pub
             x25519IdentityKeyPublic: identity.x25519IdentityKeyPublic, // b64 X25519 pub
             createdAt: Date.now(),
-        }));
+        });
     }
 
     async getIdentity() {
         const db = await this._db();
-        const record = await promisify(tx(db, STORE_IDENTITY, "readonly").get("device"));
-        return record ?? null;
+        return _encryptedGet(db, STORE_IDENTITY, "device");
     }
 
     // ------------------------------------------------------
@@ -221,28 +330,27 @@ export class SignalKeyStore {
 
     async saveSignedPrekey(spk) {
         const db = await this._db();
-        const store = tx(db, STORE_SIGNED_PREKEY, "readwrite");
-        await promisify(store.put({
+        await _encryptedPut(db, STORE_SIGNED_PREKEY, {
             keyId: spk.keyId,
             publicKey: spk.publicKey,       // b64
             signature: spk.signature,       // b64
             privateKey: spk.privateKey,     // b64
-        }));
+        });
     }
 
     async getAllSignedPrekeys() {
         const db = await this._db();
-        return await promisify(tx(db, STORE_SIGNED_PREKEY, "readonly").getAll());
+        return _encryptedGetAll(db, STORE_SIGNED_PREKEY);
     }
 
     async getSignedPrekey(keyId) {
         const db = await this._db();
-        return await promisify(tx(db, STORE_SIGNED_PREKEY, "readonly").get(keyId));
+        return _encryptedGet(db, STORE_SIGNED_PREKEY, keyId);
     }
 
     async clearSignedPrekeys() {
         const db = await this._db();
-        await promisify(tx(db, STORE_SIGNED_PREKEY, "readwrite").clear());
+        await _encryptedClear(db, STORE_SIGNED_PREKEY);
     }
 
     // ------------------------------------------------------
@@ -251,24 +359,23 @@ export class SignalKeyStore {
 
     async saveOneTimePrekeys(opks) {
         const db = await this._db();
-        const store = tx(db, STORE_ONE_TIME_PREKEYS, "readwrite");
         for (const opk of opks) {
-            await promisify(store.put({
+            await _encryptedPut(db, STORE_ONE_TIME_PREKEYS, {
                 keyId: opk.keyId,
                 publicKey: opk.publicKey,
                 privateKey: opk.privateKey,
-            }));
+            });
         }
     }
 
     async getAllOneTimePrekeys() {
         const db = await this._db();
-        return await promisify(tx(db, STORE_ONE_TIME_PREKEYS, "readonly").getAll());
+        return _encryptedGetAll(db, STORE_ONE_TIME_PREKEYS);
     }
 
     async getOneTimePrekey(keyId) {
         const db = await this._db();
-        return await promisify(tx(db, STORE_ONE_TIME_PREKEYS, "readonly").get(keyId));
+        return _encryptedGet(db, STORE_ONE_TIME_PREKEYS, keyId);
     }
 
     async getOneTimePrekeyCount() {
@@ -281,12 +388,12 @@ export class SignalKeyStore {
 
     async removeOneTimePrekey(keyId) {
         const db = await this._db();
-        await promisify(tx(db, STORE_ONE_TIME_PREKEYS, "readwrite").delete(keyId));
+        await _encryptedDelete(db, STORE_ONE_TIME_PREKEYS, keyId);
     }
 
     async clearOneTimePrekeys() {
         const db = await this._db();
-        await promisify(tx(db, STORE_ONE_TIME_PREKEYS, "readwrite").clear());
+        await _encryptedClear(db, STORE_ONE_TIME_PREKEYS);
     }
 
     // ------------------------------------------------------
@@ -295,31 +402,24 @@ export class SignalKeyStore {
 
     async saveSession({ ourDeviceId, remoteDeviceId, conversationId }, state) {
         const db = await this._db();
-        const store = tx(db, STORE_SESSIONS, "readwrite");
-        await promisify(store.put({
+        await _encryptedPut(db, STORE_SESSIONS, {
             id: sessionId(ourDeviceId, remoteDeviceId, conversationId),
             ourDeviceId,
             remoteDeviceId,
             conversationId,
             state,
-        }));
+        });
     }
 
     async getSession({ ourDeviceId, remoteDeviceId, conversationId }) {
         const db = await this._db();
-        const record = await promisify(
-            tx(db, STORE_SESSIONS, "readonly")
-                .get(sessionId(ourDeviceId, remoteDeviceId, conversationId)),
-        );
+        const record = await _encryptedGet(db, STORE_SESSIONS, sessionId(ourDeviceId, remoteDeviceId, conversationId));
         return record ? record.state : null;
     }
 
     async deleteSession({ ourDeviceId, remoteDeviceId, conversationId }) {
         const db = await this._db();
-        await promisify(
-            tx(db, STORE_SESSIONS, "readwrite")
-                .delete(sessionId(ourDeviceId, remoteDeviceId, conversationId)),
-        );
+        await _encryptedDelete(db, STORE_SESSIONS, sessionId(ourDeviceId, remoteDeviceId, conversationId));
     }
 
     // ------------------------------------------------------
@@ -342,13 +442,13 @@ export class SignalKeyStore {
         ciphertext = null,
     ) {
         const db = await this._db();
-        await promisify(tx(db, STORE_PLAINTEXT_CACHE, "readwrite").put({
+        await _encryptedPut(db, STORE_PLAINTEXT_CACHE, {
             id: `${conversationId}:${messageId}`,
             conversationId,
             messageId,
             plaintext,
             ciphertext,
-        }));
+        });
     }
 
     async getCachedRecord(
@@ -356,10 +456,7 @@ export class SignalKeyStore {
         messageId,
     ) {
         const db = await this._db();
-        return promisify(
-            tx(db, STORE_PLAINTEXT_CACHE, "readonly")
-                .get(`${conversationId}:${messageId}`),
-        );
+        return _encryptedGet(db, STORE_PLAINTEXT_CACHE, `${conversationId}:${messageId}`);
     }
 
     async getPlaintext(
@@ -371,6 +468,11 @@ export class SignalKeyStore {
             messageId,
         );
         return record ? record.plaintext : null;
+    }
+
+    async getAllCachedRecords() {
+        const db = await this._db();
+        return _encryptedGetAll(db, STORE_PLAINTEXT_CACHE);
     }
 
     // ------------------------------------------------------
@@ -391,6 +493,33 @@ export class SignalKeyStore {
         await Promise.all(
             stores.map((name) => promisify(t.objectStore(name).clear())),
         );
+    }
+
+    // ------------------------------------------------------
+    // Wipe ONLY this device's key material
+    //
+    // Used when the server no longer knows our registered
+    // device (e.g. the DB was reset, or the device was revoked
+    // from another browser). Clears the identity, prekeys,
+    // sessions and the meta device record so a fresh
+    // registration is forced — WITHOUT destroying the account
+    // sync secret or the plaintext cache, both of which must
+    // survive re-registration.
+    // ------------------------------------------------------
+
+    async clearDeviceMaterial() {
+        const db = await this._db();
+        const stores = [
+            STORE_IDENTITY,
+            STORE_SIGNED_PREKEY,
+            STORE_ONE_TIME_PREKEYS,
+            STORE_SESSIONS,
+        ];
+        const t = db.transaction(stores, "readwrite");
+        await Promise.all(
+            stores.map((name) => promisify(t.objectStore(name).clear())),
+        );
+        await this.clearMeta();
     }
 }
 

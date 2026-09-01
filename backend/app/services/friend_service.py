@@ -27,12 +27,25 @@ class FriendService:
         receiver_id: UUID,
     ) -> Friendship:
 
-        try:
+        if sender.id == receiver_id:
+            raise ValueError(
+                "You cannot send a friend request to yourself."
+            )
 
-            if sender.id == receiver_id:
-                raise ValueError(
-                    "You cannot send a friend request to yourself."
+        from sqlalchemy import select
+
+        receiver_exists = (
+            await self.repository.db.execute(
+                select(User.id).where(
+                    User.id == receiver_id
                 )
+            )
+        ).scalar_one_or_none()
+
+        if receiver_exists is None:
+            raise ValueError("User not found.")
+
+        try:
 
             existing = await self.repository.get_existing_friendship(
                 sender.id,

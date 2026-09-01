@@ -152,7 +152,9 @@ export async function encryptSyncText(plaintext, ciphertext = null) {
 
 export async function decryptSyncText(envelope) {
     const key = await getSyncKey();
-    if (!key || !envelope?.nonce || !envelope?.data) return null;
+    if (!key || !envelope?.nonce || !envelope?.data) {
+        return null;
+    }
     try {
         return utf8Text(
             gcm(key, b64decode(envelope.nonce)).decrypt(
@@ -160,7 +162,7 @@ export async function decryptSyncText(envelope) {
             ),
         );
     }
-    catch {
+    catch (error) {
         return null;
     }
 }

@@ -59,7 +59,7 @@ export default function MessageInfoPanel({
 
     if (!message) return null;
 
-    const isMine = message.sender_id === user?.id;
+    const isMine = String(message.sender_id) === String(user?.id);
 
     const senderName = isMine
         ? (user?.display_name ?? "You")

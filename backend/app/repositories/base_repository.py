@@ -87,6 +87,10 @@ class BaseRepository(Generic[ModelType]):
     # Transaction
     # ======================================================
 
+    async def flush(self):
+
+        await self.db.flush()
+
     async def commit(self):
 
         await self.db.commit()

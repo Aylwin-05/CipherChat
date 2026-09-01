@@ -70,8 +70,12 @@ class UserService:
     async def search_users(
         self,
         query: str,
+        exclude_user_id=None,
     ):
-        return await self.repository.search_users(query)
+        return await self.repository.search_users(
+            query,
+            exclude_user_id=exclude_user_id,
+        )
 
     # ==========================================================
     # Username Availability

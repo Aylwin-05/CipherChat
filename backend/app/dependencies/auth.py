@@ -51,4 +51,11 @@ async def get_current_user(
             detail="User not found.",
         )
 
+    if not getattr(user, "is_active", True):
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is deactivated.",
+        )
+
     return user

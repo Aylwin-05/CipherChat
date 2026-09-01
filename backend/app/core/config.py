@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "Nexara"
     APP_ENV: str = "development"
     DEBUG: bool = True
+    LOG_LEVEL: str = "INFO"
+    SENTRY_DSN: str = ""
 
     HOST: str = "127.0.0.1"
     PORT: int = 8000
@@ -44,8 +46,11 @@ class Settings(BaseSettings):
     # JWT
     # ======================================================
 
-    SECRET_KEY: str
+    SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
+
+    JWT_PRIVATE_KEY: str = ""
+    JWT_PUBLIC_KEY: str = ""
 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
@@ -81,6 +86,18 @@ class Settings(BaseSettings):
     REDIS_URL: str | None = None
 
     # ======================================================
+    # Master key (sync-secret / recovery encryption)
+    # ======================================================
+
+    MASTER_KEY: str = ""
+
+    # ======================================================
+    # Cloudflare Turnstile (CAPTCHA on auth endpoints)
+    # ======================================================
+
+    TURNSTILE_SECRET_KEY: str = ""
+
+    # ======================================================
     # SMTP
     # ======================================================
 
@@ -107,6 +124,19 @@ class Settings(BaseSettings):
     TURN_USERNAME: str = ""
     TURN_PASSWORD: str = ""
 
+    # ======================================================
+    # Request body limit (bytes)
+    #
+    # Hard ceiling on the size of any single HTTP request body.
+    # File uploads are streamed to disk (and each route enforces
+    # its own tighter size cap), so this is a final memory-DoS
+    # backstop rather than a per-route setting. It must be at
+    # least as large as the biggest permitted upload (video /
+    # encrypted: 500 MB) plus multipart overhead.
+    # ======================================================
+
+    MAX_REQUEST_BODY_SIZE: int = 550 * 1024 * 1024
+
 
 @lru_cache
 def get_settings():
@@ -122,17 +152,21 @@ def get_settings():
                 "DEBUG must be false in production"
             )
 
-        if (
-            not instance.SECRET_KEY
-            or instance.SECRET_KEY == "CHANGE_ME"
-            or len(instance.SECRET_KEY) < 32
-        ):
-            problems.append(
-                "SECRET_KEY must be a random value of at least "
-                "32 characters (generate one with "
-                "`python -c \"import secrets; "
-                "print(secrets.token_urlsafe(48))\"`)"
-            )
+        has_es256 = bool(
+            instance.JWT_PRIVATE_KEY and instance.JWT_PUBLIC_KEY
+        )
+
+        if not has_es256:
+            if (
+                not instance.SECRET_KEY
+                or instance.SECRET_KEY == "CHANGE_ME"
+                or len(instance.SECRET_KEY) < 32
+            ):
+                problems.append(
+                    "SECRET_KEY must be a random value of at "
+                    "least 32 characters, or set JWT_PRIVATE_KEY "
+                    "/ JWT_PUBLIC_KEY for ES256"
+                )
 
         if instance.ALLOWED_HOSTS == "*":
             problems.append(
@@ -144,6 +178,22 @@ def get_settings():
             problems.append(
                 "COOKIE_SECURE must be true in production "
                 "(HTTPS only)"
+            )
+
+        if not instance.MASTER_KEY:
+            problems.append(
+                "MASTER_KEY is required in production for "
+                "sync-secret encryption"
+            )
+
+        if not all([
+            instance.SMTP_HOST,
+            instance.SMTP_USERNAME,
+            instance.SMTP_PASSWORD,
+        ]):
+            problems.append(
+                "SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD "
+                "are required in production"
             )
 
         if problems:

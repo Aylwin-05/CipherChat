@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy import or_, select
 
 from app.models.user import User
@@ -62,15 +64,17 @@ class UserRepository(BaseRepository):
         self,
         query: str,
         limit: int = 20,
+        exclude_user_id: UUID | None = None,
     ) -> list[User]:
 
+        stmt = select(User).where(
+            User.email.ilike(f"%{query}%")
+        )
+        if exclude_user_id is not None:
+            stmt = stmt.where(User.id != exclude_user_id)
+
         result = await self.execute(
-            select(User)
-            .where(
-                User.email.ilike(f"%{query}%")
-            )
-            .order_by(User.email)
-            .limit(limit)
+            stmt.order_by(User.email).limit(limit)
         )
 
         return result.scalars().all()

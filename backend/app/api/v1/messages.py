@@ -1,25 +1,23 @@
-from base64 import b64encode
 from uuid import UUID
 
 from fastapi import (
     APIRouter,
     Depends,
-    File,
-    Form,
     HTTPException,
-    UploadFile,
 )
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import rate_limit
 from app.models.user import User
+from app.models.message import Message
 from app.repositories.attachment_repository import AttachmentRepository
 from app.repositories.block_repository import BlockRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.device_repository import DeviceRepository
-from app.repositories.message_repository import MessageRepository
+from app.repositories.message_repository import MessageRepository, _message_options
 from app.schemas.message import (
     EditMessageRequest,
     MessageResponse,
@@ -32,12 +30,12 @@ from app.schemas.message import (
 from app.services.attachment_service import AttachmentService
 from app.services.message_service import MessageService
 from app.websocket.connection_manager import manager
+from app.schemas.attachment import AttachmentResponse
 
 router = APIRouter(
     prefix="/messages",
     tags=["Messages"],
 )
-from app.schemas.attachment import AttachmentResponse
 
 # ==========================================================
 # Convert DB model -> API response
@@ -157,6 +155,15 @@ async def send_message(
         raise HTTPException(
             status_code=404,
             detail="Conversation not found.",
+        )
+
+    if not await conversation_repository.is_participant(
+        request.conversation_id,
+        current_user.id,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Not a participant of this conversation.",
         )
 
     if conversation.conversation_type == "private":
@@ -578,7 +585,10 @@ async def mark_view_once_opened(
         # placeholder in real time.
         await manager.broadcast(
             UUID(result["conversation_id"]),
-            result,
+            {
+                "event": "view_once_opened",
+                **result,
+            },
         )
 
         return result
@@ -813,3 +823,166 @@ async def delete_for_me(
             status_code=400,
             detail=str(e),
         )
+
+
+# ==========================================================
+# Server-side message search
+# ==========================================================
+
+
+@router.get("/search/{conversation_id}")
+async def search_messages(
+    conversation_id: UUID,
+    q: str = "",
+    limit: int = 50,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    conversation_repo = ConversationRepository(db)
+    if not await conversation_repo.is_participant(conversation_id, current_user.id):
+        raise HTTPException(status_code=403, detail="Not a participant.")
+
+    message_repo = MessageRepository(db)
+
+    stmt = (
+        select(Message)
+        .options(
+            *_message_options()
+        )
+        .where(
+            Message.conversation_id == conversation_id,
+            Message.deleted_for_everyone == False,
+            or_(
+                Message.ciphertext.ilike(f"%{q}%"),
+                Message.message_type.ilike(f"%{q}%"),
+            ),
+        )
+        .order_by(Message.created_at.desc())
+        .limit(min(limit, 100))
+    )
+
+    result = await db.execute(stmt)
+    messages = result.scalars().all()
+
+    return {
+        "results": [serialize_message(m) for m in messages],
+        "count": len(messages),
+    }
+
+
+# ==========================================================
+# Pin / Unpin message
+# ==========================================================
+
+@router.put("/{message_id}/pin")
+async def pin_message(
+    message_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    message_repo = MessageRepository(db)
+    message = await message_repo.get_by_id(message_id)
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found.")
+
+    conversation_repo = ConversationRepository(db)
+    if not await conversation_repo.is_participant(message.conversation_id, current_user.id):
+        raise HTTPException(status_code=403, detail="Not a participant.")
+
+    message.is_pinned = True
+    await db.commit()
+
+    await manager.broadcast(
+        message.conversation_id,
+        {
+            "event": "message_pinned",
+            "message_id": str(message_id),
+            "pinned": True,
+        },
+    )
+
+    return {"success": True, "message": "Message pinned."}
+
+
+@router.delete("/{message_id}/pin")
+async def unpin_message(
+    message_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    message_repo = MessageRepository(db)
+    message = await message_repo.get_by_id(message_id)
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found.")
+
+    conversation_repo = ConversationRepository(db)
+    if not await conversation_repo.is_participant(message.conversation_id, current_user.id):
+        raise HTTPException(status_code=403, detail="Not a participant.")
+
+    message.is_pinned = False
+    await db.commit()
+
+    await manager.broadcast(
+        message.conversation_id,
+        {
+            "event": "message_pinned",
+            "message_id": str(message_id),
+            "pinned": False,
+        },
+    )
+
+    return {"success": True, "message": "Message unpinned."}
+
+
+@router.get("/pinned/{conversation_id}")
+async def get_pinned_messages(
+    conversation_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    conversation_repo = ConversationRepository(db)
+    if not await conversation_repo.is_participant(conversation_id, current_user.id):
+        raise HTTPException(status_code=403, detail="Not a participant.")
+
+    stmt = (
+        select(Message)
+        .options(
+            *_message_options()
+        )
+        .where(
+            Message.conversation_id == conversation_id,
+            Message.is_pinned == True,
+            Message.deleted_for_everyone == False,
+        )
+        .order_by(Message.created_at.desc())
+        .limit(50)
+    )
+
+    result = await db.execute(stmt)
+    messages = result.scalars().all()
+
+    return {
+        "messages": [serialize_message(m) for m in messages],
+        "count": len(messages),
+    }
+
+
+# ==========================================================
+# Mark all messages as read in a conversation
+# ==========================================================
+
+@router.post("/read-all/{conversation_id}")
+async def mark_all_read(
+    conversation_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    conversation_repo = ConversationRepository(db)
+    if not await conversation_repo.is_participant(conversation_id, current_user.id):
+        raise HTTPException(status_code=403, detail="Not a participant.")
+
+    message_repo = MessageRepository(db)
+    await message_repo.mark_all_read(conversation_id, current_user.id)
+    await db.commit()
+
+    return {"success": True, "message": "All messages marked as read."}

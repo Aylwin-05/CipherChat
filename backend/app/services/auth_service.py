@@ -70,7 +70,7 @@ class AuthService:
         # console instead of sending real mail (DEBUG only)
         # ==================================================
 
-        if settings.DEBUG and settings.APP_ENV == "development":
+        if settings.DEBUG:
 
             logger.warning(
                 "[DEV] OTP for %s: %s",

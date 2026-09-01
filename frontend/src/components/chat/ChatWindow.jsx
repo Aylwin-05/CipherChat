@@ -10,6 +10,9 @@ import MessageInfoPanel from "./MessageInfoPanel";
 import DeleteConversationModal from "./DeleteConversationModal";
 import GroupInfoModal from "./GroupInfoModal";
 import StarredMessagesModal from "./StarredMessagesModal";
+import PinnedMessages from "./PinnedMessages";
+import MediaGallery from "./MediaGallery";
+import ChatWallpaper from "./ChatWallpaper";
 
 import UserAvatar from "../UserAvatar";
 import { useAuth } from "../../context/AuthContext";
@@ -17,6 +20,7 @@ import { useAndroidBack } from "../../utils/androidBack";
 import { useChatSocket } from "../../context/ChatSocketContext";
 import { useCall } from "../../context/CallContext";
 import blockService from "../../services/blockService";
+import api from "../../api/api";
 
 import "./Chat.css";
 
@@ -198,6 +202,12 @@ export default function ChatWindow({
     // Mobile ⋮ overflow menu for the chat header actions.
     const [kebabOpen, setKebabOpen] =
         useState(false);
+
+    // Media gallery, chat wallpaper, export, server search
+    const [mediaGalleryOpen, setMediaGalleryOpen] = useState(false);
+    const [wallpaperOpen, setWallpaperOpen] = useState(false);
+    const [exporting, setExporting] = useState(false);
+    const [serverSearchOpen, setServerSearchOpen] = useState(false);
 
     // Android back button: close the topmost overlay first,
     // then leave the conversation itself.
@@ -608,6 +618,13 @@ export default function ChatWindow({
     const groupName =
         groupDetail?.name ?? conversation.name;
 
+    // Private conversations have no name field — show the
+    // other user's display name in the header.
+    const chatTitle =
+        isGroup
+            ? groupName
+            : otherUser.display_name || "Unknown";
+
     function senderName(senderId) {
 
         if (senderId === user?.id) {
@@ -637,7 +654,7 @@ export default function ChatWindow({
 
     const typingName =
         typingUsers.length > 0
-            ? senderName(typingUsers[0].sender_id)
+            ? senderName(typingUsers[0])
             : null;
 
     // Friendly wording for common errors
@@ -713,7 +730,7 @@ export default function ChatWindow({
 
                         <h3 className="chat-name">
 
-                            {groupName}
+                            {chatTitle}
 
                         </h3>
 
@@ -1340,6 +1357,74 @@ export default function ChatWindow({
                                     {isGroup ? "Group info" : "Delete chat"}
                                 </button>
 
+                                <button
+                                    type="button"
+                                    className="kebab-item"
+                                    onClick={() => {
+                                        setMediaGalleryOpen(true);
+                                        setKebabOpen(false);
+                                    }}
+                                >
+                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                        <circle cx="8.5" cy="8.5" r="1.5" />
+                                        <polyline points="21 15 16 10 5 21" />
+                                    </svg>
+                                    Media, links &amp; docs
+                                </button>
+
+                                <button
+                                    type="button"
+                                    className="kebab-item"
+                                    onClick={() => {
+                                        setWallpaperOpen(true);
+                                        setKebabOpen(false);
+                                    }}
+                                >
+                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                        <circle cx="8.5" cy="8.5" r="1.5" />
+                                        <polyline points="21 15 16 10 5 21" />
+                                    </svg>
+                                    Chat wallpaper
+                                </button>
+
+                                <button
+                                    type="button"
+                                    className="kebab-item"
+                                    disabled={exporting}
+                                    onClick={async () => {
+                                        setExporting(true);
+                                        setKebabOpen(false);
+                                        try {
+                                            const response = await api.get(
+                                                `/conversations/${conversation.id}/export`,
+                                                { responseType: "blob" }
+                                            );
+                                            const url = window.URL.createObjectURL(new Blob([response.data]));
+                                            const a = document.createElement("a");
+                                            a.href = url;
+                                            a.download = `chat_export_${conversation.id}.json`;
+                                            document.body.appendChild(a);
+                                            a.click();
+                                            document.body.removeChild(a);
+                                            window.URL.revokeObjectURL(url);
+                                            toast.success("Chat exported.");
+                                        } catch {
+                                            toast.error("Export failed.");
+                                        } finally {
+                                            setExporting(false);
+                                        }
+                                    }}
+                                >
+                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                        <polyline points="7 10 12 15 17 10" />
+                                        <line x1="12" y1="15" x2="12" y2="3" />
+                                    </svg>
+                                    Export chat
+                                </button>
+
                             </div>
 
                         </>
@@ -1391,6 +1476,14 @@ export default function ChatWindow({
                 </div>
 
             ) : null}
+
+            <PinnedMessages
+                conversationId={conversation.id}
+                onSelect={(msg) => {
+                    setHighlightMessageId(msg.id);
+                    setTimeout(() => setHighlightMessageId(null), 3000);
+                }}
+            />
 
             <MessageList
                 messages={messages}
@@ -1524,6 +1617,24 @@ export default function ChatWindow({
                     }}
                 />
 
+            )}
+
+            {mediaGalleryOpen && (
+                <MediaGallery
+                    conversationId={conversation.id}
+                    onClose={() => setMediaGalleryOpen(false)}
+                />
+            )}
+
+            {wallpaperOpen && (
+                <ChatWallpaper
+                    conversationId={conversation.id}
+                    currentWallpaper={conversation.wallpaper}
+                    onApplied={(wp) => {
+                        setWallpaperOpen(false);
+                        conversation.wallpaper = wp;
+                    }}
+                />
             )}
 
         </div>

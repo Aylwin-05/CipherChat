@@ -7,22 +7,22 @@ from pydantic import BaseModel, Field
 
 class OneTimePreKeyUpload(BaseModel):
     key_id: int
-    public_key: str
+    public_key: str = Field(max_length=1000)
 
 
 class RegisterDeviceRequest(BaseModel):
     device_id: str = Field(min_length=8, max_length=64)
-    platform: str = "other"
-    device_name: str | None = None
-    platform_version: str | None = None
-    app_version: str | None = None
+    platform: str = Field(default="other", max_length=20)
+    device_name: str | None = Field(default=None, max_length=100)
+    platform_version: str | None = Field(default=None, max_length=50)
+    app_version: str | None = Field(default=None, max_length=50)
 
-    identity_key_public: str
-    identity_key_x25519: str
+    identity_key_public: str = Field(max_length=2000)
+    identity_key_x25519: str = Field(max_length=2000)
 
-    signed_prekey_public: str
+    signed_prekey_public: str = Field(max_length=2000)
     signed_prekey_id: int
-    signed_prekey_signature: str
+    signed_prekey_signature: str = Field(max_length=2000)
 
     one_time_prekeys: list[OneTimePreKeyUpload] = []
 
@@ -83,7 +83,7 @@ class ReplenishPreKeysResponse(BaseModel):
 # ==========================================================
 
 class UploadPreKeysRequest(BaseModel):
-    device_id: str
+    device_id: str = Field(min_length=8, max_length=64)
     one_time_prekeys: list[OneTimePreKeyUpload] = []
 
 
@@ -95,6 +95,8 @@ class DeviceInfo(BaseModel):
     device_id: str
     device_name: str | None = None
     platform: str
+    platform_version: str | None = None
+    app_version: str | None = None
     is_primary: bool
     is_active: bool
     last_seen: str | None = None
@@ -105,6 +107,61 @@ class DeviceListResponse(BaseModel):
     devices: list[DeviceInfo]
 
 
+class DeviceUpdateRequest(BaseModel):
+    device_name: str | None = None
+    platform_version: str | None = None
+    app_version: str | None = None
+
+
 class DeviceActionResponse(BaseModel):
     success: bool = True
     message: str
+
+
+# ==========================================================
+# Signed PreKey Rotation
+# ==========================================================
+
+class RotateSignedPreKeyRequest(BaseModel):
+    device_id: str = Field(min_length=8, max_length=64)
+    key_id: int
+    public_key: str = Field(max_length=2000)
+    signature: str = Field(max_length=2000)
+
+
+class RotateSignedPreKeyResponse(BaseModel):
+    success: bool = True
+    key_id: int
+    public_key: str
+    signature: str
+    expires_at: str | None = None
+    purged: int = 0
+
+
+# ==========================================================
+# Device Trust (TOFU)
+# ==========================================================
+
+class DeviceTrustSetRequest(BaseModel):
+    device_id: str = Field(min_length=8, max_length=64)
+    trust_level: str = Field(
+        pattern=r"^(trusted|verified)$",
+    )
+    identity_key_fingerprint: str | None = Field(default=None, max_length=128)
+
+
+class DeviceTrustInfo(BaseModel):
+    device_id: str
+    trust_level: str
+    identity_key_fingerprint: str | None = None
+    trusted_at: str | None = None
+
+
+class DeviceTrustListResponse(BaseModel):
+    trusts: list[DeviceTrustInfo]
+
+
+class DeviceTrustActionResponse(BaseModel):
+    success: bool = True
+    trust_level: str
+    message: str | None = None

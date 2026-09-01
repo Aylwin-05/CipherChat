@@ -19,6 +19,15 @@ class RecoveryRequest(BaseModel):
         description="b64 32-byte sync secret (optional).",
     )
 
+    force_new: bool = Field(
+        default=False,
+        description=str(
+            "When true, mint a fresh account key even if existing "
+            "sync copies would be orphaned. Only set after the user "
+            "explicitly accepts losing access to the old history."
+        ),
+    )
+
 
 class RecoveryVerifyRequest(BaseModel):
     """

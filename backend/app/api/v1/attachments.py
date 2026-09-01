@@ -200,6 +200,9 @@ async def upload_attachment(
                 "extension":
                     attachment.extension,
 
+                "view_once":
+                    attachment.view_once,
+
                 "size":
                     attachment.size,
 
@@ -243,6 +246,7 @@ async def upload_attachment(
 
 @router.get(
     "/{attachment_id}",
+    dependencies=[rate_limit("attachments.download", 60, 60)],
 )
 async def download_attachment(
     attachment_id: UUID,
@@ -315,12 +319,17 @@ async def download_attachment(
             detail="Attachment file not found.",
         )
 
+    safe_name = "".join(
+        c for c in (attachment.original_name or "file")
+        if c.isprintable() and c not in "\r\n"
+    ) or "file"
+
     return FileResponse(
         path=file_path,
-        filename=attachment.original_name,
+        filename=safe_name,
         media_type=attachment.mime_type,
         headers={
-            "Content-Disposition": f"attachment; filename={attachment.original_name}"
+            "Content-Disposition": f'attachment; filename="{safe_name}"'
         },
     )
 
@@ -413,6 +422,7 @@ async def upsert_sync_blob(
 
 @router.delete(
     "/{attachment_id}",
+    dependencies=[rate_limit("attachments.delete", 30, 60)],
 )
 async def delete_attachment(
     attachment_id: UUID,

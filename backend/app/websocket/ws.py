@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.core.rate_limit import RateLimitExceeded
 from app.database.session import AsyncSessionLocal
 from app.dependencies.websocket_auth import websocket_auth
 from app.models.user import User
@@ -144,6 +145,17 @@ async def websocket_endpoint(
 
                 data = await websocket.receive_json()
 
+                if not isinstance(data, dict):
+
+                    await websocket.send_json(
+                        {
+                            "event": "error",
+                            "message": "Invalid payload: expected JSON object.",
+                        }
+                    )
+
+                    continue
+
                 try:
 
                     await websocket_service.handle_event(
@@ -161,6 +173,28 @@ async def websocket_endpoint(
                     # (e.g. edit) forever. Commit after every event
                     # to release them promptly.
                     await db.commit()
+
+                except RateLimitExceeded as e:
+
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
+
+                    try:
+                        fresh_user = await db.get(User, user_id)
+                        if fresh_user is not None:
+                            current_user = fresh_user
+                    except Exception:
+                        pass
+
+                    await websocket.send_json(
+                        {
+                            "event": "error",
+                            "message": "Rate limit exceeded.",
+                            "retry_after": e.retry_after,
+                        }
+                    )
 
                 except ValueError as e:
 
@@ -246,6 +280,7 @@ async def websocket_endpoint(
                     manager.broadcast_presence(
                         user_id,
                         False,
+                        cached_only=True,
                     )
                 )
 

@@ -9,11 +9,26 @@ from app.core.config import settings
 class JWTService:
     """
     Handles JWT creation and verification.
+
+    When JWT_PRIVATE_KEY / JWT_PUBLIC_KEY are configured the
+    service signs with ES256 (ECDSA P-256); otherwise it
+    falls back to the symmetric HS256 algorithm using
+    SECRET_KEY.
     """
 
     def __init__(self):
-        self.secret_key = settings.SECRET_KEY
-        self.algorithm = settings.JWT_ALGORITHM
+        self._private_key = settings.JWT_PRIVATE_KEY
+        self._public_key = settings.JWT_PUBLIC_KEY
+
+        if self._private_key and self._public_key:
+            self.algorithm = "ES256"
+            self._sign_key = self._private_key
+            self._verify_key = self._public_key
+        else:
+            self.algorithm = settings.JWT_ALGORITHM
+            self._sign_key = settings.SECRET_KEY
+            self._verify_key = settings.SECRET_KEY
+
         self.access_token_expire = (
             settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
@@ -48,7 +63,7 @@ class JWTService:
 
         return jwt.encode(
             payload,
-            self.secret_key,
+            self._sign_key,
             algorithm=self.algorithm,
         )
 
@@ -79,7 +94,7 @@ class JWTService:
 
         return jwt.encode(
             payload,
-            self.secret_key,
+            self._sign_key,
             algorithm=self.algorithm,
         )
 
@@ -111,7 +126,7 @@ class JWTService:
 
         return jwt.encode(
             payload,
-            self.secret_key,
+            self._sign_key,
             algorithm=self.algorithm,
         )
 
@@ -143,7 +158,7 @@ class JWTService:
 
             return jwt.decode(
                 token,
-                self.secret_key,
+                self._verify_key,
                 algorithms=[self.algorithm],
             )
 

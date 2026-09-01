@@ -110,4 +110,27 @@ export function generateDeviceId() {
     return `web-${crypto.randomUUID()}`;
 }
 
+// ==========================================================
+// Generate a fresh signed prekey for rotation
+//
+// The identity key (Ed25519) stays the same; only the X25519
+// signed prekey is replaced. The caller must pass the
+// identity private key and the next key ID.
+// ==========================================================
+
+export function generateSignedPrekey({
+    identityPrivateKey,
+    keyId,
+}) {
+    const spk = generateX25519Keypair();
+    const signature = ed25519Sign(identityPrivateKey, spk.publicKey);
+
+    return {
+        keyId,
+        publicKey: spk.publicKey,
+        privateKey: spk.privateKey,
+        signature,
+    };
+}
+
 export { b64encode, b64decode };

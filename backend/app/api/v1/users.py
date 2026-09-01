@@ -18,10 +18,7 @@ from app.core.file_config import (
     AVATAR_EXTENSIONS,
     MAX_AVATAR_SIZE,
 )
-from app.core.magic_sniff import (
-    HEADER_SIZE,
-    sniff_header,
-)
+from app.core.file_stream import stream_to_disk
 from app.core.enums import FriendRequestStatus
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
@@ -117,7 +114,10 @@ async def search_users(
     repository = UserRepository(db)
     service = UserService(repository)
 
-    users = await service.search_users(q)
+    users = await service.search_users(
+        q,
+        exclude_user_id=current_user.id,
+    )
 
     return users
 
@@ -186,27 +186,6 @@ async def upload_avatar(
             detail="Unsupported image type.",
         )
 
-    content = await file.read()
-
-    if len(content) > MAX_AVATAR_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail="Avatar image is too large (max 5 MB).",
-        )
-
-    if not content:
-        raise HTTPException(
-            status_code=400,
-            detail="Empty file.",
-        )
-
-    # The extension is only a claim: the bytes must match.
-    if not sniff_header(extension, content[:HEADER_SIZE]):
-        raise HTTPException(
-            status_code=400,
-            detail="File content does not match its declared type.",
-        )
-
     # --------------------------------------------------------
     # Replace any previous avatar for this user
     # --------------------------------------------------------
@@ -216,7 +195,12 @@ async def upload_avatar(
 
     destination = AVATAR_DIR / f"{current_user.id}{extension}"
 
-    destination.write_bytes(content)
+    await stream_to_disk(
+        file,
+        destination,
+        MAX_AVATAR_SIZE,
+        extension=extension,
+    )
 
     repository = UserRepository(db)
 

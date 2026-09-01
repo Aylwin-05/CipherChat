@@ -49,7 +49,21 @@ therefore reads two env vars at **build time**:
 | `VITE_API_URL` | REST base + attachment downloads| `https://chat.example.com`    |
 | `VITE_WS_URL`  | WebSocket endpoint              | `https://chat.example.com`    |
 
-Build the mobile bundle with them set:
+Build the mobile bundle with them set (production):
+
+```powershell
+cd Mobile
+powershell -ExecutionPolicy Bypass -File .\prod-build.ps1 -Domain chat.example.com
+# then Android Studio -> Build -> Build App Bundle(s) / APK(s)
+```
+
+`prod-build.ps1` normalises the domain to `https://chat.example.com`
+and `wss://chat.example.com`, rebuilds `frontend/` with both vars
+baked in, and runs `npx cap sync android`. It refuses to ship
+plain `http://` silently and prints a reminder of the backend env
+vars that must be set.
+
+Equivalently, set the vars yourself:
 
 ```bash
 cd frontend

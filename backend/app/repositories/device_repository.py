@@ -1,6 +1,7 @@
 from uuid import UUID
+from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.device import Device, SignedPreKey, OneTimePreKey
@@ -45,6 +46,19 @@ class DeviceRepository(BaseRepository):
             )
         )
         return result.scalar_one_or_none()
+
+    async def get_by_ids(
+        self,
+        device_pks: list[UUID],
+    ) -> list[Device]:
+        if not device_pks:
+            return []
+        result = await self.execute(
+            select(Device).where(
+                Device.id.in_(device_pks)
+            )
+        )
+        return list(result.scalars().all())
 
     async def get_by_user_id(
         self,
@@ -134,6 +148,29 @@ class DeviceRepository(BaseRepository):
             .execution_options(synchronize_session=False)
         )
 
+    async def update_metadata(
+        self,
+        device_pk: UUID,
+        *,
+        device_name: str | None = None,
+        platform_version: str | None = None,
+        app_version: str | None = None,
+    ):
+        values: dict = {}
+        if device_name is not None:
+            values["device_name"] = device_name
+        if platform_version is not None:
+            values["platform_version"] = platform_version
+        if app_version is not None:
+            values["app_version"] = app_version
+        if values:
+            await self.db.execute(
+                update(Device)
+                .where(Device.id == device_pk)
+                .values(**values)
+                .execution_options(synchronize_session=False)
+            )
+
     async def delete_device_prekeys(
         self,
         device_pk: UUID,
@@ -159,13 +196,48 @@ class DeviceRepository(BaseRepository):
         self,
         user_id: UUID,
     ) -> int:
-        result = await self.execute(
-            select(Device).where(
+        """Count active devices (single aggregate query)."""
+        result = await self.db.execute(
+            select(sqlfunc.count(Device.id)).where(
                 Device.user_id == user_id,
                 Device.is_active.is_(True),
             )
         )
-        return len(result.scalars().all())
+        return int(result.scalar_one() or 0)
+
+    async def claim_primary_for_new_device(
+        self,
+        device: Device,
+    ) -> bool:
+        """Atomically mark the first active device of a user as primary.
+
+        Uses a conditional UPDATE retried around the partial unique
+        index on (user_id, is_primary). When two registrations race
+        to be the first device, only one may hold the primary flag.
+        Returns True when this device is the (new) primary.
+        """
+        from sqlalchemy import update
+        from sqlalchemy.exc import IntegrityError
+
+        # Promote this device if it is the only active one.
+        # The partial unique index (is_primary=true) is our guard:
+        # if a concurrent request already made another device primary,
+        # this UPDATE raises IntegrityError and we roll back only the
+        # demotion/promotion pair, leaving the existing primary intact.
+        try:
+            promoted = await self.db.execute(
+                update(Device)
+                .where(
+                    Device.id == device.id,
+                    Device.is_active.is_(True),
+                )
+                .values(is_primary=True)
+                .execution_options(synchronize_session=False)
+            )
+        except IntegrityError:
+            await self.db.rollback()
+            return False
+        return promoted.rowcount == 1
 
     # ==========================================================
     # Signed PreKeys
@@ -212,6 +284,67 @@ class DeviceRepository(BaseRepository):
         )
         latest = result.scalar_one_or_none()
         return (latest or 0) + 1
+
+    async def rotate_signed_prekey(
+        self,
+        device_pk: UUID,
+        key_id: int,
+        public_key: str,
+        signature: str,
+        expires_at,
+    ) -> SignedPreKey:
+        """Create a new signed prekey and expire all older ones."""
+
+        new_spk = SignedPreKey(
+            device_id=device_pk,
+            key_id=key_id,
+            public_key=public_key,
+            signature=signature,
+            expires_at=expires_at,
+        )
+        await self.create(new_spk)
+
+        await self.db.execute(
+            update(SignedPreKey)
+            .where(
+                SignedPreKey.device_id == device_pk,
+                SignedPreKey.key_id < key_id,
+            )
+            .values(expires_at=datetime.now(timezone.utc))
+            .execution_options(synchronize_session=False)
+        )
+
+        return new_spk
+
+    async def purge_superseded_signed_prekeys(
+        self,
+        device_pk: UUID,
+    ) -> int:
+        """Delete expired signed prekeys that are NOT the latest.
+
+        The newest SPK is always kept (even if expired) so that
+        in-flight handshakes can still complete. Older expired
+        SPKs are hard-deleted.
+        """
+        from sqlalchemy import delete, func as sqlfunc
+
+        subq = (
+            select(sqlfunc.max(SignedPreKey.key_id))
+            .where(SignedPreKey.device_id == device_pk)
+            .scalar_subquery()
+        )
+
+        result = await self.db.execute(
+            delete(SignedPreKey)
+            .where(
+                SignedPreKey.device_id == device_pk,
+                SignedPreKey.key_id < subq,
+                SignedPreKey.expires_at.isnot(None),
+                SignedPreKey.expires_at
+                < datetime.now(timezone.utc),
+            )
+        )
+        return result.rowcount
 
     # ===========================================================
     # One-Time PreKeys

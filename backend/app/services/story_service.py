@@ -11,10 +11,7 @@ from app.core.file_config import (
     STORY_EXTENSIONS,
     STORY_MEDIA_TYPES,
 )
-from app.core.magic_sniff import (
-    HEADER_SIZE,
-    sniff_header,
-)
+from app.core.file_stream import stream_to_disk
 from app.models.story import Story
 from app.models.user import User
 from app.repositories.friend_repository import FriendRepository
@@ -139,22 +136,6 @@ class StoryService:
                 "Unsupported file type for a status update."
             )
 
-        content = await file.read()
-
-        if len(content) > MAX_STORY_SIZE:
-            raise ValueError(
-                "Status media is too large (max 20 MB)."
-            )
-
-        if not content:
-            raise ValueError("Empty file.")
-
-        # The extension is only a claim: the bytes must match.
-        if not sniff_header(extension, content[:HEADER_SIZE]):
-            raise ValueError(
-                "File content does not match its declared type."
-            )
-
         media_type = STORY_MEDIA_TYPES.get(extension, "image")
 
         if encrypted and (
@@ -169,7 +150,17 @@ class StoryService:
 
         storage = STORIES_DIR / f"{uuid.uuid4().hex}{extension}"
 
-        storage.write_bytes(content)
+        try:
+
+            await stream_to_disk(
+                file,
+                storage,
+                MAX_STORY_SIZE,
+                extension=extension,
+            )
+
+        except HTTPException as e:
+            raise ValueError(e.detail) from e
 
         story = Story(
             user_id=current_user.id,
@@ -467,6 +458,48 @@ class StoryService:
             "story_id": str(story.id),
             "viewed": True,
         }
+
+    # ==========================================================
+    # Reaction / reply visibility guard
+    #
+    # Reacting to or replying to a story carries the same access
+    # rules as viewing it: the story must exist and be live, and
+    # (unless you own it) you must be a non-blocked friend per the
+    # owner's story-privacy setting.
+    # ==========================================================
+
+    async def ensure_visible(
+        self,
+        current_user: User,
+        story_id: UUID,
+    ) -> Story:
+
+        story = await self.story_repository.get_by_id(story_id)
+
+        if story is None:
+            raise ValueError("Story not found.")
+
+        if _is_expired(story):
+            raise ValueError("Story has expired.")
+
+        if story.user_id != current_user.id:
+
+            await self._verify_friend(
+                current_user.id,
+                story.user_id,
+            )
+
+            if self.block_service is not None:
+
+                if not await self.block_service.can_view_story(
+                    viewer_id=current_user.id,
+                    owner_id=story.user_id,
+                ):
+                    raise PermissionError(
+                        "You cannot interact with this story."
+                    )
+
+        return story
 
     # ==========================================================
     # Media access

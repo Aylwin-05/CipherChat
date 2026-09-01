@@ -4,15 +4,23 @@ import axios from "axios";
 // origin (Capacitor/WebView builds). Empty in the web app, which
 // keeps every URL relative exactly as before.
 //
-// A localStorage override ("nexara.server_url") wins over the
-// build-time value: native shells bake their target at compile
-// time, so without this a stale baked URL (or a plain `npm run
-// build`) silently points every request at the WebView's own
-// https://localhost asset server instead of the backend.
-const SERVER_URL =
-    localStorage.getItem("nexara.server_url") ||
-    import.meta.env.VITE_API_URL ||
-    "";
+// The build-time VITE_API_URL is the single source of truth. The
+// native (Capacitor) shell bakes its target at compile time via
+// Mobile/dev-build.ps1 or Mobile/prod-build.ps1, so the WebView
+// always talks to the intended backend — never to its own
+// https://localhost asset server, and never to a stale runtime
+// override. There is intentionally NO runtime override: the server
+// address is fixed at build time and must not be mutable in-app.
+export function getConfiguredServer() {
+
+    return (
+        import.meta.env.VITE_API_URL ||
+        ""
+    );
+
+}
+
+const SERVER_URL = getConfiguredServer();
 
 const api = axios.create({
     baseURL: `${SERVER_URL}/api/v1`,
@@ -28,37 +36,17 @@ const api = axios.create({
 // ==========================================================
 // ACCESS TOKEN STORE
 //
-// The access token lives in memory (and is mirrored to
-// localStorage so a page reload keeps the session until the
-// token expires).
+// The access token lives exclusively in memory.  On page reload
+// the module-level variable resets to null; AuthContext performs
+// a silent refresh using the HttpOnly refresh-token cookie to
+// rehydrate without exposing the bearer token to JavaScript
+// storage (XSS protection).
 // ==========================================================
 
-let accessToken =
-    localStorage.getItem("access_token");
+let accessToken = null;
 
-export function setAccessToken(
-    token
-) {
-
+export function setAccessToken(token) {
     accessToken = token;
-
-    if (token) {
-
-        localStorage.setItem(
-            "access_token",
-            token
-        );
-
-    }
-
-    else {
-
-        localStorage.removeItem(
-            "access_token"
-        );
-
-    }
-
 }
 
 export function getAccessToken() {
@@ -74,36 +62,142 @@ export function clearAccessToken() {
 }
 
 // ==========================================================
-// REFRESH ACCESS TOKEN
+// REFRESH ACCESS TOKEN (single-flight)
 //
 // The refresh token lives in an HttpOnly cookie which the
-// browser attaches automatically. Returns the new access
-// token string, or throws.
+// browser attaches automatically. Only one refresh runs at a
+// time: concurrent callers (e.g. the React StrictMode double
+// mount in dev) share the in-flight request instead of rotating
+// the token twice and tripping the server's reuse detection,
+// which would revoke the entire family.
 // ==========================================================
+
+let refreshPromise = null;
 
 export async function refreshAccessToken() {
 
-    const response =
-        await axios.post(
-            `${SERVER_URL}/api/v1/auth/refresh`,
-            null,
-            { withCredentials: true }
-        );
+    if (refreshPromise) {
 
-    const newAccessToken =
-        response.data.access_token;
+        return refreshPromise;
 
-    if (!newAccessToken) {
+    }
 
-        throw new Error(
-            "Refresh returned no access token."
+    refreshPromise = (async () => {
+
+        const response =
+            await axios.post(
+                `${SERVER_URL}/api/v1/auth/refresh`,
+                null,
+                { withCredentials: true }
+            );
+
+        const newAccessToken =
+            response.data.access_token;
+
+        if (!newAccessToken) {
+
+            throw new Error(
+                "Refresh returned no access token."
+            );
+
+        }
+
+        setAccessToken(newAccessToken);
+
+        return newAccessToken;
+
+    })();
+
+    try {
+
+        return await refreshPromise;
+
+    }
+
+    finally {
+
+        refreshPromise = null;
+
+    }
+
+}
+
+// ==========================================================
+// SESSION-EXPIRED EVENT
+//
+// Fired when a refresh attempt fails and the session is truly
+// dead. AuthContext listens and drops its local state so the
+// route guards send the user to the login screen without a hard
+// page reload (window.location) that nukes the SPA state.
+// ==========================================================
+
+export function notifySessionExpired() {
+
+    window.dispatchEvent(
+        new Event("nexara:auth-expired")
+    );
+
+}
+
+// ==========================================================
+// EXPIRY CHECK
+//
+// JWT payloads carry an exp claim. When the access token is
+// expired (or expiring within 30s), the request interceptor
+// refreshes BEFORE the request goes out, so reloading the page
+// on a stale-but-refreshable session never produces the loud
+// 401 → refresh → retry dance in the console.
+// ==========================================================
+
+function isAccessTokenExpired() {
+
+    const token =
+        getAccessToken();
+
+    if (!token) {
+
+        return false;
+
+    }
+
+    try {
+
+        const b64 =
+            token
+                .split(".")[1]
+                .replace(/-/g, "+")
+                .replace(/_/g, "/");
+
+        const payload =
+            JSON.parse(
+                atob(
+                    b64.padEnd(
+                        Math.ceil(b64.length / 4) * 4,
+                        "="
+                    )
+                )
+            );
+
+        if (!payload?.exp) {
+
+            return false;
+
+        }
+
+        return (
+            payload.exp * 1000 <=
+            Date.now() + 30000
         );
 
     }
 
-    setAccessToken(newAccessToken);
+    catch {
 
-    return newAccessToken;
+        // Malformed token: let the request go and let the
+        // response interceptor surface the 401.
+        return false;
+
+    }
 
 }
 
@@ -113,7 +207,23 @@ export async function refreshAccessToken() {
 
 api.interceptors.request.use(
 
-    (config) => {
+    async (config) => {
+
+        if (isAccessTokenExpired()) {
+
+            try {
+
+                await refreshAccessToken();
+
+            }
+
+            catch {
+                // Session unrecoverable — fall through and let
+                // the request 401 so the response interceptor
+                // cleans the session up.
+            }
+
+        }
 
         const token =
             getAccessToken();
@@ -134,41 +244,6 @@ api.interceptors.request.use(
 );
 
 // ==========================================================
-// TOKEN REFRESH
-// ==========================================================
-
-let isRefreshing = false;
-
-let failedQueue = [];
-
-function processQueue(
-    error,
-    token = null,
-) {
-
-    failedQueue.forEach(
-        (promise) => {
-
-            if (error) {
-
-                promise.reject(error);
-
-            }
-
-            else {
-
-                promise.resolve(token);
-
-            }
-
-        }
-    );
-
-    failedQueue = [];
-
-}
-
-// ==========================================================
 // RESPONSE INTERCEPTOR
 // ==========================================================
 
@@ -182,7 +257,7 @@ api.interceptors.response.use(
             error.config;
 
         //------------------------------------------------------
-        // Access token expired
+        // Access token expired / rejected
         //------------------------------------------------------
 
         if (
@@ -195,47 +270,6 @@ api.interceptors.response.use(
 
             originalRequest._retry = true;
 
-            //--------------------------------------------------
-
-            if (isRefreshing) {
-
-                return new Promise(
-                    (
-                        resolve,
-                        reject,
-                    ) => {
-
-                        failedQueue.push({
-
-                            resolve,
-
-                            reject,
-
-                        });
-
-                    }
-
-                ).then(
-
-                    (token) => {
-
-                        originalRequest.headers.Authorization =
-                            `Bearer ${token}`;
-
-                        return api(
-                            originalRequest
-                        );
-
-                    }
-
-                );
-
-            }
-
-            //--------------------------------------------------
-
-            isRefreshing = true;
-
             try {
 
                 const newAccessToken =
@@ -243,11 +277,6 @@ api.interceptors.response.use(
 
                 originalRequest.headers.Authorization =
                     `Bearer ${newAccessToken}`;
-
-                processQueue(
-                    null,
-                    newAccessToken
-                );
 
                 return api(
                     originalRequest
@@ -257,22 +286,13 @@ api.interceptors.response.use(
 
             catch (refreshError) {
 
-                processQueue(
-                    refreshError,
-                    null
-                );
-
                 clearAccessToken();
-
-                localStorage.removeItem(
-                    "refresh_token"
-                );
 
                 localStorage.removeItem(
                     "user"
                 );
 
-                window.location.href = "/";
+                notifySessionExpired();
 
                 return Promise.reject(
                     refreshError
@@ -280,19 +300,15 @@ api.interceptors.response.use(
 
             }
 
-            finally {
-
-                isRefreshing = false;
-
-            }
-
         }
 
-        console.error(
-            "API Error:",
-            error.response?.data ||
-            error.message
-        );
+        if (error.response?.status !== 404) {
+            console.error(
+                "API Error:",
+                error.response?.data ||
+                error.message
+            );
+        }
 
         return Promise.reject(error);
 

@@ -4,6 +4,10 @@ from uuid import UUID
 
 from fastapi import WebSocket
 
+from app.core.rate_limit import (
+    RateLimitExceeded,
+    get_limiter,
+)
 from app.models.user import User
 
 from app.repositories.conversation_repository import (
@@ -17,6 +21,20 @@ from app.repositories.message_repository import (
 from app.websocket.connection_manager import manager
 
 logger = logging.getLogger("app.websocket.websocket_service")
+
+WS_RATE_LIMITS = {
+    "message":      (30, 60),
+    "edit":         (30, 60),
+    "delete":       (30, 60),
+    "typing":       (120, 60),
+    "stop_typing":  (120, 60),
+    "delivered":    (120, 60),
+    "read":         (120, 60),
+    "call_offer":   (60, 60),
+    "call_answer":  (60, 60),
+    "call_ice":     (60, 60),
+    "call_end":     (60, 60),
+}
 
 
 class WebSocketService:
@@ -58,6 +76,23 @@ class WebSocketService:
             MessageRepository(db)
         )
 
+        # Built once per WebSocketService instance (one per
+        # connection) instead of re-creating the dict on every
+        # incoming event.
+        self._handlers = {
+            "message":      self.handle_message,
+            "typing":       self.handle_typing,
+            "stop_typing":  self.handle_stop_typing,
+            "delivered":    self.handle_delivered,
+            "read":         self.handle_read,
+            "edit":         self.handle_edit,
+            "delete":       self.handle_delete,
+            "call_offer":   self.handle_call,
+            "call_answer":  self.handle_call,
+            "call_ice":     self.handle_call,
+            "call_end":     self.handle_call,
+        }
+
     # ======================================================
     # Authorization
     # ======================================================
@@ -98,12 +133,34 @@ class WebSocketService:
 
             return
 
+        limits = WS_RATE_LIMITS.get(event)
+        if limits:
+            limiter = get_limiter()
+            limit, window = limits
+            await limiter.check(
+                f"ws:{current_user.id}:{event}",
+                limit,
+                window,
+            )
+
+        if event == "sync_request":
+            await self.handle_sync_request(
+                current_user, data
+            )
+            return
+
         # The socket is user-scoped (/ws/me), so every real event
         # must declare which conversation it targets AND the sender
         # must be a participant of it.
-        conversation_id = UUID(
-            data.get("conversation_id", "")
-        )
+        raw_cid = data.get("conversation_id", "")
+
+        if not raw_cid:
+
+            raise ValueError(
+                "Missing 'conversation_id' in event payload."
+            )
+
+        conversation_id = UUID(raw_cid)
 
         if not await self.verify_access(
             conversation_id,
@@ -113,37 +170,7 @@ class WebSocketService:
                 "Access denied."
             )
 
-        handlers = {
-
-            "message": self.handle_message,
-
-            "typing": self.handle_typing,
-
-            "stop_typing": self.handle_stop_typing,
-
-            "delivered": self.handle_delivered,
-
-            "read": self.handle_read,
-
-            "edit": self.handle_edit,
-
-            "delete": self.handle_delete,
-
-            # Voice/video call signaling (WebRTC). The server only
-            # relays SDP/ICE between conversation members - media
-            # flows peer-to-peer and is encrypted by DTLS-SRTP, so
-            # the backend never sees call content.
-            "call_offer": self.handle_call,
-
-            "call_answer": self.handle_call,
-
-            "call_ice": self.handle_call,
-
-            "call_end": self.handle_call,
-
-        }
-
-        handler = handlers.get(event)
+        handler = self._handlers.get(event)
 
         if handler is None:
 
@@ -322,7 +349,11 @@ class WebSocketService:
         data: dict,
     ):
 
-        message_id = UUID(data["message_id"])
+        raw_message_id = data.get("message_id")
+        if not raw_message_id:
+            raise ValueError("Missing 'message_id' in event payload.")
+
+        message_id = UUID(raw_message_id)
 
         message = await self.message_repository.get_by_id(
             message_id
@@ -453,7 +484,11 @@ class WebSocketService:
         data: dict,
     ):
 
-        message_id = UUID(data["message_id"])
+        raw_message_id = data.get("message_id")
+        if not raw_message_id:
+            raise ValueError("Missing 'message_id' in event payload.")
+
+        message_id = UUID(raw_message_id)
 
         message = await self.message_repository.get_by_id(
             message_id
@@ -508,8 +543,12 @@ class WebSocketService:
         data: dict,
     ):
 
+        raw_message_id = data.get("message_id")
+        if not raw_message_id:
+            raise ValueError("Missing 'message_id' in event payload.")
+
         message = await self.message_repository.get_by_id(
-            UUID(data["message_id"])
+            UUID(raw_message_id)
         )
 
         if message is None:
@@ -546,8 +585,12 @@ class WebSocketService:
         data: dict,
     ):
 
+        raw_message_id = data.get("message_id")
+        if not raw_message_id:
+            raise ValueError("Missing 'message_id' in event payload.")
+
         message = await self.message_repository.get_by_id(
-            UUID(data["message_id"])
+            UUID(raw_message_id)
         )
 
         if message is None:
@@ -634,6 +677,18 @@ class WebSocketService:
 
             payload["candidate"] = data["candidate"]
 
+        if data.get("call_nonce"):
+
+            payload["call_nonce"] = data["call_nonce"]
+
+        if data.get("call_key_hash"):
+
+            payload["call_key_hash"] = data["call_key_hash"]
+
+        if data.get("answer_key_hash"):
+
+            payload["answer_key_hash"] = data["answer_key_hash"]
+
         exclude = await self._blocked_recipients(
             conversation_id,
             current_user.id,
@@ -712,6 +767,30 @@ class WebSocketService:
                 "user_id": str(current_user.id),
                 "conversation_id": str(conversation_id),
             },
+        )
+
+    # ======================================================
+    # SYNC REQUEST
+    #
+    # A newly registered device sends this to ask its OTHER
+    # online devices to re-upload sync envelopes for the
+    # specified conversations.
+    # ======================================================
+
+    async def handle_sync_request(
+        self,
+        current_user: User,
+        data: dict,
+    ):
+        conversation_ids = data.get("conversation_ids", [])
+        notification = {
+            "event": "sync_needed",
+            "requester_id": str(current_user.id),
+            "conversation_ids": conversation_ids,
+        }
+        await manager.send_to_user(
+            current_user.id,
+            notification,
         )
 
     # ======================================================

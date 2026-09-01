@@ -44,7 +44,7 @@ class VerifyOTPRequest(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
 
-    refresh_token: str
+    refresh_token: str = Field(max_length=500)
 
 
 # ==========================================================
@@ -65,7 +65,7 @@ class DisableTwoFARequest(BaseModel):
 
 class VerifyTwoFARequest(BaseModel):
 
-    two_fa_token: str
+    two_fa_token: str = Field(max_length=500)
 
     pin: TwoFAPin
 

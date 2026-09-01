@@ -21,18 +21,22 @@ class SendMessageRequest(BaseModel):
 
     ciphertext: str = Field(
         min_length=1,
+        max_length=100000,
     )
 
     encrypted_key_sender: str = Field(
         min_length=1,
+        max_length=1000,
     )
 
     encrypted_key_receiver: str = Field(
         min_length=1,
+        max_length=1000,
     )
 
     nonce: str = Field(
         min_length=1,
+        max_length=256,
     )
 
     message_type: str = Field(
@@ -74,6 +78,7 @@ class MessageEnvelopeInput(BaseModel):
 
     data: str = Field(
         min_length=1,
+        max_length=100000,
     )
 
 
@@ -87,6 +92,7 @@ class RecipientKeyInput(BaseModel):
 
     encrypted_key: str = Field(
         min_length=1,
+        max_length=1000,
     )
 
 
@@ -106,18 +112,22 @@ class EditMessageRequest(BaseModel):
 
     ciphertext: str = Field(
         min_length=1,
+        max_length=100000,
     )
 
     encrypted_key_sender: str = Field(
         min_length=1,
+        max_length=1000,
     )
 
     encrypted_key_receiver: str = Field(
         min_length=1,
+        max_length=1000,
     )
 
     nonce: str = Field(
         min_length=1,
+        max_length=256,
     )
 
     recipient_keys: list["RecipientKeyInput"] = []
@@ -208,9 +218,9 @@ class SyncCopyInput(BaseModel):
     copy is stale.
     """
 
-    nonce: str = Field(min_length=1)
+    nonce: str = Field(min_length=1, max_length=256)
 
-    data: str = Field(min_length=1)
+    data: str = Field(min_length=1, max_length=100000)
 
     ciphertext: str | None = None
 

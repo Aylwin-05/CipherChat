@@ -1,4 +1,4 @@
-import api from "../api/api";
+import api, { getConfiguredServer } from "../api/api";
 
 const conversationService = {
 
@@ -339,7 +339,7 @@ const conversationService = {
 
     avatarUrl(conversationId) {
 
-        return `/api/v1/conversations/${conversationId}/avatar`;
+        return `${getConfiguredServer()}/api/v1/conversations/${conversationId}/avatar`;
 
     },
 

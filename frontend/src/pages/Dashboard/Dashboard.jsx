@@ -8,6 +8,7 @@ import ConversationList from "../../components/chat/ConversationList";
 import ChatWindow from "../../components/chat/ChatWindow";
 import StatusPage from "../../components/story/StatusPage";
 import FriendsPage from "../../components/friends/FriendsPage";
+import CallLog from "../../components/call/CallLog";
 import SettingsPage from "../Settings/SettingsPage";
 import DeleteConversationModal from "../../components/chat/DeleteConversationModal";
 import RecoveryModal from "../../components/recovery/RecoveryModal";
@@ -81,7 +82,6 @@ function DashboardInner() {
         return false;
 
     }, currentPage !== "chats");
-
     //------------------------------------------------------
     // App lock (local PIN gate). When configured, the app
     // stays locked until the PIN is entered in this tab.
@@ -335,19 +335,37 @@ function DashboardInner() {
 
                     )
 
-                    : currentPage === "status"
+                        : currentPage === "status"
 
-                        ? (
+                            ? (
 
-                            <div className="app-stage status-stage">
+                                <div className="app-stage status-stage">
 
-                                <StatusPage />
+                                    <StatusPage />
 
-                            </div>
+                                </div>
 
-                        )
+                            )
 
-                        : currentPage === "settings"
+                            : currentPage === "calls"
+
+                                ? (
+
+                                    <div className="app-stage calls-stage">
+
+                                        <CallLog
+
+                                            onBack={() =>
+                                                setCurrentPage("chats")
+                                            }
+
+                                        />
+
+                                    </div>
+
+                                )
+
+                                : currentPage === "settings"
 
                             ? (
 

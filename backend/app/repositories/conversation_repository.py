@@ -43,6 +43,19 @@ class ConversationRepository(BaseRepository):
     # Existing Private Conversation
     # ==========================================================
 
+    async def get_by_conversation_key(
+        self,
+        conversation_key: str,
+    ) -> Conversation | None:
+
+        result = await self.execute(
+            select(Conversation).where(
+                Conversation.conversation_key == conversation_key
+            )
+        )
+
+        return result.scalar_one_or_none()
+
     async def get_private_conversation(
         self,
         user1: UUID,

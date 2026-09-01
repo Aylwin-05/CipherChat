@@ -8,7 +8,7 @@
     padding: 30px 34px 40px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 20px;
     background: var(--panel-bg);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
@@ -35,6 +35,7 @@
     color: var(--text-3);
     font-size: 13.5px;
     max-width: 520px;
+    line-height: 1.5;
 }
 
 .status-add-btn {
@@ -43,33 +44,44 @@
     gap: 8px;
     padding: 10px 18px;
     border: none;
-    border-radius: 999px;
-    background: linear-gradient(
-        135deg,
-        #7c5cff,
-        #22d3ee
-    );
+    border-radius: var(--radius-pill);
+    background: var(--grad);
     color: #fff;
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    box-shadow: 0 6px 18px rgba(124, 92, 255, 0.28);
-    transition: transform 0.15s ease, filter 0.15s ease;
+    box-shadow: 0 6px 20px rgba(124, 92, 255, 0.3);
+    transition:
+        transform 0.15s var(--ease),
+        box-shadow 0.2s ease,
+        filter 0.2s ease;
     white-space: nowrap;
 }
 
 .status-add-btn:hover {
     transform: translateY(-1px);
-    filter: brightness(1.06);
+    filter: brightness(1.08);
+    box-shadow: 0 10px 28px rgba(124, 92, 255, 0.4);
 }
 
 .status-section-title {
     margin: 10px 0 2px;
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 700;
-    letter-spacing: 0.8px;
+    letter-spacing: 0.9px;
     text-transform: uppercase;
     color: var(--text-3);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.status-section-title::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border-strong);
+    opacity: 0.7;
 }
 
 /* ---------- story rings (shared) ---------- */
@@ -88,8 +100,8 @@
 }
 
 .status-ring-avatar {
-    width: 56px;
-    height: 56px;
+    width: 58px;
+    height: 58px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -97,36 +109,42 @@
     font-size: 22px;
     font-weight: 600;
     color: #fff;
-    background: linear-gradient(
-        135deg,
-        var(--color-primary, #25d366),
-        #128c7e
-    );
     position: relative;
-    border: 3px solid
-        var(--color-border-strong, rgba(0, 0, 0, 0.15));
-    overflow: visible;
+    padding: 3px;
+    transition: box-shadow 0.2s ease, transform 0.15s var(--ease);
 }
 
 .status-ring.has-unviewed .status-ring-avatar,
 .status-ring.mine.has-stories .status-ring-avatar {
-    border-color: #25d366;
+    background: var(--grad);
+    box-shadow: 0 0 0 3px var(--grad-soft);
 }
 
-.status-ring-avatar img {
+.status-ring.mine .status-ring-avatar,
+.status-ring .status-ring-avatar {
+    background: var(--surface-3);
+}
+
+.status-ring-avatar:hover {
+    transform: scale(1.03);
+}
+
+/* Authenticated avatar (UserAvatar wrapper) fills the ring */
+.status-ring-user-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid var(--border-strong);
+    background: var(--surface-2);
+}
+
+.status-ring-user-avatar .avatar-img {
     width: 100%;
     height: 100%;
     border-radius: 50%;
     object-fit: cover;
     display: block;
-}
-
-/* Authenticated avatar (UserAvatar wrapper) fills the ring */
-.status-ring-user-avatar {
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    overflow: hidden;
 }
 
 .status-ring-user-avatar .avatar-img {
@@ -144,17 +162,19 @@
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: var(--color-primary, #25d366);
+    background: var(--grad);
     color: #fff;
     font-size: 14px;
     font-weight: 700;
     line-height: 20px;
     text-align: center;
-    border: 2px solid var(--panel-bg, #ffffff);
+    border: 2px solid var(--panel-bg-2, #141a3c);
+    box-shadow: var(--shadow-sm);
 }
 
 .status-ring.mine.has-stories .status-ring-add {
-    background: #54656f;
+    background: var(--surface-3);
+    color: var(--text-2);
 }
 
 /* ---------- my status card ---------- */
@@ -164,15 +184,20 @@
     align-items: center;
     gap: 16px;
     padding: 14px 18px;
-    border-radius: var(--radius-lg, 18px);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    transition: background 0.16s ease, border-color 0.16s ease;
+    border-radius: var(--radius-lg);
+    background: var(--card-bg);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-sm);
+    transition:
+        background 0.16s ease,
+        border-color 0.16s ease,
+        transform 0.15s var(--ease);
 }
 
 .status-my-card:hover {
-    background: var(--surface-2);
-    border-color: var(--border-strong);
+    background: var(--panel-bg-2);
+    border-color: var(--accent-border);
+    transform: translateY(-1px);
 }
 
 .status-my-card .status-ring-name {
@@ -207,19 +232,21 @@
     align-items: center;
     gap: 7px;
     padding: 9px 16px;
-    border-radius: 999px;
-    border: 1px solid var(--border-strong);
-    background: transparent;
-    color: inherit;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--accent-border);
+    background: var(--accent-soft);
+    color: var(--accent);
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    transition: background 0.15s ease;
+    transition: background 0.15s ease, transform 0.15s var(--ease);
     white-space: nowrap;
 }
 
 .status-view-btn:hover {
-    background: var(--surface-2);
+    background: var(--accent);
+    color: #fff;
+    transform: translateY(-1px);
 }
 
 /* ---------- friend rows ---------- */
@@ -235,7 +262,7 @@
     align-items: center;
     gap: 14px;
     padding: 11px 16px;
-    border-radius: var(--radius, 12px);
+    border-radius: var(--radius);
     background: var(--surface);
     border: 1px solid var(--border);
     cursor: pointer;
@@ -244,14 +271,16 @@
     font: inherit;
     transition:
         background 0.16s ease,
-        transform 0.15s ease,
-        border-color 0.16s ease;
-    animation: riseIn 0.3s ease;
+        transform 0.15s var(--ease),
+        border-color 0.16s ease,
+        box-shadow 0.2s ease;
+    animation: riseIn 0.3s var(--ease);
 }
 
 .status-row:hover {
-    background: var(--surface-2);
+    background: var(--panel-bg-2);
     border-color: var(--border-strong);
+    box-shadow: var(--shadow-sm);
     transform: translateY(-1px);
 }
 
@@ -262,11 +291,15 @@
     flex-shrink: 0;
     border-radius: 50%;
     padding: 2.5px;
-    border: 2.5px solid var(--border-strong);
 }
 
 .status-row.has-unviewed .status-row-avatar {
-    border-color: #25d366;
+    background: var(--grad);
+    box-shadow: 0 0 0 3px var(--grad-soft);
+}
+
+.status-row .status-row-avatar {
+    background: var(--surface-3);
 }
 
 .status-avatar-img {
@@ -310,8 +343,9 @@
 }
 
 .status-row-kind {
-    color: var(--text-3);
+    color: var(--accent);
     flex-shrink: 0;
+    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.3));
 }
 
 /* ---------- empty state ---------- */
@@ -322,8 +356,9 @@
     align-items: center;
     gap: 6px;
     padding: 34px 20px;
-    border-radius: var(--radius, 12px);
-    border: 1.5px dashed var(--border-strong);
+    border-radius: var(--radius-lg);
+    border: 1px dashed var(--border-strong);
+    background: var(--surface);
     color: var(--text-3);
     text-align: center;
 }
@@ -334,15 +369,17 @@
     border-radius: 50%;
     display: grid;
     place-items: center;
-    background: var(--surface);
+    background: var(--grad-soft);
+    color: var(--accent);
     margin-bottom: 4px;
+    box-shadow: var(--shadow-sm);
 }
 
 .status-empty-title {
     margin: 0;
     font-size: 14.5px;
     font-weight: 600;
-    color: inherit;
+    color: var(--text-2);
 }
 
 .status-empty-sub {

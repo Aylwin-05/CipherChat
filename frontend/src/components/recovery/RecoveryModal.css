@@ -142,7 +142,7 @@
 
 .recovery-button.primary {
     background: var(--accent, #38bdf8);
-    color: #0b1220;
+    color: #ffffff;
 }
 
 .recovery-button.ghost {

@@ -22,7 +22,10 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(entry, default=str)
 
 
-def setup_logging(level: str = "INFO", json_output: bool = True):
+def setup_logging(level: str | None = None, json_output: bool = True):
+    if level is None:
+        from app.core.config import settings
+        level = settings.LOG_LEVEL
     root = logging.getLogger()
     root.setLevel(level.upper())
 
@@ -36,9 +39,14 @@ def setup_logging(level: str = "INFO", json_output: bool = True):
     root.handlers[:] = [handler]
 
     for noisy in (
-        "uvicorn.access",
         "httpx",
         "multipart",
+        "sqlalchemy.engine",
+        "sqlalchemy.engine.Engine",
+        # NOTE: "uvicorn.access" is deliberately NOT silenced here.
+        # Developers rely on the per-request access lines to see live
+        # traffic (and the [DEV] OTP print) in the terminal. Add it
+        # back only if request-line noise becomes a problem.
     ):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 

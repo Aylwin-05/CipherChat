@@ -81,14 +81,13 @@ class _RedisStore:
         self._client = None
 
     async def _get_client(self):
-        if self._client is None:
-            import redis.asyncio as aioredis
+        # Use the shared, pooled Redis client so rate limiting and
+        # the WebSocket bus never open unbounded separate
+        # connections.
+        from app.core.redis import get_redis_client
 
-            self._client = aioredis.from_url(
-                settings.REDIS_URL,
-                encoding="utf-8",
-                decode_responses=True,
-            )
+        if self._client is None:
+            self._client = await get_redis_client()
         return self._client
 
     async def incr_with_ttl(

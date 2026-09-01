@@ -177,9 +177,12 @@ export default function Login() {
                 },
             });
         } catch (err) {
+            console.error("sendOTP error:", err);
+
             setError(
                 err.response?.data?.detail ||
-                    "Unable to send OTP."
+                    "Unable to send OTP." +
+                        (" (" + (err.code || err.message || "") + ")")
             );
         } finally {
             setLoading(false);

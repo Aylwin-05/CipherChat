@@ -28,6 +28,7 @@ import {
     encryptFile,
     wrapFileKey,
 } from "../utils/fileEncryption";
+import { logger } from "../utils/logger";
 import keyService from "../services/keyService";
 import {
     arrayBufferToBase64,
@@ -148,7 +149,7 @@ export default function useMessages(
         }
         catch (error) {
 
-            console.error(
+            logger.error(
                 "Failed to load group detail",
                 error
             );
@@ -242,11 +243,8 @@ export default function useMessages(
         }
         catch (error) {
 
-            console.debug(
-                "[SYNC-COPY] write failed",
-                message?.id,
-                error
-            );
+            // Best-effort cross-browser copy — a failure here
+            // must never surface or break the message flow.
 
         }
 
@@ -256,14 +254,21 @@ export default function useMessages(
 
         try {
 
-            if (!(await signalKeyStore.getSyncSecret())) return null;
+            const syncSecret =
+                await signalKeyStore.getSyncSecret();
+
+            if (!syncSecret) return null;
 
             if (!message?.sync_envelope?.data) return null;
 
             const plaintext =
                 await decryptSyncText(message.sync_envelope);
 
-            if (plaintext == null) return null;
+            if (plaintext == null) {
+
+                return null;
+
+            }
 
             // Remember it locally too, so the next open of this
             // chat is a plain cache hit.
@@ -277,7 +282,7 @@ export default function useMessages(
             return plaintext;
 
         }
-        catch {
+        catch (error) {
 
             return null;
 
@@ -397,32 +402,34 @@ export default function useMessages(
 
                 if (syncPlain !== null) return syncPlain;
 
-                // DEBUG-PLACEHOLDER
-                console.debug(
-                    "[PLACEHOLDER] group",
-                    JSON.stringify({
-                        id: message.id,
-                        conversation_id: conversationId,
-                        sender_id: message.sender_id,
-                        me: user.id,
-                        myDeviceId,
-                        envelope_devices: envelopes.map((e) => e.device_id),
-                        cache: cachedRecord
-                            ? {
-                                ciphertext_match:
-                                    cachedRecord.ciphertext === message.ciphertext,
-                                plaintext_len:
-                                    (cachedRecord.plaintext ?? "").length,
-                              }
-                            : null,
-                        ciphertext_len:
-                            (message.ciphertext ?? "").length,
-                    })
-                );
+                try {
 
-                return message.sender_id === user.id
-                    ? "[Sent from another device]"
-                    : "[Encrypted for another device]";
+                    plaintext =
+                        await decryptGroupMessage(
+                            message,
+                            await getPrivateKey(),
+                            user.id,
+                            myDeviceId,
+                        );
+
+                }
+                catch {
+
+                    // Sync copy exists on the server but the
+                    // local sync secret doesn't match — the
+                    // user needs to unlock history.
+                    if (message.sync_envelope?.ciphertext) {
+
+                        return "[Locked — go to Settings > "
+                            + "Support > Unlock History]";
+
+                    }
+
+                    return message.sender_id === user.id
+                        ? "[Sent from another device]"
+                        : "[Encrypted for another device]";
+
+                }
 
             }
 
@@ -449,10 +456,17 @@ export default function useMessages(
 
                 if (syncPlain !== null) return syncPlain;
 
-                console.error(
+                logger.error(
                     "Failed to decrypt group message:",
                     error
                 );
+
+                if (message.sync_envelope?.ciphertext) {
+
+                    return "[Locked — go to Settings > "
+                        + "Support > Unlock History]";
+
+                }
 
                 return "[Unable to decrypt]";
 
@@ -486,7 +500,7 @@ export default function useMessages(
 
                 if (syncPlain !== null) return syncPlain;
 
-                console.error(
+                logger.error(
                     "Failed to decrypt device envelope:",
                     error
                 );
@@ -503,7 +517,9 @@ export default function useMessages(
             // THIS device (e.g. old history on a browser that
             // registered after the message was sent). It was
             // never meant to be decryptable here — unless the
-            // account-key copy exists.
+            // account-key copy exists, or the pinned envelope
+            // in message.ciphertext happens to be decryptable
+            // via an existing ratchet session.
             //--------------------------------------------------
 
             const syncPlain =
@@ -514,32 +530,28 @@ export default function useMessages(
 
             if (syncPlain !== null) return syncPlain;
 
-            // DEBUG-PLACEHOLDER
-            console.debug(
-                "[PLACEHOLDER] dm",
-                JSON.stringify({
-                    id: message.id,
-                    conversation_id: conversationId,
-                    sender_id: message.sender_id,
-                    me: user.id,
-                    myDeviceId,
-                    envelope_devices: envelopes.map((e) => e.device_id),
-                    cache: cachedRecord
-                        ? {
-                            ciphertext_match:
-                                cachedRecord.ciphertext === message.ciphertext,
-                            plaintext_len:
-                                (cachedRecord.plaintext ?? "").length,
-                          }
-                        : null,
-                    ciphertext_len:
-                        (message.ciphertext ?? "").length,
-                })
-            );
+            try {
 
-            return message.sender_id === user.id
-                ? "[Sent from another device]"
-                : "[Encrypted for another device]";
+                plaintext = await signalDecryptMessage({
+                    conversationId,
+                    ciphertext: message.ciphertext,
+                });
+
+            }
+            catch {
+
+                if (message.sync_envelope?.ciphertext) {
+
+                    return "[Locked — go to Settings > "
+                        + "Support > Unlock History]";
+
+                }
+
+                return message.sender_id === user.id
+                    ? "[Sent from another device]"
+                    : "[Encrypted for another device]";
+
+            }
 
         }
         else {
@@ -606,7 +618,7 @@ export default function useMessages(
         }
         catch (error) {
 
-            console.error(
+            logger.error(
                 "Failed to cache received message:",
                 error
             );
@@ -648,7 +660,33 @@ export default function useMessages(
 
         if (!conversation) return;
 
-        const onUnlocked = () => void initialize();
+        const onUnlocked = async () => {
+
+            await initialize();
+
+            try {
+                const records =
+                    await signalKeyStore.getAllCachedRecords();
+                for (const record of records) {
+                    if (
+                        !record.plaintext ||
+                        !record.messageId
+                    ) continue;
+                    try {
+                        await ensureSyncCopy(
+                            {
+                                id: record.messageId,
+                                ciphertext:
+                                    record.ciphertext,
+                            },
+                            record.plaintext,
+                            record.conversationId,
+                        );
+                    } catch { /* best effort */ }
+                }
+            } catch { /* best effort */ }
+
+        };
 
         window.addEventListener(
             "nexara:sync-unlocked",
@@ -674,7 +712,8 @@ export default function useMessages(
 
     };
 
-    }, [imageUrls]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     //------------------------------------------------------
     // Real-time events: the user-scoped socket (ChatSocket
     // provider) delivers every conversation; filter to this
@@ -779,7 +818,7 @@ export default function useMessages(
 
                             catch (error) {
 
-                                console.error(
+                                logger.error(
                                     "Decrypt failed",
                                     error
                                 );
@@ -908,6 +947,10 @@ export default function useMessages(
                                                         message.envelopes ??
                                                         [],
 
+                                                    sync_envelope:
+                                                        event.sync_envelope ??
+                                                        message.sync_envelope,
+
                                                 }
 
                                                 : message
@@ -956,6 +999,9 @@ export default function useMessages(
                                             envelopes:
                                                 event.envelopes ?? [],
 
+                                            sync_envelope:
+                                                event.sync_envelope ?? null,
+
                                         });
 
                                     if (
@@ -998,7 +1044,7 @@ export default function useMessages(
 
                                 catch (error) {
 
-                                    console.error(
+                                    logger.error(
                                         "Edit decrypt failed",
                                         error
                                     );
@@ -1218,7 +1264,7 @@ try {
 
                                 catch (error) {
 
-                                    console.error(error);
+                                    logger.error(error);
 
                                 }
 
@@ -1426,7 +1472,7 @@ try {
         }
         catch (error) {
 
-            console.error(
+            logger.error(
                 "Search failed",
                 error
             );
@@ -1622,7 +1668,7 @@ try {
 
                             }
 
-                            console.error(
+                            logger.error(
                                 "Image download failed",
                                 error
                             );
@@ -1640,7 +1686,7 @@ try {
 
         catch (err) {
 
-            console.error(err);
+            logger.error(err);
 
             setError(err);
 
@@ -1883,7 +1929,7 @@ try {
                 }
                 catch (error) {
 
-                    console.error(
+                    logger.error(
                         "Failed to cache sent message:",
                         error
                     );
@@ -1910,7 +1956,7 @@ try {
                     envelopes: saved.envelopes ?? [],
                 });
 
-                if (error) setError(null);
+                setError(null);
 
                 return;
 
@@ -2090,7 +2136,7 @@ try {
             }
             catch (error) {
 
-                console.error(
+                logger.error(
                     "Failed to cache sent message:",
                     error
                 );
@@ -2194,11 +2240,11 @@ try {
 
             websocketService.sendMessage(relayPayload);
 
-            if (error) setError(null);
+            setError(null);
 
             // Replenish one-time prekeys in the background
             replenishPreKeys().catch(
-                error => console.error(
+                error => logger.error(
                     "One-time prekey replenishment failed:",
                     error
                 )
@@ -2245,7 +2291,7 @@ try {
                 }
                 catch (cleanupError) {
 
-                    console.error(
+                    logger.error(
                         "Failed to remove cancelled "
                         + "attachment message:",
                         cleanupError
@@ -2259,7 +2305,7 @@ try {
 
             }
 
-            console.error(
+            logger.error(
                 "Failed to send message",
                 error
             );
@@ -2279,7 +2325,7 @@ try {
                 }
                 catch (cleanupError) {
 
-                    console.error(
+                    logger.error(
                         "Failed to remove failed send message:",
                         cleanupError
                     );
@@ -2506,7 +2552,7 @@ try {
             }
             catch (error) {
 
-                console.error(
+                logger.error(
                     "Failed to cache edited message:",
                     error
                 );
@@ -2529,7 +2575,7 @@ try {
 
         catch (error) {
 
-            console.error(
+            logger.error(
                 "Failed to edit message",
                 error
             );
@@ -2595,7 +2641,7 @@ try {
         }
         catch (error) {
 
-            console.error(
+            logger.error(
                 "Failed to toggle reaction",
                 error
             );
@@ -2690,7 +2736,7 @@ try {
 
                 catch (error) {
 
-                    console.error(
+                    logger.error(
                         "Failed to cache forwarded message:",
                         error
                     );
@@ -2733,7 +2779,7 @@ try {
 
         catch (error) {
 
-            console.error(
+            logger.error(
                 "Failed to forward message",
                 error
             );
@@ -2822,7 +2868,7 @@ try {
 
         catch (error) {
 
-            console.error(
+            logger.error(
                 "Failed to delete message",
                 error
             );
@@ -2885,7 +2931,7 @@ try {
         }
         catch (error) {
 
-            console.error(
+            logger.error(
                 "Failed to toggle star",
                 error
             );
@@ -2947,7 +2993,7 @@ try {
         }
         catch (error) {
 
-            console.error(
+            logger.error(
                 "Failed to mark view-once media as opened",
                 error
             );
@@ -3008,7 +3054,7 @@ try {
         }
         catch (error) {
 
-            console.error(
+            logger.error(
                 "Failed to load starred messages",
                 error
             );

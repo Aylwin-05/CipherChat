@@ -33,6 +33,9 @@ python-multipart==0.0.22
 cryptography==45.0.7
 hkdf==0.0.3
 
+# Observability
+sentry-sdk[fastapi]==2.19.2
+
 # Tests
 pytest==9.1.1
 pytest-asyncio==1.4.0

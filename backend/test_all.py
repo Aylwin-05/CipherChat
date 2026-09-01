@@ -94,6 +94,11 @@ def api_client(monkeypatch):
     engine = create_async_engine('sqlite+aiosqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
     TestingSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(conn_mgr, 'AsyncSessionLocal', TestingSessionLocal)
+    monkeypatch.setattr(db_session_module, 'AsyncSessionLocal', TestingSessionLocal)
+    import app.main as main_module
+    import app.websocket.ws as ws_module
+    monkeypatch.setattr(main_module, 'AsyncSessionLocal', TestingSessionLocal)
+    monkeypatch.setattr(ws_module, 'AsyncSessionLocal', TestingSessionLocal)
 
     async def override_get_db():
         async with TestingSessionLocal() as session:
@@ -215,6 +220,32 @@ def test_send_encrypted_message_and_history(api_client):
     conversations = client.get('/api/v1/conversations/', headers=_auth(token_b)).json()
     conv_b = next((c for c in conversations if c['id'] == str(conversation_id)))
     assert conv_b['unread_count'] == 1
+def test_mark_all_read_clears_unread_count(api_client):
+    client = api_client
+    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_b, user_b) = _register(client, EMAIL_B)
+    conversation_id = _friend_and_conversation(client, token_a, user_b['id'], token_b)
+    _send_message(client, conversation_id, token_a)
+    _send_message(client, conversation_id, token_a)
+    conversations = client.get('/api/v1/conversations/', headers=_auth(token_b)).json()
+    conv_b = next((c for c in conversations if c['id'] == str(conversation_id)))
+    assert conv_b['unread_count'] == 2
+    resp = client.post(f'/api/v1/messages/read-all/{conversation_id}', headers=_auth(token_b))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()['success'] is True
+    history = client.get(f'/api/v1/messages/{conversation_id}', headers=_auth(token_b)).json()
+    assert all(message['is_read'] is True for message in history)
+    conversations = client.get('/api/v1/conversations/', headers=_auth(token_b)).json()
+    conv_b = next((c for c in conversations if c['id'] == str(conversation_id)))
+    assert conv_b['unread_count'] == 0
+def test_mark_all_read_requires_participant(api_client):
+    client = api_client
+    (token_a, _) = _register(client, EMAIL_A)
+    (token_b, user_b) = _register(client, EMAIL_B)
+    (token_c, _) = _register(client, EMAIL_C__att)
+    conversation_id = _friend_and_conversation(client, token_a, user_b['id'], token_b)
+    resp = client.post(f'/api/v1/messages/read-all/{conversation_id}', headers=_auth(token_c))
+    assert resp.status_code == 403, resp.text
 def test_non_participant_cannot_read_history(api_client):
     client = api_client
     (token_a, _) = _register(client, EMAIL_A)
@@ -470,6 +501,15 @@ def test_blocked_user_cannot_send_friend_request(api_client):
     _block(client, token_a, user_b['id'])
     resp = client.post('/api/v1/friends/request', json={'receiver_id': str(user_a['id'])}, headers=_auth(token_b))
     assert resp.status_code == 400
+def test_friend_request_unknown_user_not_500(api_client):
+    client = api_client
+    token = _register(client, EMAIL_A)[0]
+    resp = client.post(
+        '/api/v1/friends/request',
+        json={'receiver_id': '00000000-0000-4000-8000-000000000000'},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 400, resp.text
 def test_block_removes_friendship(api_client):
     client = api_client
     (token_a, user_a) = _register(client, EMAIL_A)
@@ -602,6 +642,35 @@ def test_call_config_includes_turn_when_configured(api_client, monkeypatch):
     assert turn, 'TURN server missing from ICE config'
     assert turn[0]['username'] == 'caller'
     assert turn[0]['credential'] == 'secret'
+def test_call_logs_require_auth(api_client):
+    resp = api_client.get('/api/v1/call/logs')
+    assert resp.status_code == 401
+def test_call_logs_include_peer_info(api_client):
+    email_a = 'call_a@example.com'
+    email_b = 'call_b@example.com'
+    token_a = _register__call(api_client)
+    api_client.post('/api/v1/auth/send-otp', json={'email': email_b})
+    otp_b = EmailRecorder.sent[-1]['otp']
+    resp_b = api_client.post('/api/v1/auth/verify-otp', json={'email': email_b, 'otp': otp_b})
+    assert resp_b.status_code == 200, resp_b.text
+    token_b = resp_b.json()['access_token']
+    bob_id = api_client.get('/api/v1/users/me', headers=_auth(token_b)).json()['id']
+    alice_id = api_client.get('/api/v1/users/me', headers=_auth(token_a)).json()['id']
+    created = api_client.post(
+        '/api/v1/call/log',
+        params={'receiver_id': str(bob_id)},
+        headers=_auth(token_a),
+    )
+    assert created.status_code == 200, created.text
+    logs = api_client.get('/api/v1/call/logs', params={'limit': 100}, headers=_auth(token_b)).json()
+    entry = next((c for c in logs['calls'] if c['caller_id'] == str(alice_id)), None)
+    assert entry is not None, f'expected an incoming call from alice in {logs}'
+    assert entry['peer_id'] == str(alice_id)
+    assert entry['peer_display_name'] and entry['peer_display_name'] != str(alice_id)
+    assert 'peer_avatar_url' in entry
+    my_logs = api_client.get('/api/v1/call/logs', params={'limit': 100}, headers=_auth(token_a)).json()
+    out = next((c for c in my_logs['calls'] if c['receiver_id'] == str(bob_id)), None)
+    assert out is not None and out['peer_id'] == str(bob_id)
 
 # ======================================================================
 # source: tests/test_conversation_delete.py
@@ -893,6 +962,7 @@ def client(monkeypatch):
             await session.commit()
     import asyncio
     asyncio.run(setup())
+    reset_limiter()
     app_instance.dependency_overrides[get_db] = override_get_db
     app_instance.dependency_overrides[get_current_user] = override_get_current_user
     with TestClient(app_instance) as test_client:
@@ -1226,9 +1296,9 @@ def test_group_message_requires_membership(api_client):
     _friend_each_with(client, token_a, [(token_b, user_b['id']), (token_c, user_c['id'])])
     group = _create_group(client, token_a, 'Exclusive', [user_b['id']])
     resp = client.post('/api/v1/messages/send', json={'conversation_id': str(group['id']), 'ciphertext': 'intruder', 'encrypted_key_sender': 'k1', 'encrypted_key_receiver': 'k2', 'nonce': 'n'}, headers=_auth(token_c))
-    assert resp.status_code == 400
+    assert resp.status_code == 403  # Non-member trying to send message is Forbidden
     resp = client.get(f"/api/v1/messages/{group['id']}", headers=_auth(token_c))
-    assert resp.status_code == 400
+    assert resp.status_code == 400  # Service layer returns 400 for non-participants on GET
 def test_admin_adds_member(api_client):
     client = api_client
     (token_a, user_a) = _register(client, EMAIL_A)
@@ -2107,7 +2177,7 @@ def api_client__reci(monkeypatch):
     monkeypatch.setattr(email_module.EmailService, 'send_otp_email', EmailRecorder__reci.send_otp_email)
     monkeypatch.setattr(email_module.EmailService, 'send_recovery_link_email', EmailRecorder__reci.send_recovery_link_email)
     EmailRecorder__reci.sent = []
-    recovery_token_store.clear()
+    asyncio.run(recovery_token_store.clear())
     reset_limiter()
     engine = create_async_engine('sqlite+aiosqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
     TestingSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
@@ -2203,6 +2273,37 @@ def test_recovery_request_mints_fresh_key_without_secret(api_client__reci):
     new_secret = unlock_sync_secret(data['code'].replace('-', ''), data['salt'], data['wrapped_key'])
     assert new_secret is not None
     assert new_secret != old_secret, 'fresh mint -> brand-new secret'
+def test_recovery_fresh_mint_blocked_when_history_orphaned(api_client__reci):
+    """A fresh key is refused (409) when the account has written sync
+    copies that a new key would orphan; force_new bypasses the guard."""
+    (token_a, user_a, device) = _create_account_with_secret(api_client__reci)
+    (token_b, user_b) = _register__reci(api_client__reci, "bob-recovery@example.com")
+    conversation = _friend_and_conversation__recs(api_client__reci, token_a, user_b["id"], token_b)
+    message = _send__recs(api_client__reci, token_a, conversation["id"])
+    resp = api_client__reci.put(
+        f"/api/v1/messages/{message['id']}/sync-envelope",
+        json={"sync_copy": {"nonce": "abc", "data": "def", "ciphertext": "encrypted-payload"}},
+        headers=_auth(token_a),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["sync_envelope"] is not None
+
+    blocked = api_client__reci.post(
+        "/api/v1/recovery/request",
+        json={},
+        headers=_auth(token_a),
+    )
+    assert blocked.status_code == 409, blocked.text
+    assert blocked.headers.get("x-orphaned-messages") == "1"
+
+    forced = api_client__reci.post(
+        "/api/v1/recovery/request",
+        json={"force_new": True},
+        headers=_auth(token_a),
+    )
+    assert forced.status_code == 200, forced.text
+    assert forced.json()["mode"] == "new_secret"
+
 def test_recovery_request_rejects_bad_secret(api_client__reci):
     (token, _, _) = _create_account_with_secret(api_client__reci)
     resp = api_client__reci.post('/api/v1/recovery/request', json={'secret_b64': 'bm90LWEtc2VjcmV0IQ=='}, headers=_auth(token))
@@ -2636,6 +2737,54 @@ def test_story_visible_to_friends_not_strangers(api_client):
     assert alices['stories'][0]['viewed'] is False
     feed = _feed(client, token_c)
     assert _group_by_owner(feed, user_a['id']) is None
+def test_story_reply_creates_private_conversation(api_client):
+    client = api_client
+    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_b, user_b) = _register(client, EMAIL_B)
+    _friend(client, token_a, user_b['id'], token_b)
+    story = _upload(client, token_a)
+    reply = client.post(
+        f"/api/v1/stories/{story['id']}/reply",
+        json={
+            "ciphertext": "ct",
+            "encrypted_key_sender": "ks",
+            "encrypted_key_receiver": "kr",
+            "nonce": "n",
+        },
+        headers=_auth(token_b),
+    )
+    assert reply.status_code == 200, reply.text
+    assert reply.json()["conversation_id"]
+    convs = client.get("/api/v1/conversations/", headers=_auth(token_b)).json()
+    ids = [c["id"] for c in convs]
+    assert reply.json()["conversation_id"] in ids
+def test_story_reply_denied_to_stranger(api_client):
+    client = api_client
+    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_c, user_c) = _register(client, EMAIL_C)
+    story = _upload(client, token_a)
+    reply = client.post(
+        f"/api/v1/stories/{story['id']}/reply",
+        json={
+            "ciphertext": "ct",
+            "encrypted_key_sender": "ks",
+            "encrypted_key_receiver": "kr",
+            "nonce": "n",
+        },
+        headers=_auth(token_c),
+    )
+    assert reply.status_code in (403, 404), reply.text
+def test_story_reaction_denied_to_stranger(api_client):
+    client = api_client
+    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_c, user_c) = _register(client, EMAIL_C)
+    story = _upload(client, token_a)
+    resp = client.post(
+        f"/api/v1/stories/{story['id']}/react",
+        json={"emoji": "🔥"},
+        headers=_auth(token_c),
+    )
+    assert resp.status_code in (403, 404), resp.text
 def test_story_media_access_control(api_client):
     client = api_client
     (token_a, user_a) = _register(client, EMAIL_A)
@@ -2985,12 +3134,16 @@ def api_client__ws(monkeypatch, tmp_path):
     monkeypatch.setattr(email_module.EmailService, 'send_otp_email', EmailRecorder__ws.send_otp_email)
     EmailRecorder__ws.sent = []
     reset_limiter()
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", connect_args={'check_same_thread': False})
+    engine = create_async_engine('sqlite+aiosqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
     TestingSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
-    monkeypatch.setattr(ws_module, 'AsyncSessionLocal', TestingSessionLocal)
     monkeypatch.setattr(conn_mgr, 'AsyncSessionLocal', TestingSessionLocal)
+    monkeypatch.setattr(db_session_module, 'AsyncSessionLocal', TestingSessionLocal)
     import app.services.push_service as push_module
     monkeypatch.setattr(push_module, 'AsyncSessionLocal', TestingSessionLocal)
+    import app.main as main_module
+    import app.websocket.ws as ws_module
+    monkeypatch.setattr(main_module, 'AsyncSessionLocal', TestingSessionLocal)
+    monkeypatch.setattr(ws_module, 'AsyncSessionLocal', TestingSessionLocal)
 
     async def override_get_db():
         async with TestingSessionLocal() as session:
@@ -3240,3 +3393,107 @@ def test_ws_me_presence_three_users(api_client__ws):
         ev = _drain_presence(ws_a, str(user_b['id']))
         assert ev['online'] is False
     print('PRESENCE-3-USER: OK')
+PURGE_EMAIL_A = 'purge_test_a@example.com'
+PURGE_EMAIL_B = 'purge_test_b@example.com'
+def test_disappearing_messages_purge_direct(api_client__ws):
+    """purge_expired() removes messages whose expires_at has
+    passed.  We set the timer, send a message, then fetch the
+    conversation to trigger the lazy purge inside
+    get_conversation_messages."""
+    client = api_client__ws
+    (token_a, user_a) = _register__ws(client, PURGE_EMAIL_A)
+    (token_b, user_b) = _register__ws(client, PURGE_EMAIL_B)
+
+    resp = client.post('/api/v1/conversations/private',
+                       json={'user_id': str(user_b['id'])},
+                       headers=_auth(token_a))
+    assert resp.status_code == 200
+    conv_id = resp.json()['id']
+
+    # Enable disappearing messages with 1-second timer
+    resp = client.patch(f'/api/v1/conversations/{conv_id}',
+                        json={'disappear_after_seconds': 1},
+                        headers=_auth(token_a))
+    assert resp.status_code == 200
+
+    # Send a message
+    resp = client.post('/api/v1/messages/send', json={
+        'conversation_id': conv_id,
+        'ciphertext': 'ephemeral-body',
+        'encrypted_key_sender': 'ek-s',
+        'encrypted_key_receiver': 'ek-r',
+        'nonce': 'nonce-x',
+        'message_type': 'text',
+    }, headers=_auth(token_a))
+    assert resp.status_code == 200
+    msg_id = resp.json()['id']
+
+    # Message should exist right away
+    resp = client.get(f'/api/v1/messages/{conv_id}',
+                      headers=_auth(token_a))
+    assert resp.status_code == 200
+    ids = [m['id'] for m in resp.json()]
+    assert msg_id in ids
+
+    # Wait for the timer to expire
+    time.sleep(2)
+
+    # Fetching should trigger the lazy purge
+    resp = client.get(f'/api/v1/messages/{conv_id}',
+                      headers=_auth(token_a))
+    assert resp.status_code == 200
+    ids_after = [m['id'] for m in resp.json()]
+    assert msg_id not in ids_after
+
+    print('DISAPPEARING-PURGE-DIRECT: OK')
+PURGE_EMAIL_C = 'purge_lazy_a@example.com'
+PURGE_EMAIL_D = 'purge_lazy_b@example.com'
+def test_disappearing_messages_lazy_purge_on_fetch(api_client__ws):
+    """purge_expired is called when fetching messages, so expired
+    messages are removed even without the background loop."""
+    client = api_client__ws
+    (token_a, user_a) = _register__ws(client, PURGE_EMAIL_C)
+    (token_b, user_b) = _register__ws(client, PURGE_EMAIL_D)
+
+    resp = client.post('/api/v1/conversations/private',
+                       json={'user_id': str(user_b['id'])},
+                       headers=_auth(token_a))
+    assert resp.status_code == 200
+    conv_id = resp.json()['id']
+
+    # Enable disappearing messages with 1-second timer
+    resp = client.patch(f'/api/v1/conversations/{conv_id}',
+                        json={'disappear_after_seconds': 1},
+                        headers=_auth(token_a))
+    assert resp.status_code == 200
+
+    # Send a message
+    resp = client.post('/api/v1/messages/send', json={
+        'conversation_id': conv_id,
+        'ciphertext': 'ephemeral-body',
+        'encrypted_key_sender': 'ek-s',
+        'encrypted_key_receiver': 'ek-r',
+        'nonce': 'nonce-x',
+        'message_type': 'text',
+    }, headers=_auth(token_a))
+    assert resp.status_code == 200
+    msg_id = resp.json()['id']
+
+    # Message should exist right away
+    resp = client.get(f'/api/v1/messages/{conv_id}',
+                      headers=_auth(token_a))
+    assert resp.status_code == 200
+    assert any(m['id'] == msg_id for m in resp.json())
+
+    # Wait for the timer to expire
+    time.sleep(2)
+
+    # Fetch conversation messages (triggers lazy purge)
+    resp = client.get(f'/api/v1/messages/{conv_id}',
+                      headers=_auth(token_a))
+    assert resp.status_code == 200
+
+    # The message should have been purged during the fetch
+    assert not any(m['id'] == msg_id for m in resp.json())
+
+    print('DISAPPEARING-LAZY-PURGE: OK')

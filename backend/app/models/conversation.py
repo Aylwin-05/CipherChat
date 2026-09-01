@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,10 +17,26 @@ class Conversation(Base):
 
     __tablename__ = "conversations"
 
+    __table_args__ = (
+        UniqueConstraint(
+            "conversation_key",
+            name="uq_conversation_key",
+        ),
+    )
+
     id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
+    )
+
+    # Deterministic key for exactly-two-participant (private)
+    # conversations: "min_user_id:max_user_id". NULL for groups.
+    # A unique index here prevents two users racing to create a
+    # private conversation from ever forming duplicate chats.
+    conversation_key: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
     )
 
     name: Mapped[str | None] = mapped_column(

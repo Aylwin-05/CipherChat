@@ -1,4 +1,4 @@
-import api from "../api/api";
+import api, { getConfiguredServer } from "../api/api";
 import { getPrivateKey } from "../crypto/keyStorage";
 import { base64ToArrayBuffer } from "../crypto/base64";
 import {
@@ -11,6 +11,8 @@ import {
     decryptFile,
     unwrapFileKey,
 } from "../utils/fileEncryption";
+import { logger } from "../utils/logger";
+
 import {
     encryptSyncBytes,
     decryptSyncBytes,
@@ -90,10 +92,9 @@ const attachmentService = {
 
     downloadUrl(id) {
 
-        const base =
-            import.meta.env.VITE_API_URL || "/api/v1";
+        const base = getConfiguredServer();
 
-        return `${base}/attachments/${id}`;
+        return `${base}/api/v1/attachments/${id}`;
 
     },
 
@@ -353,7 +354,7 @@ async getAttachment(
 
             failedCache.set(deviceId, failed);
 
-            console.debug(
+            logger.debug(
                 "[ATT-DECRYPT] attachment",
                 id,
                 "cannot be decrypted with the current device keys"
@@ -407,7 +408,7 @@ async getAttachment(
         }
         catch (error) {
 
-            console.debug(
+            logger.debug(
                 "[SYNC-BLOB] write failed",
                 id,
                 error

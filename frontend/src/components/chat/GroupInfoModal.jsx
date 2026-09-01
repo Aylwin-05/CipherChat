@@ -10,6 +10,7 @@ import UserAvatar from "../UserAvatar";
 
 import friendService from "../../services/friendService";
 import conversationService from "../../services/conversationService";
+import { getConfiguredServer } from "../../api/api";
 
 import "./GroupModal.css";
 import "./GroupInfoModal.css";
@@ -381,9 +382,10 @@ export default function GroupInfoModal({
 
     function inviteUrl(token) {
 
+        const configured = getConfiguredServer();
+
         const base =
-            window.location.origin
-            || "http://localhost:5173";
+            configured || window.location.origin;
 
         return `${base}/join/${token}`;
 

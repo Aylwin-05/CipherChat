@@ -1,6 +1,6 @@
 from .user import User
 from .user_key import UserKey
-from .device import Device, SignedPreKey, OneTimePreKey, DevicePlatform
+from .device import Device, SignedPreKey, OneTimePreKey, DevicePlatform, DeviceTrust, DeviceTrustLevel
 from .signal_session import SignalSession, SessionState
 from .conversation import Conversation
 from .conversation_participant import ConversationParticipant
@@ -13,6 +13,8 @@ from .friendship import Friendship
 from .otp import OTPCode
 from .refresh_token import RefreshToken
 from .story import Story, StoryView
+from .story_reaction import StoryReaction
+from .call_log import CallLog
 from .push_subscription import PushSubscription
 from .app_setting import AppSetting
 from .block import Block
@@ -26,6 +28,8 @@ __all__ = [
     "SignedPreKey",
     "OneTimePreKey",
     "DevicePlatform",
+    "DeviceTrust",
+    "DeviceTrustLevel",
     "SignalSession",
     "SessionState",
     "Conversation",
@@ -40,6 +44,8 @@ __all__ = [
     "RefreshToken",
     "Story",
     "StoryView",
+    "StoryReaction",
+    "CallLog",
     "PushSubscription",
     "AppSetting",
     "Block",

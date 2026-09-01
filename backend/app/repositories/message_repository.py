@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import selectinload
 from app.models.attachment import Attachment
 from app.models.message import Message
@@ -265,6 +265,27 @@ class MessageRepository(BaseRepository):
 
         await self.update()
 
+    async def mark_all_read(
+        self,
+        conversation_id: UUID,
+        user_id: UUID,
+    ):
+        now = datetime.now(timezone.utc)
+        await self.db.execute(
+            update(Message)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.sender_id != user_id,
+                Message.is_read.is_(False),
+            )
+            .values(
+                is_read=True,
+                delivered_at=func.coalesce(Message.delivered_at, now),
+                read_at=func.coalesce(Message.read_at, now),
+            )
+        )
+        await self.update()
+
     # ==========================================================
     # UNREAD COUNT
     # ==========================================================
@@ -279,7 +300,7 @@ class MessageRepository(BaseRepository):
         await self.purge_expired()
 
         result = await self.db.execute(
-            select(Message.id)
+            select(func.count(Message.id))
             .where(
                 Message.conversation_id == conversation_id,
                 Message.sender_id != user_id,
@@ -287,7 +308,7 @@ class MessageRepository(BaseRepository):
             )
         )
 
-        return len(result.all())
+        return int(result.scalar_one() or 0)
 
     # ==========================================================
     # DELETE

@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,6 +24,10 @@ class MessageRecipientKey(Base):
             "message_id",
             "user_id",
             name="uq_message_recipient_key",
+        ),
+        Index(
+            "ix_message_recipient_key_message_id",
+            "message_id",
         ),
     )
 

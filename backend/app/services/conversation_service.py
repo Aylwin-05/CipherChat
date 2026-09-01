@@ -59,10 +59,14 @@ class ConversationService:
         other_user_id: UUID,
     ) -> Conversation:
 
+        # Deterministic key unique per unordered user pair, so the
+        # DB unique index is the ultimate source of truth.
+        a, b = sorted((current_user.id, other_user_id))
+        conversation_key = f"{a}:{b}"
+
         conversation = (
-            await self.conversation_repository.get_private_conversation(
-                current_user.id,
-                other_user_id,
+            await self.conversation_repository.get_by_conversation_key(
+                conversation_key
             )
         )
 
@@ -71,7 +75,9 @@ class ConversationService:
 
         try:
 
-            conversation = Conversation()
+            conversation = Conversation(
+                conversation_key=conversation_key,
+            )
 
             conversation = (
                 await self.conversation_repository.create_conversation(
@@ -108,6 +114,18 @@ class ConversationService:
         except Exception:
 
             await self.conversation_repository.rollback()
+
+            # Two users racing to create the same private chat: one
+            # insert wins, the other hits the unique conversation_key
+            # constraint. Return the winner's conversation instead of
+            # failing or leaving an orphan.
+            winner = (
+                await self.conversation_repository
+                .get_by_conversation_key(conversation_key)
+            )
+
+            if winner is not None:
+                return winner
 
             raise
 
@@ -246,7 +264,8 @@ class ConversationService:
 
             last_message = (
                 await self.message_repository.get_last_message(
-                    conversation.id
+                    conversation.id,
+                    current_user.id,
                 )
             )
 
@@ -1320,9 +1339,14 @@ class ConversationService:
             await manager.broadcast(
                 conversation_id,
                 {
-                    "event": "delete_request",
+                    "event": "conversation_delete_request",
                     "conversation_id": str(conversation_id),
                     "requested_by": str(current_user.id),
+                    "requested_at": (
+                        conversation.delete_requested_at.isoformat()
+                        if conversation.delete_requested_at
+                        else None
+                    ),
                     "requested_by_name": (
                         current_user.display_name
                         or current_user.email
@@ -1394,6 +1418,16 @@ class ConversationService:
         await self.conversation_repository.save()
 
         await self.conversation_repository.commit()
+
+        # Tell the other participant the wipe was cancelled so
+        # their "X wants to delete this chat" banner clears.
+        await manager.broadcast(
+            conversation_id,
+            {
+                "event": "conversation_delete_cancelled",
+                "conversation_id": str(conversation_id),
+            },
+        )
 
         return {"status": "cancelled"}
 

@@ -1,4 +1,7 @@
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
+
+from sqlalchemy.exc import IntegrityError
 
 from app.models.device import (
     Device,
@@ -12,6 +15,10 @@ from app.services.recovery_service import create_recovery_key
 
 # Default number of one-time prekeys to keep available
 ONE_TIME_PREKEY_TARGET = 100
+
+# Signed prekeys expire after this many days; the client should
+# rotate before this deadline.
+SIGNED_PREKEY_TTL_DAYS = 30
 
 
 class DeviceService:
@@ -93,7 +100,26 @@ class DeviceService:
                 identity_key_public=identity_key_public,
                 identity_key_x25519=identity_key_x25519,
             )
-            await self.repository.create_device(device)
+
+            try:
+                await self.repository.create_device(device)
+                await self.repository.flush()
+                # Race-free primary assignment: if this is the first
+                # device, exactly one of any concurrent registrations
+                # wins the primary flag (guarded by the partial unique
+                # index on is_primary=true).
+                if is_first:
+                    await self.repository.claim_primary_for_new_device(device)
+            except IntegrityError:
+                # A concurrent registration inserted the same
+                # device_id (or claimed primary) first. Roll back
+                # and treat this as idempotent re-registration.
+                await self.repository.rollback()
+                reloaded = await self.repository.get_by_device_id(device_id)
+                if reloaded is not None and reloaded.user_id == user.id:
+                    device = reloaded
+                else:
+                    raise
 
             # First device on the account -> mint the recovery key
             # (unless one already exists). The plaintext code lives
@@ -116,12 +142,16 @@ class DeviceService:
             device.id, signed_prekey_id
         )
         if existing_spk is None:
+            expires = datetime.now(timezone.utc) + timedelta(
+                days=SIGNED_PREKEY_TTL_DAYS
+            )
             await self.repository.create_signed_prekey(
                 SignedPreKey(
                     device_id=device.id,
                     key_id=signed_prekey_id,
                     public_key=signed_prekey_public,
                     signature=signed_prekey_signature,
+                    expires_at=expires,
                 )
             )
 
@@ -176,6 +206,51 @@ class DeviceService:
         return stored
 
     # ==========================================================
+    # Signed PreKey Rotation
+    # ==========================================================
+
+    async def rotate_signed_prekey(
+        self,
+        device: Device,
+        *,
+        key_id: int,
+        public_key: str,
+        signature: str,
+    ) -> dict:
+        """Upload a fresh signed prekey and expire older ones.
+
+        The client generates a new X25519 keypair, signs the
+        public half with the device identity key, and uploads
+        it here. The server stores the new key, marks all
+        previous SPKs as expired, and garbage-collects old
+        expired entries that are no longer the latest.
+        """
+        expires = datetime.now(timezone.utc) + timedelta(
+            days=SIGNED_PREKEY_TTL_DAYS
+        )
+        new_spk = await self.repository.rotate_signed_prekey(
+            device.id,
+            key_id=key_id,
+            public_key=public_key,
+            signature=signature,
+            expires_at=expires,
+        )
+        purged = await self.repository.purge_superseded_signed_prekeys(
+            device.id
+        )
+        await self.repository.commit()
+
+        return {
+            "key_id": new_spk.key_id,
+            "public_key": new_spk.public_key,
+            "signature": new_spk.signature,
+            "expires_at": new_spk.expires_at.isoformat()
+            if new_spk.expires_at
+            else None,
+            "purged": purged,
+        }
+
+    # ==========================================================
     # Key Bundle serving (used by X3DH initiators)
     # ==========================================================
 
@@ -197,6 +272,11 @@ class DeviceService:
             if not spks:
                 continue
             spk = spks[0]
+
+            if spk.expires_at:
+                exp = spk.expires_at.replace(tzinfo=timezone.utc) if spk.expires_at.tzinfo is None else spk.expires_at
+                if exp < datetime.now(timezone.utc):
+                    continue
 
             # One-time prekeys are single-use: serving one consumes
             # it (atomic conditional UPDATE), so two handshakes can

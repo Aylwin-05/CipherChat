@@ -215,6 +215,74 @@
 }
 
 /* ============================================================
+   2c. Native shell always behaves as a phone
+   ------------------------------------------------------------
+   html.native is set by main.jsx when window.Capacitor reports
+   the Capacitor runtime. Inside the shell the desktop rail must
+   never appear and the bottom tab bar must always be available —
+   regardless of the CSS viewport width the WebView reports (older
+   Android System WebViews can report >720px and silently skip the
+   media queries above, resurrecting the desktop rail). These rules
+   win over the width breakpoints.
+   ============================================================ */
+
+html.native .rail {
+    display: none !important;
+}
+
+html.native .mobile-tab-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 55;
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    padding: 4px 10px
+        calc(6px + env(safe-area-inset-bottom));
+    background: var(--panel-bg);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.18);
+}
+
+html.native .app-shell.in-chat .mobile-tab-bar {
+    display: none;
+}
+
+/* Full-bleed single pane: the conversation list fills the stage
+   until a chat is opened (.in-chat), then the chat fills it —
+   never a skinny list beside a chat. */
+html.native .app-stage {
+    padding: 0;
+    gap: 0;
+}
+
+html.native .conv-panel,
+html.native .chat-panel {
+    width: 100%;
+    min-width: 0;
+    border: none;
+    border-radius: 0;
+}
+
+html.native .conv-panel {
+    display: flex;
+}
+
+html.native .chat-panel {
+    display: none;
+}
+
+html.native .app-shell.in-chat .conv-panel {
+    display: none;
+}
+
+html.native .app-shell.in-chat .chat-panel {
+    display: flex;
+}
+
+/* ============================================================
    3. WhatsApp-style conversation list screen
    ============================================================ */
 

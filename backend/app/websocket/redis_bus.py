@@ -20,9 +20,9 @@ single-worker behaviour (the bus simply stays inactive).
 import asyncio
 import json
 import logging
-import time
 
 from app.core.config import settings
+from app.core.redis import get_redis_client
 
 logger = logging.getLogger("app.websocket.redis_bus")
 
@@ -64,14 +64,12 @@ class RedisBus:
 
         self._started = True
 
-        import redis.asyncio as aioredis
-
         try:
-            self._client = aioredis.from_url(
-                settings.REDIS_URL,
-                encoding="utf-8",
-                decode_responses=True,
-            )
+            self._client = await get_redis_client()
+
+            if self._client is None:
+                self._client = None
+                return
 
             pubsub = self._client.pubsub()
             await pubsub.subscribe(CHANNEL)
@@ -118,12 +116,10 @@ class RedisBus:
 
         self._tasks.clear()
 
-        if self._client is not None:
-            try:
-                await self._client.aclose()
-            except Exception:
-                pass
-            self._client = None
+        # NOTE: we do NOT close the shared Redis client here —
+        # other components (rate limiting) may still be using it.
+        # The process-wide client is closed once at app shutdown.
+        self._client = None
 
     # ==========================================================
     # Background tasks
@@ -204,7 +200,7 @@ class RedisBus:
             payload = envelope.get("m")
 
             if user_id and isinstance(payload, dict):
-                manager.deliver_local(
+                await manager.deliver_local(
                     UUID_from(user_id),
                     payload,
                 )
@@ -235,7 +231,13 @@ class RedisBus:
         user_id,
         message: dict,
     ) -> None:
-        await self._client.publish(
+
+        client = await get_redis_client()
+
+        if client is None:
+            return
+
+        await client.publish(
             CHANNEL,
             json.dumps(
                 {
@@ -252,7 +254,13 @@ class RedisBus:
         user_ids,
         kinds,
     ) -> None:
-        await self._client.publish(
+
+        client = await get_redis_client()
+
+        if client is None:
+            return
+
+        await client.publish(
             CHANNEL,
             json.dumps(
                 {
@@ -277,14 +285,20 @@ class RedisBus:
         user_id,
         connected_at: float,
     ) -> None:
-        await self._client.set(
+        client = await get_redis_client()
+        if client is None:
+            return
+        await client.set(
             f"{ONLINE_PREFIX}{user_id}",
             repr(connected_at),
             ex=ONLINE_TTL_SECONDS,
         )
 
     async def mark_offline(self, user_id) -> None:
-        await self._client.delete(
+        client = await get_redis_client()
+        if client is None:
+            return
+        await client.delete(
             f"{ONLINE_PREFIX}{user_id}"
         )
 
@@ -292,7 +306,10 @@ class RedisBus:
         self,
         user_ids: list[str],
     ) -> None:
-        pipeline = self._client.pipeline()
+        client = await get_redis_client()
+        if client is None:
+            return
+        pipeline = client.pipeline()
 
         for user_id in user_ids:
             pipeline.expire(
@@ -303,21 +320,30 @@ class RedisBus:
         await pipeline.execute()
 
     async def is_online(self, user_id) -> bool:
-        return await self._client.exists(
+        client = await get_redis_client()
+        if client is None:
+            return False
+        return await client.exists(
             f"{ONLINE_PREFIX}{user_id}"
         ) > 0
 
     async def connected_at(self, user_id):
-        value = await self._client.get(
+        client = await get_redis_client()
+        if client is None:
+            return None
+        value = await client.get(
             f"{ONLINE_PREFIX}{user_id}"
         )
         return float(value) if value else None
 
     async def online_user_ids(self) -> set:
+        client = await get_redis_client()
+        if client is None:
+            return set()
         keys = [
             key
             async for key in (
-                self._client.scan_iter(
+                client.scan_iter(
                     match=f"{ONLINE_PREFIX}*"
                 )
             )
@@ -339,7 +365,10 @@ class RedisBus:
         payload: dict,
         ttl_seconds: int,
     ) -> None:
-        await self._client.set(
+        client = await get_redis_client()
+        if client is None:
+            return
+        await client.set(
             f"{CALL_PREFIX}{call_id}",
             json.dumps(
                 {
@@ -355,15 +384,22 @@ class RedisBus:
         self,
         call_id: str,
     ) -> None:
-        await self._client.delete(
+        client = await get_redis_client()
+        if client is None:
+            return
+        await client.delete(
             f"{CALL_PREFIX}{call_id}"
         )
 
     async def pending_calls(self) -> list[dict]:
+        client = await get_redis_client()
+        if client is None:
+            return []
+
         keys = [
             key
             async for key in (
-                self._client.scan_iter(
+                client.scan_iter(
                     match=f"{CALL_PREFIX}*"
                 )
             )
@@ -372,7 +408,7 @@ class RedisBus:
         entries = []
 
         for key in keys:
-            raw = await self._client.get(key)
+            raw = await client.get(key)
             if raw is None:
                 continue
             try:

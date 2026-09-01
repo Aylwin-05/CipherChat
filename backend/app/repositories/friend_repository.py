@@ -204,33 +204,3 @@ class FriendRepository(BaseRepository):
         friendship: Friendship,
     ):
         await self.delete(friendship)
-
-    # ==========================================================
-# Search Users by Email
-# ==========================================================
-
-async def search_users(
-    self,
-    current_user_id: UUID,
-    email: str,
-):
-
-    result = await self.execute(
-
-        select(User)
-
-        .where(
-
-            User.id != current_user_id,
-
-            User.email.ilike(f"%{email}%"),
-
-        )
-
-        .order_by(User.email)
-
-        .limit(20)
-
-    )
-
-    return result.scalars().all()
