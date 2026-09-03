@@ -1,30 +1,26 @@
 import { useState, useCallback } from "react";
-import api from "../../api/api";
 import "./MessageSearch.css";
 
-export default function MessageSearch({ conversationId, onSelect }) {
+export default function MessageSearch({ searchFn, onSelect }) {
     const [query, setQuery] = useState("");
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searched, setSearched] = useState(false);
 
     const handleSearch = useCallback(async () => {
-        if (!query.trim() || !conversationId) return;
+        if (!query.trim() || !searchFn) return;
 
         setLoading(true);
         setSearched(true);
         try {
-            const { data } = await api.get(
-                `/messages/search/${conversationId}`,
-                { params: { q: query.trim(), limit: 50 } }
-            );
-            setResults(data.results || []);
+            const matches = await searchFn(query.trim());
+            setResults(matches || []);
         } catch {
             setResults([]);
         } finally {
             setLoading(false);
         }
-    }, [query, conversationId]);
+    }, [query, searchFn]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -66,7 +62,7 @@ export default function MessageSearch({ conversationId, onSelect }) {
                                     onClick={() => onSelect?.(msg)}
                                 >
                                     <span className="message-search__snippet">
-                                        {msg.ciphertext?.slice(0, 120) || "…"}
+                                        {msg.content?.slice(0, 120) || "…"}
                                     </span>
                                     <span className="message-search__time">
                                         {msg.created_at

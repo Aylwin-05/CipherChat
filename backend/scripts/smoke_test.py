@@ -70,7 +70,7 @@ class LogReader:
     def __init__(self, process):
         self.process = process
         self.otps: dict[str, str] = {}
-        self._q: "queue.Queue[str]" = queue.Queue()
+        self._q: queue.Queue[str] = queue.Queue()
         threading.Thread(target=self._reader, daemon=True).start()
 
     def _reader(self):
@@ -441,7 +441,7 @@ async def register_user(client: httpx.AsyncClient, reader: LogReader, email: str
     # Grace period for the HTTP response; cancel if SMTP drags on.
     try:
         resp = await asyncio.wait_for(post_task, timeout=20)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         post_task.cancel()
         resp = None
 
@@ -611,7 +611,7 @@ async def main() -> int:
                 ok = presence.get("user_id") == str(user_b) and presence.get(
                     "online"
                 ) is True
-            except (TimeoutError, asyncio.TimeoutError):
+            except TimeoutError:
                 ok = False
                 presence = {}
             log("presence broadcast A <- B online", ok, str(presence))
@@ -735,7 +735,7 @@ async def main() -> int:
             await ws_a.close()
             await ws_b.close()
 
-    except Exception as exc:  # noqa: BLE001 - report and fail
+    except Exception as exc:
         failures.append(f"unexpected error: {type(exc).__name__}: {exc}")
 
     finally:

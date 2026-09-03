@@ -1,9 +1,9 @@
 from uuid import uuid4
 
+from app.database.base import Base
 from sqlalchemy import (
     DateTime,
     ForeignKey,
-    LargeBinary,
     String,
     func,
 )
@@ -13,8 +13,6 @@ from sqlalchemy.orm import (
     mapped_column,
     relationship,
 )
-
-from app.database.base import Base
 
 
 class UserKey(Base):

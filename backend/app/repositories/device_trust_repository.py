@@ -1,10 +1,9 @@
+from datetime import timezone
 from uuid import UUID
-
-from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.device import DeviceTrust, DeviceTrustLevel
 from app.repositories.base_repository import BaseRepository
+from sqlalchemy import select
 
 
 class DeviceTrustRepository(BaseRepository):
@@ -46,7 +45,7 @@ class DeviceTrustRepository(BaseRepository):
         level: str,
         fingerprint: str | None = None,
     ) -> DeviceTrust:
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         trust = await self.get_or_create_trust(
             owner_id, device_id

@@ -18,6 +18,7 @@ import conversationService from "../../services/conversationService";
 
 import appLock from "../../utils/appLock";
 import { useAndroidBack } from "../../utils/androidBack";
+import useScreenSecurity from "../../hooks/useScreenSecurity";
 
 import { useAuth } from "../../context/AuthContext";
 import {
@@ -62,6 +63,8 @@ function DashboardInner() {
         selectConversation,
         refreshConversations,
     } = useChatSocket();
+
+    const screenSecurity = useScreenSecurity();
 
     const [
         currentPage,
@@ -294,6 +297,9 @@ function DashboardInner() {
                 activeConversationId
                     ? "app-shell in-chat"
                     : "app-shell"
+            }
+            data-privacy-blurred={
+                screenSecurity.blurred ? "true" : "false"
             }
         >
 

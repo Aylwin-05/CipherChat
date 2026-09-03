@@ -1,10 +1,9 @@
 from uuid import UUID
 
-from fastapi import HTTPException
-
 from app.models.user import User
 from app.models.user_key import UserKey
 from app.repositories.user_key_repository import UserKeyRepository
+from fastapi import HTTPException
 
 
 class KeyService:

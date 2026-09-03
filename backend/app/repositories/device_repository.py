@@ -1,12 +1,11 @@
-from uuid import UUID
 from datetime import datetime, timezone
+from uuid import UUID
 
-from sqlalchemy import select, update, func as sqlfunc
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.device import Device, SignedPreKey, OneTimePreKey
+from app.models.device import Device, OneTimePreKey, SignedPreKey
 from app.models.signal_session import SignalSession
 from app.repositories.base_repository import BaseRepository
+from sqlalchemy import func as sqlfunc
+from sqlalchemy import select, update
 
 
 class DeviceRepository(BaseRepository):
@@ -326,7 +325,8 @@ class DeviceRepository(BaseRepository):
         in-flight handshakes can still complete. Older expired
         SPKs are hard-deleted.
         """
-        from sqlalchemy import delete, func as sqlfunc
+        from sqlalchemy import delete
+        from sqlalchemy import func as sqlfunc
 
         subq = (
             select(sqlfunc.max(SignedPreKey.key_id))
@@ -387,7 +387,7 @@ class DeviceRepository(BaseRepository):
         prekey_pk: UUID,
         consumed_by_device_pk: UUID | None = None,
     ):
-        from datetime import datetime, timezone
+        from datetime import datetime
         await self.db.execute(
             update(OneTimePreKey)
             .where(OneTimePreKey.id == prekey_pk)
@@ -415,7 +415,7 @@ class DeviceRepository(BaseRepository):
         one will succeed in consuming it; the other will skip it
         and receive rowcount=0.
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
         result = await self.db.execute(
             select(OneTimePreKey)
             .where(

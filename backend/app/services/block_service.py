@@ -1,7 +1,5 @@
 from uuid import UUID
 
-from fastapi import HTTPException
-
 from app.core.enums import FriendRequestStatus
 from app.models.user import User
 from app.models.user_privacy import PRIVACY_LEVELS
@@ -39,9 +37,8 @@ class BlockService:
         if current_user.id == target_id:
             raise ValueError("You cannot block yourself.")
 
-        from sqlalchemy import select
-
         from app.models.user import User
+        from sqlalchemy import select
 
         result = await self.block_repository.execute(
             select(User).where(User.id == target_id)

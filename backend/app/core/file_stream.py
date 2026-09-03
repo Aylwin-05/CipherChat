@@ -11,9 +11,8 @@ from __future__ import annotations
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from fastapi import HTTPException, UploadFile
-
 from app.core.magic_sniff import HEADER_SIZE, sniff_header
+from fastapi import HTTPException, UploadFile
 
 CHUNK = 64 * 1024
 

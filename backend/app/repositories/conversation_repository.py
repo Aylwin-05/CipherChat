@@ -1,8 +1,6 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, select
-
 from app.models.conversation import Conversation
 from app.models.conversation_participant import (
     ConversationParticipant,
@@ -10,6 +8,7 @@ from app.models.conversation_participant import (
 from app.models.group_invite_link import GroupInviteLink
 from app.models.user import User
 from app.repositories.base_repository import BaseRepository
+from sqlalchemy import and_, delete, func, select
 
 
 class ConversationRepository(BaseRepository):
@@ -328,8 +327,7 @@ class ConversationRepository(BaseRepository):
             .where(
                 GroupInviteLink.conversation_id
                 == conversation_id,
-                GroupInviteLink.revoked
-                == False,  # noqa: E712
+                GroupInviteLink.revoked == False,
             )
             .order_by(
                 GroupInviteLink.created_at.desc()
@@ -343,7 +341,7 @@ class ConversationRepository(BaseRepository):
             return None
 
         # DB drivers may return naive datetimes (e.g. SQLite);
-        # normalize to naive UTC so the comparison is valid.
+        # normalize to naive timezone.utc so the comparison is valid.
         expires_at = link.expires_at
 
         if expires_at is not None:
@@ -372,8 +370,7 @@ class ConversationRepository(BaseRepository):
         result = await self.execute(
             select(GroupInviteLink).where(
                 GroupInviteLink.token == token,
-                GroupInviteLink.revoked
-                == False,  # noqa: E712
+                GroupInviteLink.revoked == False,
             )
         )
 

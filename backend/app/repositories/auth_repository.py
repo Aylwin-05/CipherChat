@@ -1,12 +1,11 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
-
 from app.models.otp import OTPCode
 from app.models.user import User
 from app.models.user_key import UserKey
 from app.repositories.base_repository import BaseRepository
+from sqlalchemy import delete, select, update
 
 
 class AuthRepository(BaseRepository):
@@ -50,8 +49,8 @@ class AuthRepository(BaseRepository):
         user_id,
     ):
 
-        from sqlalchemy import select
         from app.models.user import User
+        from sqlalchemy import select
 
         result = await self.execute(
             select(User).where(

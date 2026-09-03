@@ -8,12 +8,22 @@ A privacy-first, end-to-end encrypted messaging platform.
 
 ## Features
 
-- Email OTP authentication with HttpOnly refresh-token rotation
-- End-to-end encryption: X3DH key agreement + double ratchet, AES-256-GCM keyed by the ratchet
-- Client-side encrypted image transfer and voice notes
-- Real-time messaging, typing indicators, presence, delivered/read receipts
-- Multi-device key bundles with one-time prekey replenishment
-- Rate-limited endpoints (Redis or in-memory), global JSON error handling, request-id tracing
+- Email OTP authentication with HttpOnly refresh-token rotation, refresh-token family (reuse detection), and optional two-step verification
+- End-to-end encryption: X3DH key agreement + double ratchet, AES-256-GCM keyed by the ratchet (client-side only)
+- Multi-device key bundles with one-time prekey replenishment and identity-key pinning / safety numbers
+- Real-time messaging, typing indicators, presence, delivered/read receipts over a user-scoped WebSocket
+- Group chats with admin roles, invite links, and per-participant key wrapping (no WhatsApp-style broadcast groups or communities — members are added by request)
+- Client-side encrypted images, files, voice notes, and encrypted avatars; client-side generated thumbnails so the server still only ever sees ciphertext
+- Media message features: view-once media, disappearing messages, replies, edits, delete-for-me / delete-for-everyone, forwarding, reactions, stars, media gallery, message search
+- Stories (24 h) with view receipts and privacy levels
+- E2EE voice/video calls (WebRTC + Insertable Streams frame encryption)
+- Live location sharing as a transient E2EE `location` message within a conversation
+- Screen-security privacy blur (opaque the app preview / switch-away without locking the ratchet)
+- Passkey (WebAuthn) login alongside the email OTP flow
+- Friends and contacts with block lists and fine-grained privacy toggles
+- App lock (peppered HMAC PIN with lockout) and Web Push notifications with redacted payloads
+- Prometheus-compatible metrics endpoint (`/metrics`) plus a structured `/health` probe; horizontally scalable multi-worker deployment (gunicorn + Redis fan-out)
+- Rate-limited endpoints (Redis or in-memory), global JSON error handling, request-id tracing, CSP/HSTS headers
 
 ## Architecture
 
@@ -60,16 +70,22 @@ arrives by email (Gmail app password recommended).
 ### Tests
 
 ```bash
-cd backend && python -m pytest test_all.py
-cd frontend && npm test
+cd backend && python -m pytest test_all.py    # 214 tests
+cd frontend && npm test                        # 34 tests
 ```
 
+> **Note on multiple workers:** for local development with `uvicorn --reload`, leave `REDIS_URL` unset. When you run multiple workers (see `gunicorn.conf.py`), provide `REDIS_URL` so the WebSocket fan-out (presence, events, live location) shares state across workers.
+
 ## Production (Docker)
+
+For the compact single-node stack:
 
 ```bash
 cp .env.example .env    # SECRET_KEY, SMTP_*, CORS_ORIGINS
 docker compose up --build
 ```
+
+For a multi-worker / horizontally scaled profile (gunicorn with several workers and a shared Redis bus) use `docker-compose.prod.yml` instead — see `backend/gunicorn.conf.py` and `backend/core/redis_config.py`.
 
 - nginx serves the SPA and proxies `/api`, `/uploads`, and `/ws` to the backend
 - postgres and redis run as managed services with health checks
@@ -83,7 +99,7 @@ docker compose up --build
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for planned features (group chats, message search, voice/video calls).
+See [ROADMAP.md](ROADMAP.md) for planned features (message search, hosted TURN, P2P session-key backup, more clients).
 
 ## License
 

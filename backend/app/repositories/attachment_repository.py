@@ -1,9 +1,8 @@
 from uuid import UUID
 
-from sqlalchemy import select
-
 from app.models.attachment import Attachment
 from app.repositories.base_repository import BaseRepository
+from sqlalchemy import select
 
 
 class AttachmentRepository(BaseRepository):

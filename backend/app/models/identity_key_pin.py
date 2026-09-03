@@ -1,17 +1,16 @@
-from uuid import uuid4
 from datetime import datetime
-
-from sqlalchemy import String, UUID, UniqueConstraint, ForeignKey, func
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import Mapped, mapped_column
+from uuid import uuid4
 
 from app.database.base import Base
+from sqlalchemy import UUID, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.orm import Mapped, mapped_column
 
 
 class IdentityKeyPin(Base):
     """
     Stores verified identity key fingerprints for safety number pinning.
-    
+
     When two users verify their safety numbers (identity key fingerprints),
     the fingerprint is stored so that future conversations can automatically
     confirm the match and warn if a key change is detected (potential MITM).

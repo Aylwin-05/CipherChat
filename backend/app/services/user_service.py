@@ -1,8 +1,7 @@
-from fastapi import HTTPException
-
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UpdateProfileRequest
+from fastapi import HTTPException
 
 
 class UserService:

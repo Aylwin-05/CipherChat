@@ -1,11 +1,6 @@
-from uuid import UUID
-
 import ipaddress
 from urllib.parse import urlparse
-
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
 
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
@@ -14,6 +9,9 @@ from app.models.push_subscription import PushSubscription
 from app.models.user import User
 from app.repositories.push_repository import PushRepository
 from app.services.push_service import push_service
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(
     prefix="/push",

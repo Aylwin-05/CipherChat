@@ -1,5 +1,6 @@
 import { getAccessToken, getConfiguredServer } from "../api/api";
 import { logger } from '../utils/logger.js';
+import { enqueueMessage } from '../utils/offlineCache.js';
 
 class WebSocketService {
 
@@ -375,6 +376,12 @@ class WebSocketService {
         if (this._pendingQueue.length > this._pendingQueueMax) {
             this._pendingQueue.shift();
         }
+        // Persist message sends to IndexedDB so they survive page
+        // refresh while offline. Only actual messages are persisted
+        // (typing/delivered/read signals are ephemeral).
+        if (message.event === "message") {
+            enqueueMessage(message).catch(() => {});
+        }
     }
 
     _flushPendingQueue() {
@@ -603,6 +610,43 @@ class WebSocketService {
         }
 
         this.socket.send(JSON.stringify(payload));
+
+    }
+
+    // ======================================================
+    // LIVE LOCATION UPDATE (transient, never stored server-side)
+    // ======================================================
+
+    sendLocationUpdate(
+        conversationId,
+        lat,
+        lng,
+    ) {
+
+        if (
+            !this.socket ||
+            this.socket.readyState !== WebSocket.OPEN
+        ) {
+            return;
+        }
+
+        this.socket.send(
+
+            JSON.stringify({
+
+                event: "location_update",
+
+                conversation_id: conversationId,
+
+                lat,
+
+                lng,
+
+                timestamp: Date.now(),
+
+            })
+
+        );
 
     }
 

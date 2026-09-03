@@ -1,11 +1,10 @@
 import uuid
 
-from sqlalchemy import ForeignKey, Index, String, Uuid
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
 from app.core.enums import FriendRequestStatus
 from app.database.base import Base
 from app.database.mixins import TimestampMixin
+from sqlalchemy import ForeignKey, Index, String, Uuid
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
 class Friendship(Base, TimestampMixin):

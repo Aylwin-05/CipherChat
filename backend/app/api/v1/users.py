@@ -1,7 +1,25 @@
+import mimetypes
 from pathlib import Path
 from uuid import UUID
-import mimetypes
 
+from app.core.file_config import (
+    AVATAR_DIR,
+    AVATAR_EXTENSIONS,
+    MAX_AVATAR_SIZE,
+)
+from app.core.file_stream import stream_to_disk
+from app.database.session import get_db
+from app.dependencies.auth import get_current_user
+from app.dependencies.rate_limit import rate_limit
+from app.models.user import User
+from app.repositories.user_repository import UserRepository
+from app.schemas.user import (
+    SearchUserResponse,
+    UpdateProfileRequest,
+    UsernameAvailabilityResponse,
+    UserResponse,
+)
+from app.services.user_service import UserService
 from fastapi import (
     APIRouter,
     Depends,
@@ -12,27 +30,6 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.file_config import (
-    AVATAR_DIR,
-    AVATAR_EXTENSIONS,
-    MAX_AVATAR_SIZE,
-)
-from app.core.file_stream import stream_to_disk
-from app.core.enums import FriendRequestStatus
-from app.database.session import get_db
-from app.dependencies.auth import get_current_user
-from app.dependencies.rate_limit import rate_limit
-from app.models.user import User
-from app.repositories.friend_repository import FriendRepository
-from app.repositories.user_repository import UserRepository
-from app.schemas.user import (
-    SearchUserResponse,
-    UpdateProfileRequest,
-    UserResponse,
-    UsernameAvailabilityResponse,
-)
-from app.services.user_service import UserService
 
 router = APIRouter(
     prefix="/users",

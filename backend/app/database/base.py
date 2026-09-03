@@ -7,4 +7,3 @@ class Base(DeclarativeBase):
     Every model (User, Chat, Message, etc.)
     will inherit from this class.
     """
-    pass

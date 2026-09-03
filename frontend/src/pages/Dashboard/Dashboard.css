@@ -16,6 +16,16 @@
         var(--bg-0);
 }
 
+/* Privacy blur: when the app loses focus (tab switch / window
+   minimize) and privacy blur is enabled, the last message must
+   not leak through the OS app-switcher snapshot. The stage is
+   hidden behind an opaque gradient placeholder. */
+
+.app-shell[data-privacy-blurred="true"] .app-stage,
+.app-shell[data-privacy-blurred="true"] .conv-panel {
+    visibility: hidden;
+}
+
 /* ---------- main stage (rest of the screen) ---------- */
 
 .app-stage {

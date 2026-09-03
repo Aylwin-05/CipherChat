@@ -1,7 +1,9 @@
-from uuid import UUID
-from datetime import datetime
 import json
+import logging
+import shutil
 from pathlib import Path
+from uuid import UUID
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -12,7 +14,6 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-import logging
 
 logger = logging.getLogger(__name__)
 from app.database.session import get_db
@@ -150,7 +151,7 @@ async def upload_attachment(
             view_once=view_once,
         )
 
-    except Exception as e:
+    except Exception:
         logger.exception("Attachment upload failed")
         raise
 
@@ -238,6 +239,91 @@ async def upload_attachment(
         "message": "Attachment uploaded successfully.",
         "attachment": attachment,
     }
+
+
+# ==========================================================
+# Upload Thumbnail (client-side generated, uploaded separately)
+#
+# Thumbnails are generated client-side before E2EE so the
+# server never sees plaintext. This endpoint stores the
+# small, low-quality JPEG alongside the encrypted file.
+# ==========================================================
+
+@router.post(
+    "/{attachment_id}/thumbnail",
+    dependencies=[rate_limit("attachments.thumbnail", 20, 60)],
+)
+async def upload_thumbnail(
+    attachment_id: UUID,
+    thumbnail: UploadFile = File(...),
+    width: int | None = Form(None),
+    height: int | None = Form(None),
+    duration: float | None = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    attachment_repository = AttachmentRepository(db)
+    message_repository = MessageRepository(db)
+    conversation_repository = ConversationRepository(db)
+
+    attachment = await attachment_repository.get_by_id(attachment_id)
+    if attachment is None:
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+
+    message = await message_repository.get_by_id(attachment.message_id)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Message not found.")
+
+    participants = await conversation_repository.get_participants(
+        message.conversation_id
+    )
+    if not any(p.user_id == current_user.id for p in participants):
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    thumb_dir = Path(attachment.storage_path).parent / "thumbnails"
+    thumb_dir.mkdir(parents=True, exist_ok=True)
+    thumb_filename = f"thumb_{attachment_id.hex}.jpg"
+    thumb_path = thumb_dir / thumb_filename
+
+    with thumb_path.open("wb") as buf:
+        shutil.copyfileobj(thumbnail.file, buf)
+
+    attachment.thumbnail_path = str(thumb_path)
+    if width is not None:
+        attachment.width = width
+    if height is not None:
+        attachment.height = height
+    if duration is not None:
+        attachment.duration = duration
+
+    await db.commit()
+
+    return {"success": True, "thumbnail_url": f"/api/v1/attachments/{attachment_id}/thumbnail"}
+
+
+# ==========================================================
+# Get Thumbnail
+# ==========================================================
+
+@router.get("/{attachment_id}/thumbnail")
+async def get_thumbnail(
+    attachment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    attachment_repository = AttachmentRepository(db)
+    attachment = await attachment_repository.get_by_id(attachment_id)
+    if attachment is None or not attachment.thumbnail_path:
+        raise HTTPException(status_code=404, detail="Thumbnail not found.")
+
+    thumb_path = Path(attachment.thumbnail_path)
+    if not thumb_path.exists():
+        raise HTTPException(status_code=404, detail="Thumbnail file not found.")
+
+    return FileResponse(
+        path=thumb_path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 # ==========================================================
@@ -517,7 +603,7 @@ async def delete_attachment(
     )
 
     if not deleted:
-    
+
         raise HTTPException(
             status_code=404,
             detail="Attachment not found.",

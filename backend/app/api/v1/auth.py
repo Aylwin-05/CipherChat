@@ -1,9 +1,8 @@
+import ipaddress
+import logging
 from uuid import UUID
 
-import ipaddress
-
-import logging
-
+from app.core.config import settings
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -14,7 +13,6 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 logger = logging.getLogger(__name__)
 from app.core.rate_limit import (
     RateLimitExceeded,
@@ -24,6 +22,7 @@ from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import rate_limit
 from app.dependencies.turnstile import verify_turnstile
+from app.models.user import User
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.refresh_token_repository import (
     RefreshTokenError,
@@ -43,7 +42,6 @@ from app.schemas.auth import (
 from app.services.auth_service import AuthService
 from app.services.jwt_service import JWTService
 from app.services.refresh_token_service import RefreshTokenService
-from app.models.user import User
 
 router = APIRouter(
     prefix="/auth",
@@ -637,22 +635,23 @@ async def logout(
 # Account Deletion (GDPR)
 # ==========================================================
 
-from sqlalchemy import or_, select, delete as sa_delete
-from app.models.user_key import UserKey
+from app.models.block import Block
+from app.models.call_log import CallLog
+from app.models.conversation_participant import ConversationParticipant
 from app.models.device import Device
-from app.models.signal_session import SignalSession
+from app.models.friendship import Friendship
 from app.models.message import Message
 from app.models.message_reaction import MessageReaction
 from app.models.message_star import MessageStar
-from app.models.conversation_participant import ConversationParticipant
-from app.models.friendship import Friendship
 from app.models.otp import OTPCode
+from app.models.push_subscription import PushSubscription
 from app.models.refresh_token import RefreshToken
+from app.models.signal_session import SignalSession
 from app.models.story import Story, StoryView
 from app.models.story_reaction import StoryReaction
-from app.models.call_log import CallLog
-from app.models.block import Block
-from app.models.push_subscription import PushSubscription
+from app.models.user_key import UserKey
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import or_, select
 
 
 @router.delete(

@@ -1,9 +1,8 @@
-from fastapi import Depends, HTTPException, Request
-
 from app.core.rate_limit import (
     RateLimitExceeded,
     get_limiter,
 )
+from fastapi import Depends, HTTPException, Request
 
 
 def rate_limit(

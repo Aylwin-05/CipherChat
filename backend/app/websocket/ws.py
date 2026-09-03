@@ -2,8 +2,6 @@ import asyncio
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-
 from app.core.rate_limit import RateLimitExceeded
 from app.database.session import AsyncSessionLocal
 from app.dependencies.websocket_auth import websocket_auth
@@ -11,6 +9,7 @@ from app.models.user import User
 from app.repositories.auth_repository import AuthRepository
 from app.websocket.connection_manager import manager
 from app.websocket.websocket_service import WebSocketService
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger("app.websocket.ws")
 

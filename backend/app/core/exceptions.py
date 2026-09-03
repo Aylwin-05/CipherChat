@@ -5,7 +5,6 @@ Services raise typed domain exceptions; the global FastAPI
 exception handler maps them to consistent JSON envelopes.
 """
 
-from uuid import UUID
 
 
 class NexaraException(Exception):

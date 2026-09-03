@@ -8,21 +8,19 @@ and performing key derivation steps.
 Per https://signal.org/docs/specifications/doubleratchet/
 """
 
-import json
 from dataclasses import dataclass, field
-from typing import Optional
 
 from app.crypto.signal.primitives import (
-    x25519_private_from_bytes,
-    x25519_public_from_bytes,
-    x25519_private_to_bytes,
-    x25519_public_to_bytes,
-    generate_x25519_keypair,
-    x25519_dh,
-    hkdf,
-    aes_gcm_encrypt,
-    aes_gcm_decrypt,
     HKDF_INFO_ROOT_CHAIN,
+    aes_gcm_decrypt,
+    aes_gcm_encrypt,
+    generate_x25519_keypair,
+    hkdf,
+    x25519_dh,
+    x25519_private_from_bytes,
+    x25519_private_to_bytes,
+    x25519_public_from_bytes,
+    x25519_public_to_bytes,
 )
 
 # ==========================================================
@@ -37,7 +35,6 @@ def kdf_root_chain_step(root_key: bytes, dh_output: bytes) -> tuple[bytes, bytes
     Uses HKDF-SHA256 with root_key as salt, output 64 bytes.
     First 32 bytes = new root key, next 32 bytes = chain key.
     """
-    from app.crypto.signal.primitives import hkdf
     okm = hkdf(
         salt=root_key,
         input_key_material=dh_output,
@@ -86,7 +83,7 @@ def derive_message_keys(message_key: bytes) -> tuple[bytes, bytes, bytes]:
     We use the full 80 bytes: first 32 AES key, next 32 auth key,
     last 16 as nonce seed (first 12 used).
     """
-    from app.crypto.signal.primitives import hkdf, HKDF_INFO_MESSAGE_KEYS
+    from app.crypto.signal.primitives import HKDF_INFO_MESSAGE_KEYS
 
     okm = hkdf(
         salt=b"",
@@ -155,9 +152,9 @@ class RatchetState:
 
     root_key: bytes
     our_dh_pair: DHKeyPair
-    their_dh_public: Optional[bytes] = None
-    sending_chain: Optional[Chain] = None
-    receiving_chain: Optional[Chain] = None
+    their_dh_public: bytes | None = None
+    sending_chain: Chain | None = None
+    receiving_chain: Chain | None = None
     skipped_message_keys: dict = field(default_factory=dict)
     associated_data: bytes = b""
     max_skip: int = 1000
@@ -248,7 +245,7 @@ class DoubleRatchetCore:
         root_key: bytes,
         associated_data: bytes,
         our_initial_dh_private=None,
-        their_dh_public: Optional[bytes] = None,
+        their_dh_public: bytes | None = None,
     ):
         """
         Initialize a Double Ratchet core.
@@ -260,7 +257,6 @@ class DoubleRatchetCore:
         their_dh_public: our peer's current DH public key
             (None until the first message arrives).
         """
-        from app.crypto.signal.primitives import x25519_private_from_bytes
 
         if our_initial_dh_private is None:
             self.our_dh_pair = DHKeyPair.new()
@@ -490,12 +486,11 @@ class DoubleRatchetCore:
             self.dh_ratchet(their_dh)
 
         # Skip message keys for gaps within THIS receiving chain
-        chain = self.receiving_chain
         self._skip_message_keys_dh(their_dh, n)
 
         mk = self._receiving_message_key(n)
 
-        enc_key, _, nonce = derive_message_key(mk)
+        enc_key, _, _nonce = derive_message_key(mk)
         ad_data = self.associated_data + their_dh
         nonce_bytes = payload[-12:]
         ciphertext = payload[:-12]
@@ -528,7 +523,6 @@ def derive_keys(message_key: bytes) -> tuple[bytes, bytes, bytes]:
     Derive (encryption_key, auth_key, nonce_seed) from message key.
     128-bit nonce: 96 bits for AES-GCM nonce, leaving 4 bytes unused.
     """
-    from app.crypto.signal.primitives import hkdf
 
     okm = hkdf(
         salt=b"",

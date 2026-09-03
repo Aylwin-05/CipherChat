@@ -88,5 +88,23 @@ services:
       backend:
         condition: service_started
 
+  postgres-backup:
+    image: postgres:16-alpine
+    profiles: ["backup"]
+    environment:
+      PGHOST: postgres
+      PGUSER: nexara
+      PGPASSWORD: nexara_dev
+      PGDATABASE: nexara
+    volumes:
+      - ./scripts:/scripts:ro
+      - pgbackups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "chmod +x /scripts/backup-db.sh && /scripts/backup-db.sh /backups"
+
 volumes:
   pgdata:
+  pgbackups:

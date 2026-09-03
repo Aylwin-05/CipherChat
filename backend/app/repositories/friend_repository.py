@@ -1,11 +1,11 @@
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
-from app.models.user import User
-from sqlalchemy.orm import selectinload
 from app.core.enums import FriendRequestStatus
 from app.models.friendship import Friendship
+from app.models.user import User
 from app.repositories.base_repository import BaseRepository
+from sqlalchemy import and_, or_, select
+from sqlalchemy.orm import selectinload
 
 
 class FriendRepository(BaseRepository):
@@ -166,7 +166,6 @@ class FriendRepository(BaseRepository):
         email: str,
     ):
 
-        from app.models.user import User
 
         result = await self.execute(
 

@@ -1,9 +1,5 @@
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
-
-from datetime import timedelta
-from datetime import datetime, timezone
-
-from fastapi import UploadFile
 
 from app.models.message import Message
 from app.models.user import User

@@ -49,6 +49,12 @@ import {
     encryptSyncText,
     decryptSyncText,
 } from "../crypto/syncCrypto";
+import {
+    generateImageThumbnail,
+    generateVideoThumbnail,
+    getVideoDimensions,
+    getImageDimensions,
+} from "../utils/thumbnail";
 
 // ==========================================================
 // Reaction list updater
@@ -1699,6 +1705,56 @@ try {
         }
 
     }
+
+    //------------------------------------------------------
+    // Generate + upload thumbnail + media metadata
+    //
+    // Called after an image/video attachment uploads. Runs
+    // client-side (the server only sees ciphertext) and is
+    // best-effort: a failure never blocks the message flow.
+    //------------------------------------------------------
+
+    async function uploadMediaMeta(originalFile, attachmentId, isViewOnce) {
+        try {
+            if (
+                originalFile.type.startsWith("image/") &&
+                !isViewOnce
+            ) {
+                const dims = await getImageDimensions(originalFile);
+                const thumb = await generateImageThumbnail(originalFile);
+                if (thumb && attachmentId) {
+                    await attachmentService.uploadThumbnail(
+                        attachmentId,
+                        thumb,
+                        {
+                            width: dims?.width ?? null,
+                            height: dims?.height ?? null,
+                        },
+                    );
+                }
+            } else if (
+                originalFile.type.startsWith("video/") &&
+                !isViewOnce
+            ) {
+                const dims = await getVideoDimensions(originalFile);
+                const thumb = await generateVideoThumbnail(originalFile);
+                if (thumb && attachmentId) {
+                    await attachmentService.uploadThumbnail(
+                        attachmentId,
+                        thumb,
+                        {
+                            width: dims?.width ?? null,
+                            height: dims?.height ?? null,
+                            duration: dims?.duration ?? null,
+                        },
+                    );
+                }
+            }
+        } catch (error) {
+            logger.debug("[THUMB] upload failed", error);
+        }
+    }
+
         //--------------------------------------------------
     // Send Encrypted Message
     //--------------------------------------------------
@@ -1892,6 +1948,12 @@ try {
                         );
 
                     onProgress?.(100);
+
+                    void uploadMediaMeta(
+                        file,
+                        uploaded.attachment.id,
+                        viewOnce,
+                    );
 
                 }
 
@@ -2095,6 +2157,12 @@ try {
                     );
 
                 onProgress?.(100);
+
+                void uploadMediaMeta(
+                    file,
+                    uploaded.attachment.id,
+                    viewOnce,
+                );
 
             }
 

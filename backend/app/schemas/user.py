@@ -1,9 +1,7 @@
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
-
 
 # ==========================================================
 # Public User
@@ -45,25 +43,25 @@ class UserResponse(BaseModel):
 
 class UpdateProfileRequest(BaseModel):
 
-    username: Optional[str] = Field(
+    username: str | None = Field(
         default=None,
         min_length=3,
         max_length=30,
         pattern=r"^[a-zA-Z0-9_.-]+$",
     )
 
-    display_name: Optional[str] = Field(
+    display_name: str | None = Field(
         default=None,
         min_length=2,
         max_length=50,
     )
 
-    bio: Optional[str] = Field(
+    bio: str | None = Field(
         default=None,
         max_length=250,
     )
 
-    avatar_url: Optional[str] = None
+    avatar_url: str | None = None
 
 
 # ==========================================================

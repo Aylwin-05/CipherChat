@@ -30,23 +30,21 @@ npm run dev          # http://localhost:5173, proxies /api and /ws to :8000
 
 ## Running Tests
 
-Both suites are single-file:
-
 ```bash
-cd backend  && python -m pytest test_all.py   # full API + crypto suite
-cd frontend && npm test                       # Signal-protocol suite (all.test.js)
+cd backend  && python -m pytest test_all.py   # full API + crypto suite (214 tests)
+cd frontend && npm test                       # Vitest (34 tests)
 ```
 
-The backend suite consolidates the former `tests/` package into
-`backend/test_all.py`; sections are labeled with their origin. The frontend
-suite wraps each former file as a scoped subtree in
-`frontend/all.test.js`.
+The backend suite is consolidated in `backend/test_all.py`; sections are labeled
+with their origin. The frontend ships unit tests in `frontend/src` (e.g.
+`signalService.test.js`, `appLock.test.js`, `avatar.test.js`, `theme.test.js`,
+`Sidebar.test.jsx`) plus the consolidated `frontend/all.test.js`.
 
 Please make sure both suites pass before opening a pull request, and add
 tests for any new behavior — especially anything touching the crypto layer.
 New backend tests go in `backend/test_all.py` (append a clearly-labeled
-section); new frontend tests go in `frontend/all.test.js` inside a
-`describe("suite: <topic>")` block.
+section); new frontend tests go in a co-located `*.test.js(x)` file under
+`frontend/src` alongside the code they cover.
 
 ## Architecture Notes
 

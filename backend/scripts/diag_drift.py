@@ -1,9 +1,8 @@
 import asyncio
 
-import asyncpg
-
-from app.database.base import Base
 import app.models  # noqa: F401  (registers all tables on Base.metadata)
+import asyncpg
+from app.database.base import Base
 
 
 async def main():

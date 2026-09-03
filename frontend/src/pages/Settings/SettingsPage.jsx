@@ -32,6 +32,7 @@ import blockService from "../../services/blockService";
 import authService from "../../services/authService";
 
 import appLock from "../../utils/appLock";
+import { screenSecurity } from "../../utils/screenSecurity";
 
 import api from "../../api/api";
 
@@ -176,6 +177,14 @@ export default function SettingsPage() {
     const [appLockConfirm, setAppLockConfirm] = useState("");
 
     const [appLockCurrent, setAppLockCurrent] = useState("");
+
+    // ==========================================================
+    // Screen security (privacy blur on lost focus)
+    // ==========================================================
+
+    const [privacyBlur, setPrivacyBlurState] = useState(
+        screenSecurity.isPrivacyBlurEnabled()
+    );
 
     useEffect(() => {
 
@@ -406,6 +415,16 @@ export default function SettingsPage() {
 
         }
 
+    }
+
+    // ==========================================================
+    // Screen security handlers
+    // ==========================================================
+
+    function togglePrivacyBlur() {
+        const next = !privacyBlur;
+        screenSecurity.setPrivacyBlurEnabled(next);
+        setPrivacyBlurState(next);
     }
 
     // ==========================================================
@@ -1982,6 +2001,58 @@ export default function SettingsPage() {
                         </div>
 
                     )}
+
+                </div>
+
+            </section>
+
+            {/* ------- screen security ------- */}
+
+            <section className="settings-card">
+
+                <div className="settings-card-head">
+
+                    <h3>Screen security</h3>
+
+                    <p>
+                        When privacy blur is on, chat content is
+                        hidden whenever Nexara loses focus (switching
+                        tabs or minimizing the window), so the app
+                        switcher never shows your last message.
+                    </p>
+
+                </div>
+
+                <div className="settings-actions">
+
+                    <div className="settings-row">
+
+                        <div className="settings-row-text">
+
+                            <strong>Privacy blur</strong>
+
+                            <span>
+                                Hide chat content when the app
+                                is not in view
+                            </span>
+
+                        </div>
+
+                        <label className="switch">
+
+                            <input
+                                type="checkbox"
+                                checked={privacyBlur}
+                                onChange={togglePrivacyBlur}
+                            />
+
+                            <span className="switch-track">
+                                <span className="switch-thumb" />
+                            </span>
+
+                        </label>
+
+                    </div>
 
                 </div>
 

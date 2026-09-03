@@ -1,6 +1,9 @@
 import uuid
 from datetime import datetime
 
+from app.core.enums import OnlineStatus
+from app.database.base import Base
+from app.database.mixins import TimestampMixin
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -9,16 +12,12 @@ from sqlalchemy import (
     Text,
     Uuid,
 )
-from sqlalchemy.types import JSON
 from sqlalchemy.orm import (
     Mapped,
     mapped_column,
     relationship,
 )
-
-from app.core.enums import OnlineStatus
-from app.database.base import Base
-from app.database.mixins import TimestampMixin
+from sqlalchemy.types import JSON
 
 
 class User(Base, TimestampMixin):

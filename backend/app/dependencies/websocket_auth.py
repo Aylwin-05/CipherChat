@@ -1,6 +1,5 @@
-from fastapi import WebSocket
-
 from app.services.jwt_service import JWTService
+from fastapi import WebSocket
 
 
 class WebSocketAuth:

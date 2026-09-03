@@ -1,8 +1,5 @@
 import logging
-
 from datetime import datetime, timedelta, timezone
-
-from fastapi import BackgroundTasks
 
 from app.core.config import settings
 from app.models.otp import OTPCode
@@ -10,6 +7,7 @@ from app.models.user import User
 from app.repositories.auth_repository import AuthRepository
 from app.services.email_service import EmailService
 from app.utils.security import SecurityUtils
+from fastapi import BackgroundTasks
 
 logger = logging.getLogger(__name__)
 

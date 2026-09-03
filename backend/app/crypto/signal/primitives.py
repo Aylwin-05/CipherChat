@@ -8,14 +8,12 @@ Encoding/decoding to base64 happens at the API boundary.
 
 import base64
 import os
-from typing import Tuple, Optional
 
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, hmac, serialization
-from cryptography.hazmat.primitives.asymmetric import x25519, ed25519
+from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.exceptions import InvalidSignature
-
 
 # ==========================================================
 # Constants
@@ -65,7 +63,7 @@ def ensure_bytes(data: str | bytes) -> bytes:
 # X25519 (DH) Operations
 # ==========================================================
 
-def generate_x25519_keypair() -> Tuple[x25519.X25519PrivateKey, x25519.X25519PublicKey]:
+def generate_x25519_keypair() -> tuple[x25519.X25519PrivateKey, x25519.X25519PublicKey]:
     """Generate a new X25519 key pair."""
     private_key = x25519.X25519PrivateKey.generate()
     public_key = private_key.public_key()
@@ -108,7 +106,7 @@ def x25519_dh(private_key: x25519.X25519PrivateKey, peer_public_key: x25519.X255
 # Ed25519 (Signature) Operations
 # ==========================================================
 
-def generate_ed25519_keypair() -> Tuple[ed25519.Ed25519PrivateKey, ed25519.Ed25519PublicKey]:
+def generate_ed25519_keypair() -> tuple[ed25519.Ed25519PrivateKey, ed25519.Ed25519PublicKey]:
     """Generate a new Ed25519 key pair."""
     private_key = ed25519.Ed25519PrivateKey.generate()
     public_key = private_key.public_key()
@@ -190,10 +188,10 @@ def hkdf(salt: bytes, input_key_material: bytes, info: bytes, length: int = 32) 
 
 # Signal-specific HKDF functions
 
-def kdf_root_chain(root_key: bytes, dh_output: bytes) -> Tuple[bytes, bytes]:
+def kdf_root_chain(root_key: bytes, dh_output: bytes) -> tuple[bytes, bytes]:
     """
     Signal Root Chain KDF.
-    
+
     Input: root_key (32 bytes), DH output (32 bytes)
     Output: (new_root_key, chain_key) each 32 bytes
     """
@@ -204,10 +202,10 @@ def kdf_root_chain(root_key: bytes, dh_output: bytes) -> Tuple[bytes, bytes]:
     return new_root_key, chain_key
 
 
-def kdf_chain_key(chain_key: bytes) -> Tuple[bytes, bytes]:
+def kdf_chain_key(chain_key: bytes) -> tuple[bytes, bytes]:
     """
     Signal Chain Key KDF.
-    
+
     Input: chain_key (32 bytes)
     Output: (next_chain_key, message_key) each 32 bytes
     """
@@ -215,12 +213,12 @@ def kdf_chain_key(chain_key: bytes) -> Tuple[bytes, bytes]:
     h = hmac.HMAC(chain_key, hashes.SHA256())
     h.update(b"\x01")
     next_chain_key = h.finalize()
-    
+
     # HMAC-SHA256 with chain_key as key, 0x02 as message for message key
     h = hmac.HMAC(chain_key, hashes.SHA256())
     h.update(b"\x02")
     message_key = h.finalize()
-    
+
     return next_chain_key, message_key
 
 
@@ -228,18 +226,18 @@ def kdf_chain_key(chain_key: bytes) -> Tuple[bytes, bytes]:
 # AES-256-GCM (AEAD)
 # ==========================================================
 
-def aes_gcm_encrypt(key: bytes, plaintext: bytes, associated_data: bytes, nonce: Optional[bytes] = None) -> Tuple[bytes, bytes]:
+def aes_gcm_encrypt(key: bytes, plaintext: bytes, associated_data: bytes, nonce: bytes | None = None) -> tuple[bytes, bytes]:
     """
     Encrypt with AES-256-GCM.
-    
+
     Returns: (ciphertext, nonce)
     """
     if nonce is None:
         nonce = os.urandom(AES_NONCE_SIZE)
-    
+
     aesgcm = AESGCM(key)
     ciphertext = aesgcm.encrypt(nonce, plaintext, associated_data)
-    
+
     return ciphertext, nonce
 
 
@@ -275,23 +273,23 @@ def x3dh_initiate(
     their_identity_public: ed25519.Ed25519PublicKey,
     their_signed_prekey_public: x25519.X25519PublicKey,
     their_signed_prekey_signature: bytes,
-    their_one_time_prekey_public: Optional[x25519.X25519PublicKey] = None,
-) -> Tuple[bytes, dict]:
+    their_one_time_prekey_public: x25519.X25519PublicKey | None = None,
+) -> tuple[bytes, dict]:
     """
     Perform X3DH key agreement as the initiator (Alice).
-    
+
     Returns: (shared_secret, associated_data_dict)
-    
+
     Associated data contains all public keys used for verification.
     """
     # Verify the signed prekey signature
     spk_bytes = x25519_public_to_bytes(their_signed_prekey_public)
     if not ed25519_verify(their_identity_public, their_signed_prekey_signature, spk_bytes):
         raise ValueError("Invalid signed prekey signature")
-    
+
     # DH1 = DH(our_ephemeral, their_signed_prekey)
-    dh1 = x25519_dh(our_ephemeral_private, their_signed_prekey_public)
-    
+    x25519_dh(our_ephemeral_private, their_signed_prekey_public)
+
     # DH2 = DH(our_identity, their_signed_prekey)
     # Note: Identity key is Ed25519, need to convert to X25519 for DH
     # In Signal, identity key is Ed25519 but used for X25519 DH via key conversion
@@ -302,17 +300,17 @@ def x3dh_initiate(
     # X25519 private = HKDF(Ed25519 private, info="X25519")
     # This is a simplification - in production use libsignal
     raise NotImplementedError("X3DH with Ed25519 identity keys requires key conversion. Use separate X25519 identity keys for DH.")
-    
+
     # The full X3DH:
     # DH1 = DH(EKa, SPKb)
     # DH2 = DH(IKa, SPKb)  # IKa is Ed25519, need conversion
     # DH3 = DH(EKa, IKb)   # IKb is Ed25519, need conversion
     # DH4 = DH(EKa, OPKb)  # if OPKb exists
     # SK = KDF(DH1 || DH2 || DH3 || DH4)
-    
+
     # For now, we'll use a simplified version with separate X25519 identity keys
     # This is handled in x3dh.py with proper key management
-    
+
     return b"", {}
 
 
@@ -324,11 +322,11 @@ def x3dh_receive(
     # Our keys
     our_identity_private: ed25519.Ed25519PrivateKey,
     our_signed_prekey_private: x25519.X25519PrivateKey,
-    our_one_time_prekey_private: Optional[x25519.X25519PrivateKey] = None,
-) -> Tuple[bytes, dict]:
+    our_one_time_prekey_private: x25519.X25519PrivateKey | None = None,
+) -> tuple[bytes, dict]:
     """
     Perform X3DH key agreement as the receiver (Bob).
-    
+
     Returns: (shared_secret, associated_data_dict)
     """
     raise NotImplementedError("See x3dh.py for full implementation with proper key types")
@@ -343,6 +341,6 @@ def constant_time_compare(a: bytes, b: bytes) -> bool:
     if len(a) != len(b):
         return False
     result = 0
-    for x, y in zip(a, b):
+    for x, y in zip(a, b, strict=False):
         result |= x ^ y
     return result == 0

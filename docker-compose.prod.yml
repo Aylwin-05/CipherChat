@@ -6,6 +6,8 @@ services:
 
   backend:
     restart: always
+    deploy:
+      replicas: 2
     environment:
       APP_ENV: "production"
       DEBUG: "false"
@@ -24,6 +26,54 @@ services:
       TURN_URLS: "${TURN_URLS:-turn:coturn:3478?transport=udp}"
       TURN_USERNAME: "nexara"
       TURN_PASSWORD: "${TURN_SECRET:?Set TURN_SECRET in production}"
+      WEB_CONCURRENCY: "${WEB_CONCURRENCY:-4}"
+      REDIS_URL: "${REDIS_URL:?Set REDIS_URL in production}"
 
   frontend:
     restart: always
+    volumes:
+      - ./frontend/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - certbot-www:/var/www/certbot:ro
+      - certbot-conf:/etc/letsencrypt:ro
+
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - certbot-www:/var/www/certbot
+      - certbot-conf:/etc/letsencrypt
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done;'"
+
+  postgres-backup:
+    image: postgres:16-alpine
+    environment:
+      PGHOST: postgres
+      PGUSER: "${POSTGRES_USER:-nexara}"
+      PGPASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in production}"
+      PGDATABASE: "${POSTGRES_DB:-nexara}"
+    volumes:
+      - pgbackups:/backups
+    entrypoint: >
+      sh -c '
+        apk add --no-cache bash findutils > /dev/null 2>&1;
+        echo "#!/bin/bash
+        TIMESTAMP=$$(date +%Y%m%d_%H%M%S)
+        pg_dump -Fc | gzip > /backups/nexara_$$TIMESTAMP.sql.gz
+        find /backups -name "nexara_*.sql.gz" -mtime +30 -delete 2>/dev/null
+        " > /backup.sh && chmod +x /backup.sh;
+        trap exit TERM;
+        while :; do
+          /backup.sh;
+          echo "[$$(date)] Backup completed";
+          sleep 24h & wait $${!};
+        done
+      '
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+
+volumes:
+  pgdata:
+  pgbackups:
+  certbot-www:
+  certbot-conf:

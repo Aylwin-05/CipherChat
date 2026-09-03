@@ -1,11 +1,10 @@
 from uuid import UUID
 
-from sqlalchemy import and_, delete, or_, select
-
 from app.models.block import Block
 from app.models.user import User
 from app.models.user_privacy import UserPrivacySetting
 from app.repositories.base_repository import BaseRepository
+from sqlalchemy import and_, delete, or_, select
 
 
 class BlockRepository(BaseRepository):

@@ -1,14 +1,6 @@
 import logging
 import uuid
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-)
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.config import settings
 from app.core.rate_limit import (
     RateLimitExceeded,
@@ -29,9 +21,16 @@ from app.services.email_service import EmailService
 from app.services.recovery_service import (
     TOKEN_TTL_SECONDS,
     create_recovery_key,
-    rewrap_existing_secret,
     recovery_token_store,
+    rewrap_existing_secret,
 )
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+)
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 

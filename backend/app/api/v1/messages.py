@@ -1,23 +1,16 @@
 from uuid import UUID
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-)
-from sqlalchemy import or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import rate_limit
-from app.models.user import User
 from app.models.message import Message
+from app.models.user import User
 from app.repositories.attachment_repository import AttachmentRepository
 from app.repositories.block_repository import BlockRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.message_repository import MessageRepository, _message_options
+from app.schemas.attachment import AttachmentResponse
 from app.schemas.message import (
     EditMessageRequest,
     MessageResponse,
@@ -30,7 +23,13 @@ from app.schemas.message import (
 from app.services.attachment_service import AttachmentService
 from app.services.message_service import MessageService
 from app.websocket.connection_manager import manager
-from app.schemas.attachment import AttachmentResponse
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+)
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(
     prefix="/messages",
@@ -842,7 +841,7 @@ async def search_messages(
     if not await conversation_repo.is_participant(conversation_id, current_user.id):
         raise HTTPException(status_code=403, detail="Not a participant.")
 
-    message_repo = MessageRepository(db)
+    MessageRepository(db)
 
     stmt = (
         select(Message)
@@ -851,7 +850,7 @@ async def search_messages(
         )
         .where(
             Message.conversation_id == conversation_id,
-            Message.deleted_for_everyone == False,
+            not Message.deleted_for_everyone,
             or_(
                 Message.ciphertext.ilike(f"%{q}%"),
                 Message.message_type.ilike(f"%{q}%"),
@@ -951,8 +950,8 @@ async def get_pinned_messages(
         )
         .where(
             Message.conversation_id == conversation_id,
-            Message.is_pinned == True,
-            Message.deleted_for_everyone == False,
+            Message.is_pinned,
+            not Message.deleted_for_everyone,
         )
         .order_by(Message.created_at.desc())
         .limit(50)

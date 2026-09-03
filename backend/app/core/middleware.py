@@ -1,13 +1,11 @@
-from starlette.responses import JSONResponse
-
 # ==========================================================
 # Security middleware
 # ==========================================================
-
 import time
 from collections import defaultdict
 
 from fastapi import Request
+from starlette.responses import JSONResponse
 
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -209,6 +207,12 @@ class MetricsMiddleware:
             _metrics["errors_total"] += 1
         if len(_metrics["latencies_ms"]) < _MAX_LATENCY_SAMPLES:
             _metrics["latencies_ms"].append(round(elapsed_ms, 2))
+
+        from app.metrics import inc_counter
+        inc_counter("http_requests_total")
+        inc_counter(f"http_requests_{status_code}")
+        if status_code >= 400:
+            inc_counter("http_errors_total")
 
 
 def get_metrics():

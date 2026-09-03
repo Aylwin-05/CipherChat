@@ -12,20 +12,16 @@ from app.core.rate_limit import (
 )
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
-
 from app.models.device import Device
 from app.models.user import User
-
 from app.repositories.device_repository import (
     DeviceRepository,
 )
-
 from app.schemas.device import (
     DeviceActionResponse,
     DeviceInfo,
     DeviceListResponse,
     DeviceTrustActionResponse,
-    DeviceTrustInfo,
     DeviceTrustListResponse,
     DeviceTrustSetRequest,
     DeviceUpdateRequest,
@@ -37,7 +33,6 @@ from app.schemas.device import (
     RotateSignedPreKeyResponse,
     UploadPreKeysRequest,
 )
-
 from app.services.device_service import (
     DeviceService,
 )

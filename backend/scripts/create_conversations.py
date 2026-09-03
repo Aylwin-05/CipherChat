@@ -38,13 +38,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import asyncpg
-import httpx
-from jose import jwt
 from datetime import datetime, timedelta, timezone
 
+import asyncpg
+import httpx
 from app.core.config import settings
-
+from jose import jwt
 
 # ==========================================================
 # User resolution + token minting (local DB access)
@@ -207,7 +206,7 @@ async def cmd_pairs(api, csv_refs):
 
 async def cmd_group(api, owner_ref, name, members_csv):
     refs = [x.strip() for x in members_csv.split(",") if x.strip()]
-    all_refs = [owner_ref] + refs
+    all_refs = [owner_ref, *refs]
     users = await resolve_users(api.client, all_refs)
     owner = users[owner_ref]
     members = [users[r]["id"] for r in refs]

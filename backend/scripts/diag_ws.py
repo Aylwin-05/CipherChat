@@ -3,10 +3,8 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import asyncpg
-import httpx
-from jose import jwt
-
 from app.core.config import settings
+from jose import jwt
 
 
 async def main():
@@ -45,7 +43,7 @@ async def main():
                 print("WS EVENT:", data.get("event"), "| keys:", list(data.keys()))
                 if data.get("event") == "connected":
                     print("WS CONNECTED OK")
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 break
 
         # simulate a ping
@@ -53,7 +51,7 @@ async def main():
         try:
             reply = json.loads(await asyncio.wait_for(ws.recv(), timeout=5))
             print("PING ->", reply.get("event"))
-        except asyncio.TimeoutError:
+        except TimeoutError:
             print("PING -> no reply")
 
 

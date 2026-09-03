@@ -1,8 +1,7 @@
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
 from app.crypto.utils import (
     random_bytes,
 )
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 class Encryption:

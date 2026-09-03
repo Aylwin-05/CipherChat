@@ -29,7 +29,6 @@ SIGNATURES: dict[str, list[bytes]] = {
     ".m4a": [b"ftyp"],
     ".ogg": [b"OggS"],
     ".opus": [b"OggS"],
-    ".m4a": [b"ftyp"],
     ".flac": [b"fLaC"],
     ".pdf": [b"%PDF-"],
     ".doc": [b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"],

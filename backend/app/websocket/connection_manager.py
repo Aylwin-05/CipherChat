@@ -5,10 +5,9 @@ import time
 from collections import defaultdict
 from uuid import UUID
 
-from fastapi import WebSocket
-
 from app.database.session import AsyncSessionLocal
 from app.websocket.redis_bus import bus as redis_bus
+from fastapi import WebSocket
 
 logger = logging.getLogger("app.websocket.connection_manager")
 
@@ -114,6 +113,15 @@ class ConnectionManager:
             websocket
         )
 
+        from app.metrics import set_gauge
+        set_gauge(
+            "active_ws_connections",
+            sum(
+                len(conns)
+                for conns in self.user_connections.values()
+            ),
+        )
+
         if redis_bus.active and first_socket:
             try:
                 await redis_bus.mark_online(
@@ -159,6 +167,15 @@ class ConnectionManager:
                 )
                 went_offline = True
 
+        from app.metrics import set_gauge
+        set_gauge(
+            "active_ws_connections",
+            sum(
+                len(conns)
+                for conns in self.user_connections.values()
+            ),
+        )
+
         if redis_bus.active and went_offline:
             # Only clear the shared registry when this node held
             # the user's last socket; another worker may still be
@@ -187,11 +204,10 @@ class ConnectionManager:
     ):
         # Runs on the CALLER's session (the websocket endpoint's
         # own session) so it never waits on a second connection.
-        from sqlalchemy import select
-
         from app.models.conversation_participant import (
             ConversationParticipant,
         )
+        from sqlalchemy import select
 
         member_ids = set()
 
@@ -251,11 +267,10 @@ class ConnectionManager:
         self,
         conversation_id: UUID,
     ):
-        from sqlalchemy import select
-
         from app.models.conversation_participant import (
             ConversationParticipant,
         )
+        from sqlalchemy import select
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(
@@ -273,11 +288,10 @@ class ConnectionManager:
         self,
         user_id: UUID,
     ):
-        from sqlalchemy import select
-
         from app.models.conversation_participant import (
             ConversationParticipant,
         )
+        from sqlalchemy import select
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(
@@ -485,7 +499,7 @@ class ConnectionManager:
         if not self.pending_calls:
             return
 
-        for call_id, pending in list(self.pending_calls.items()):
+        for _call_id, pending in list(self.pending_calls.items()):
 
             members = await self._member_ids(
                 UUID(pending["conversation_id"])
@@ -613,6 +627,21 @@ class ConnectionManager:
                 for member_id in member_ids
                 if member_id not in exclude_user_ids
             ]
+
+        for member_id in member_ids:
+            await self.send_to_user(
+                member_id,
+                message,
+            )
+
+    async def broadcast_transient(
+        self,
+        conversation_id: UUID,
+        message: dict,
+    ):
+        member_ids = await self._member_ids(
+            conversation_id
+        )
 
         for member_id in member_ids:
             await self.send_to_user(

@@ -66,6 +66,36 @@ function cacheKey(deviceId, attachmentId) {
 
 const attachmentService = {
 
+    // ==========================================================
+    // Upload a client-side generated thumbnail + media metadata
+    // ==========================================================
+
+    async uploadThumbnail(attachmentId, thumbFile, meta = {}) {
+        const formData = new FormData();
+        formData.append("thumbnail", thumbFile);
+        if (meta.width != null) formData.append("width", String(meta.width));
+        if (meta.height != null) formData.append("height", String(meta.height));
+        if (meta.duration != null) formData.append("duration", String(meta.duration));
+
+        const response = await api.post(
+            `/attachments/${attachmentId}/thumbnail`,
+            formData,
+            {
+                headers: { "Content-Type": "multipart/form-data" },
+            }
+        );
+        return response.data;
+    },
+
+    // ==========================================================
+    // Fetch thumbnail (unencrypted, small preview)
+    // ==========================================================
+
+    thumbnailUrl(id) {
+        const base = getConfiguredServer();
+        return `${base}/api/v1/attachments/${id}/thumbnail`;
+    },
+
     async upload(messageId, file) {
 
         const formData = new FormData();

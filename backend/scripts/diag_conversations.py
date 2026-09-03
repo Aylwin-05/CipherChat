@@ -1,11 +1,9 @@
 import asyncio
-import json
-
-import httpx
-from jose import jwt
 from datetime import datetime, timedelta, timezone
 
+import httpx
 from app.core.config import settings
+from jose import jwt
 
 
 def mint(user_id: str, email: str) -> str:

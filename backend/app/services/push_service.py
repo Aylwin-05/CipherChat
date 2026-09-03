@@ -6,16 +6,15 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 from uuid import UUID
 
-from http_ece import encrypt as ece_encrypt
 import httpx
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec
-from jose import jwt
-
 from app.core.config import settings
 from app.database.session import AsyncSessionLocal
 from app.models.push_subscription import PushSubscription
 from app.repositories.push_repository import PushRepository
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from http_ece import encrypt as ece_encrypt
+from jose import jwt
 
 logger = logging.getLogger("app.services.push")
 
@@ -280,11 +279,10 @@ class PushService:
 
             async with AsyncSessionLocal() as db:
 
-                from sqlalchemy import select
-
                 from app.models.conversation_participant import (
                     ConversationParticipant,
                 )
+                from sqlalchemy import select
 
                 now = datetime.now(timezone.utc)
 
@@ -356,10 +354,10 @@ class PushService:
 
         try:
             async with AsyncSessionLocal() as db:
-                from sqlalchemy import select
                 from app.models.conversation_participant import (
                     ConversationParticipant,
                 )
+                from sqlalchemy import select
 
                 now = datetime.now(timezone.utc)
                 result = await db.execute(

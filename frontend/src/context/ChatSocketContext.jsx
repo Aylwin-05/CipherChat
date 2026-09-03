@@ -502,6 +502,10 @@ export function ChatSocketProvider({ children }) {
 
                     }
 
+                    case "location_update":
+
+                        break;
+
                 }
 
                 emit(event);

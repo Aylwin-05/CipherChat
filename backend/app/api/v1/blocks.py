@@ -1,9 +1,5 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import rate_limit
@@ -12,6 +8,9 @@ from app.repositories.block_repository import BlockRepository
 from app.repositories.friend_repository import FriendRepository
 from app.services.block_service import BlockService
 from app.websocket.connection_manager import manager
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(
     prefix="/blocks",

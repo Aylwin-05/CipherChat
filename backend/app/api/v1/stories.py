@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import rate_limit
-from app.models.story import Story, StoryView
 from app.models.story_reaction import StoryReaction
 from app.models.user import User
 from app.repositories.friend_repository import FriendRepository
@@ -112,7 +111,7 @@ async def react_to_story(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        story = await _service(db).ensure_visible(
+        await _service(db).ensure_visible(
             current_user,
             story_id,
         )
@@ -209,10 +208,10 @@ async def reply_to_story(
     if story.user_id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot reply to your own story.")
 
+    from app.models.message import Message
     from app.repositories.conversation_repository import ConversationRepository
     from app.repositories.message_repository import MessageRepository
     from app.services.conversation_service import ConversationService
-    from app.models.message import Message
 
     conversation = await ConversationService(
         ConversationRepository(db),

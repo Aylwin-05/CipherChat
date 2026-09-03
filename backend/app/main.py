@@ -1,32 +1,32 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 
 import sentry_sdk
-from sentry_sdk.integrations.fastapi import FastApiIntegration
-from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
-from fastapi import Depends, FastAPI, Request, HTTPException
-from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.v1.api import api_router
 from app.core.config import settings
 from app.core.exceptions import NexaraException
 from app.core.logging import setup_logging
 from app.core.middleware import (
-    RequestIdMiddleware,
-    RequestBodySizeLimitMiddleware,
-    SecurityHeadersMiddleware,
     MetricsMiddleware,
+    RequestBodySizeLimitMiddleware,
+    RequestIdMiddleware,
+    SecurityHeadersMiddleware,
     get_metrics,
 )
-from app.database.session import get_db, AsyncSessionLocal
+from app.database.session import AsyncSessionLocal, get_db
 from app.websocket.redis_bus import bus
 from app.websocket.ws import router as websocket_router
+from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 setup_logging()
 
@@ -95,10 +95,7 @@ async def _disappearing_messages_loop():
                     {
                         "event": "message_purged",
                         "conversation_id": cid,
-                        "message_ids": [
-                            mid
-                            for mid in msg_ids
-                        ],
+                        "message_ids": list(msg_ids),
                     },
                 )
 
@@ -158,19 +155,34 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title=settings.APP_NAME,
-    description="Nexara Backend API",
+    title="Nexara API",
+    description=(
+        "End-to-end encrypted messaging platform built with the "
+        "Signal Protocol. Provides user authentication, real-time "
+        "messaging via WebSockets, encrypted media attachments, "
+        "stories, voice/video call ICE configuration, and "
+        "disappearing messages — all backed by PostgreSQL, Redis, "
+        "and a React + Vite frontend."
+    ),
     version="1.0.0",
     debug=settings.DEBUG,
     redirect_slashes=False,
     lifespan=lifespan,
     contact={
-        "name": "Nexara API",
+        "name": "Nexara Team",
         "email": settings.SMTP_FROM_EMAIL,
+        "url": "https://github.com/nexara",
     },
     license_info={
-        "name": "MIT",
+        "name": "MIT License",
+        "url": "https://opensource.org/licenses/MIT",
     },
+    servers=[
+        {
+            "url": "/",
+            "description": "Current deployment",
+        },
+    ],
 )
 
 # ==========================================================
@@ -384,25 +396,43 @@ async def root():
 async def health(
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Health check endpoint.
+    from app.metrics import _start_time
 
-    Returns 503 when the database is unavailable, so load
-    balancers and orchestrators can detect unhealthy nodes.
-    """
+    uptime = round(time.monotonic() - _start_time, 2)
 
     try:
         await db.execute(text("SELECT 1"))
         database_status = "connected"
+        db_ok = True
     except Exception as e:
-        logger.error("Health check failed: %s", e)
-        raise HTTPException(
-            status_code=503,
-            detail="Database unavailable",
-        )
+        logger.error("Health check DB probe failed: %s", e)
+        database_status = "unreachable"
+        db_ok = False
 
-    return {
-        "status": "healthy",
-        "database": database_status,
-        "environment": settings.APP_ENV,
-    }
+    redis_status = "connected"
+    redis_ok = True
+    try:
+        from app.core.redis import get_redis_client
+
+        client = await get_redis_client()
+        if client is None:
+            redis_status = "not_configured"
+        else:
+            await client.ping()
+    except Exception as e:
+        logger.warning("Health check Redis probe failed: %s", e)
+        redis_status = "unreachable"
+        redis_ok = False
+
+    healthy = db_ok and redis_ok
+
+    return JSONResponse(
+        status_code=200 if healthy else 503,
+        content={
+            "status": "healthy" if healthy else "degraded",
+            "uptime_seconds": uptime,
+            "database": database_status,
+            "redis": redis_status,
+            "environment": settings.APP_ENV,
+        },
+    )

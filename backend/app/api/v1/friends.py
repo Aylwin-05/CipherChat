@@ -70,7 +70,7 @@ async def send_friend_request(
 
     block_repository = BlockRepository(db)
 
-    if await block_repository.block_exists(
+    if await block_repository.is_blocked(
         current_user.id,
         request.receiver_id,
     ):
@@ -107,7 +107,6 @@ async def send_friend_request(
 @router.get(
     "/pending",
     response_model=list[FriendResponse],
-    dependencies=[rate_limit("friends.pending.ip", 30, 60)],
 )
 async def get_pending_requests(
     current_user: User = Depends(get_current_user),
@@ -126,7 +125,6 @@ async def get_pending_requests(
 @router.get(
     "/",
     response_model=list[FriendResponse],
-    dependencies=[rate_limit("friends.list.ip", 30, 60)],
 )
 async def get_friends(
     current_user: User = Depends(get_current_user),
@@ -214,7 +212,6 @@ async def reject_friend_request(
 @router.delete(
     "/{friendship_id}",
     response_model=FriendMessage,
-    dependencies=[rate_limit("friends.remove.ip", 10, 60)],
 )
 async def remove_friend(
     friendship_id: str,

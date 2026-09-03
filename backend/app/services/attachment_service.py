@@ -1,40 +1,37 @@
+import mimetypes
+import shutil
 from pathlib import Path
 from uuid import UUID, uuid4
 
-import mimetypes
-import shutil
-
-from fastapi import HTTPException, UploadFile
-
 from app.core.file_config import (
-    IMAGE_DIR,
-    VIDEO_DIR,
-    AUDIO_DIR,
-    VOICE_DIR,
-    DOCUMENT_DIR,
     ARCHIVE_DIR,
-    ENCRYPTED_DIR,
-    IMAGE_EXTENSIONS,
-    VIDEO_EXTENSIONS,
-    AUDIO_EXTENSIONS,
-    VOICE_EXTENSIONS,
-    DOCUMENT_EXTENSIONS,
     ARCHIVE_EXTENSIONS,
+    AUDIO_DIR,
+    AUDIO_EXTENSIONS,
+    DOCUMENT_DIR,
+    DOCUMENT_EXTENSIONS,
+    ENCRYPTED_DIR,
     ENCRYPTED_EXTENSIONS,
-    MAX_IMAGE_SIZE,
-    MAX_VIDEO_SIZE,
+    IMAGE_DIR,
+    IMAGE_EXTENSIONS,
+    MAX_ARCHIVE_SIZE,
     MAX_AUDIO_SIZE,
     MAX_DOCUMENT_SIZE,
-    MAX_ARCHIVE_SIZE,
     MAX_ENCRYPTED_SIZE,
+    MAX_IMAGE_SIZE,
+    MAX_VIDEO_SIZE,
+    VIDEO_DIR,
+    VIDEO_EXTENSIONS,
+    VOICE_DIR,
+    VOICE_EXTENSIONS,
 )
 from app.core.magic_sniff import (
     HEADER_SIZE,
     sniff_header,
 )
-
 from app.models.attachment import Attachment
 from app.repositories.attachment_repository import AttachmentRepository
+from fastapi import HTTPException, UploadFile
 
 
 class AttachmentService:

@@ -1,6 +1,8 @@
 import uuid
 from datetime import datetime
 
+from app.database.base import Base
+from app.database.mixins import TimestampMixin
 from sqlalchemy import (
     DateTime,
     ForeignKey,
@@ -9,9 +11,6 @@ from sqlalchemy import (
     Uuid,
 )
 from sqlalchemy.orm import Mapped, mapped_column
-
-from app.database.base import Base
-from app.database.mixins import TimestampMixin
 
 
 class RefreshToken(Base, TimestampMixin):

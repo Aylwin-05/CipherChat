@@ -1,8 +1,6 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, update
-from sqlalchemy.orm import selectinload
 from app.models.attachment import Attachment
 from app.models.message import Message
 from app.models.message_reaction import MessageReaction
@@ -10,6 +8,8 @@ from app.models.message_recipient_key import MessageRecipientKey
 from app.models.message_star import MessageStar
 from app.models.signal_session import SignalSession
 from app.repositories.base_repository import BaseRepository
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.orm import selectinload
 
 
 def _message_options():

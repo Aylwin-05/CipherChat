@@ -1,22 +1,27 @@
-from fastapi import APIRouter
-
-from app.api.v1.auth import router as auth_router
-from app.api.v1.conversations import (
-    router as conversations_router,
-)
-from app.api.v1.friends import router as friends_router
-from app.api.v1.keys import router as keys_router
-from app.api.v1.messages import router as messages_router
 from app.api.v1.attachments import (
     router as attachments_router,
 )
-from app.api.v1.users import router as users_router
-from app.api.v1.devices import router as devices_router
-from app.api.v1.recovery import router as recovery_router
-from app.api.v1.stories import router as stories_router
-from app.api.v1.push import router as push_router
+from app.api.v1.auth import router as auth_router
 from app.api.v1.blocks import router as blocks_router
 from app.api.v1.call import router as call_router
+from app.api.v1.conversations import (
+    router as conversations_router,
+)
+from app.api.v1.devices import router as devices_router
+from app.api.v1.friends import router as friends_router
+from app.api.v1.keys import router as keys_router
+from app.api.v1.messages import router as messages_router
+from app.api.v1.metrics import (
+    router as metrics_router,
+)
+from app.api.v1.push import router as push_router
+from app.api.v1.recovery import router as recovery_router
+from app.api.v1.stories import router as stories_router
+from app.api.v1.users import router as users_router
+from app.api.v1.webauthn import (
+    router as webauthn_router,
+)
+from fastapi import APIRouter
 
 api_router = APIRouter()
 
@@ -97,3 +102,15 @@ api_router.include_router(blocks_router)
 # ==========================================================
 
 api_router.include_router(call_router)
+
+# ==========================================================
+# Observability (Prometheus-compatible counters)
+# ==========================================================
+
+api_router.include_router(metrics_router)
+
+# ==========================================================
+# WebAuthn (Passkeys)
+# ==========================================================
+
+api_router.include_router(webauthn_router)

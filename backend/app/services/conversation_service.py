@@ -1,11 +1,9 @@
+import secrets
+from datetime import datetime, timezone
+from pathlib import Path
 from uuid import UUID
 
-from datetime import datetime, timezone
-
-from pathlib import Path
-
-import secrets
-
+from app.core.enums import FriendRequestStatus
 from app.models.conversation import Conversation
 from app.models.conversation_participant import (
     ConversationParticipant,
@@ -13,8 +11,6 @@ from app.models.conversation_participant import (
 from app.models.group_invite_link import GroupInviteLink
 from app.models.message import Message
 from app.models.user import User
-
-from app.core.enums import FriendRequestStatus
 from app.repositories.conversation_repository import (
     ConversationRepository,
 )
@@ -24,7 +20,6 @@ from app.repositories.friend_repository import (
 from app.repositories.message_repository import (
     MessageRepository,
 )
-
 from app.websocket.connection_manager import manager
 
 # Sentinel distinguishing "field not sent" from "field sent as null".
@@ -771,7 +766,7 @@ class ConversationService:
         conversation_id: UUID,
     ) -> dict:
 
-        conversation = await self._group_conversation(
+        await self._group_conversation(
             conversation_id
         )
 
@@ -1441,8 +1436,8 @@ class ConversationService:
         conversation_id: UUID,
         is_pinned: bool | None = None,
         is_archived: bool | None = None,
-        muted_until: datetime | None | object = _UNSET,
-        disappear_after_seconds: int | None | object = _UNSET,
+        muted_until: datetime | object | None = _UNSET,
+        disappear_after_seconds: int | object | None = _UNSET,
     ) -> dict:
 
         conversation = (

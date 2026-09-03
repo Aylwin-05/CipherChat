@@ -19,33 +19,30 @@ Associated data (AD) for AEAD:
 """
 
 from dataclasses import dataclass
-from typing import Optional
 
-from app.crypto.signal.primitives import (
-    b64encode,
-    b64decode,
-    ed25519_public_to_bytes,
-    ed25519_private_from_bytes,
-    ed25519_public_from_bytes,
-    x25519_public_to_bytes,
-    x25519_public_from_bytes,
-    x25519_private_from_bytes,
-    generate_x25519_keypair,
-)
-from app.crypto.signal.x3dh import (
-    x3dh_initiate,
-    x3dh_receive,
-    X3DHOutput,
-    derive_x25519_from_ed25519,
-)
 from app.crypto.signal.double_ratchet import DoubleRatchetCore, RatchetState
 from app.crypto.signal.message import (
-    SignalEnvelope,
     EnvelopeError,
-    parse_prekey_message,
+    SignalEnvelope,
     SignalProtocolError,
 )
-
+from app.crypto.signal.primitives import (
+    b64decode,
+    b64encode,
+    ed25519_private_from_bytes,
+    ed25519_public_from_bytes,
+    ed25519_public_to_bytes,
+    generate_x25519_keypair,
+    x25519_private_from_bytes,
+    x25519_public_from_bytes,
+    x25519_public_to_bytes,
+)
+from app.crypto.signal.x3dh import (
+    X3DHOutput,
+    derive_x25519_from_ed25519,
+    x3dh_initiate,
+    x3dh_receive,
+)
 
 # ==========================================================
 # Errors
@@ -75,7 +72,7 @@ class SessionStore:
         our_device_id: str,
         remote_device_id: str,
         conversation_id: str,
-    ) -> Optional[RatchetState]:
+    ) -> RatchetState | None:
         raise NotImplementedError
 
     async def save(
@@ -294,7 +291,7 @@ class SignalSessionManager:
         our_user_id: str,
         our_identity_private: bytes,              # raw Ed25519 private
         signed_prekey: dict,                      # {"key_id": int, "private_key": b64}
-        one_time_prekey: Optional[dict],          # same or None
+        one_time_prekey: dict | None,          # same or None
         conversation_id: str,
     ) -> SessionResult:
         """

@@ -104,7 +104,7 @@ class EmailService:
     def _render_otp_template(self, otp: str) -> str:
         template_path = self._template_path()
 
-        with open(template_path, "r", encoding="utf-8") as file:
+        with open(template_path, encoding="utf-8") as file:
             html = file.read()
 
         return html.replace("{{OTP}}", otp)

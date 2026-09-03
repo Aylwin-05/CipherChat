@@ -19,14 +19,21 @@
 - Rate limiting (Redis / in-memory), global JSON errors, request-id tracing, security headers
 - Docker stack (postgres + redis + backend + nginx), async SMTP with retry
 - Android client via Capacitor wrapping the same SPA
+- Client-side generated, E2E-encrypted media thumbnails
+- Live location sharing (transient E2EE `location` messages over WebSocket)
+- Screen security: privacy blur on app occlusion / tab switch
+- Passkey (WebAuthn) login alongside email OTP
+- Prometheus-compatible `/metrics` + structured `/health`; multi-worker gunicorn profile and `docker-compose.prod.yml` for horizontal scaling
+- Expanded test suites (214 backend, 34 frontend)
+- Deliberately excluded: broadcast lists and communities (kept product distinct from mainstream messaging apps)
 
 ## Next
 
-- Message search (server-side over ciphertext metadata with client-side filtering)
+- Message search (server-side over ciphertext metadata with client-side filtering) — partially scaffolded in the UI
 - iOS / desktop clients sharing the same session store
 - P2P backup of session keys with passphrase-derived encryption
 - TURN infrastructure for calls behind symmetric NATs (config exists, no hosted TURN yet)
-- Load-tested multi-worker deployment profile (uvicorn `--workers` + Redis bus)
+- Load-tested multi-worker deployment profile (gunicorn workers + Redis bus) — config present, not yet load-tested at scale
 
 ## Backlog
 

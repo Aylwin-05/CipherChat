@@ -5,18 +5,17 @@ Revises: 5aad8dd25c18
 Create Date: 2026-08-08 23:10:00.000000
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy import inspect
-
 
 # revision identifiers, used by Alembic.
 revision: str = 'c3d4f2a1b9e8'
-down_revision: Union[str, Sequence[str], None] = '5aad8dd25c18'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = '5aad8dd25c18'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def _has_table(name: str) -> bool:

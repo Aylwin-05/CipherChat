@@ -2,8 +2,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import HTTPException, UploadFile
-
 from app.core.enums import FriendRequestStatus
 from app.core.file_config import (
     MAX_STORY_SIZE,
@@ -17,6 +15,7 @@ from app.models.user import User
 from app.repositories.friend_repository import FriendRepository
 from app.repositories.story_repository import StoryRepository
 from app.websocket.connection_manager import manager
+from fastapi import HTTPException, UploadFile
 
 STORY_TTL_SECONDS = 24 * 60 * 60
 
@@ -272,9 +271,8 @@ class StoryService:
 
         if friend_stories:
 
-            from sqlalchemy import select
-
             from app.models.story import StoryView
+            from sqlalchemy import select
 
             result = await self.story_repository.execute(
                 select(StoryView.story_id).where(
@@ -658,9 +656,8 @@ class StoryService:
         if not user_ids:
             return []
 
-        from sqlalchemy import select
-
         from app.models.user import User
+        from sqlalchemy import select
 
         result = await self.story_repository.execute(
             select(User).where(User.id.in_(user_ids))

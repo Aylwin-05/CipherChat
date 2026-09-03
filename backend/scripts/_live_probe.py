@@ -11,11 +11,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import httpx
-
-from sqlalchemy import create_engine, text
-
 from app.core.config import settings
 from app.services.jwt_service import JWTService
+from sqlalchemy import create_engine, text
 
 BASE = "http://127.0.0.1:8000/api/v1"
 

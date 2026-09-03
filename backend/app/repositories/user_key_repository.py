@@ -1,9 +1,8 @@
 from uuid import UUID
 
-from sqlalchemy import select
-
 from app.models.user_key import UserKey
 from app.repositories.base_repository import BaseRepository
+from sqlalchemy import select
 
 
 class UserKeyRepository(BaseRepository):

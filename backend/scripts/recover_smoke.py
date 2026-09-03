@@ -15,16 +15,13 @@ Requires: uvicorn running on :8000, PostgreSQL up, .env loaded.
 """
 
 import asyncio
-import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import httpx
-
 from app.database.database import AsyncSessionLocal
 from app.models.otp import OTPCode
 from app.utils.security import SecurityUtils
-
 from tests.test_recovery_reissue import make_key_material
 
 BASE = "http://localhost:8000/api/v1"

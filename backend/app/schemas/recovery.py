@@ -21,11 +21,9 @@ class RecoveryRequest(BaseModel):
 
     force_new: bool = Field(
         default=False,
-        description=str(
-            "When true, mint a fresh account key even if existing "
+        description=("When true, mint a fresh account key even if existing "
             "sync copies would be orphaned. Only set after the user "
-            "explicitly accepts losing access to the old history."
-        ),
+            "explicitly accepts losing access to the old history."),
     )
 
 

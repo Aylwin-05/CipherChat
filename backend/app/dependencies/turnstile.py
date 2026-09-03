@@ -10,9 +10,8 @@ so developers aren't blocked by CAPTCHA during testing.
 import logging
 
 import httpx
-from fastapi import Depends, HTTPException, Request
-
 from app.core.config import settings
+from fastapi import HTTPException, Request
 
 logger = logging.getLogger("app.dependencies.turnstile")
 

@@ -1,9 +1,8 @@
 from uuid import UUID
 
-from sqlalchemy import or_, select
-
 from app.models.user import User
 from app.repositories.base_repository import BaseRepository
+from sqlalchemy import select
 
 
 class UserRepository(BaseRepository):

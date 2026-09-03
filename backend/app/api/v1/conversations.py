@@ -1,9 +1,7 @@
-import logging
 import mimetypes
+import traceback
 from pathlib import Path
 from uuid import UUID
-
-logger = logging.getLogger("app.api.conversations")
 
 from fastapi import (
     APIRouter,
@@ -13,14 +11,16 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import FileResponse
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.file_config import (
     AVATAR_DIR,
     AVATAR_EXTENSIONS,
     MAX_AVATAR_SIZE,
 )
-from app.core.file_stream import stream_to_disk
+from app.core.magic_sniff import (
+    HEADER_SIZE,
+    sniff_header,
+)
 from app.database.session import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import rate_limit
@@ -137,17 +137,14 @@ async def create_private_conversation(
         }
 
     except Exception:
-        logger.exception("Failed to create private conversation")
+        traceback.print_exc()
         raise
 
 # ==========================================================
 # Update Settings (pin / archive / mute)
 # ==========================================================
 
-@router.patch(
-    "/{conversation_id}",
-    dependencies=[rate_limit("conversations.settings", 30, 60)],
-)
+@router.patch("/{conversation_id}")
 async def update_conversation_settings(
     conversation_id: str,
     request: UpdateConversationSettingsRequest,
@@ -205,153 +202,14 @@ async def update_conversation_settings(
     except ValueError as error:
         raise HTTPException(
             status_code=400,
-            detail=str(error),
+            detail="Invalid conversation id.",
         ) from error
-
-
-# ==========================================================
-# Chat Export (JSON)
-# ==========================================================
-
-import json
-from fastapi.responses import StreamingResponse
-from app.models.message import Message
-
-
-@router.get("/{conversation_id}/export")
-async def export_conversation(
-    conversation_id: UUID,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    conversation_repo = ConversationRepository(db)
-    if not await conversation_repo.is_participant(conversation_id, current_user.id):
-        raise HTTPException(status_code=403, detail="Not a participant.")
-
-    from app.repositories.message_repository import MessageRepository
-    message_repo = MessageRepository(db)
-
-    stmt = (
-        select(Message)
-        .where(
-            Message.conversation_id == conversation_id,
-            Message.deleted_for_everyone == False,
-        )
-        .order_by(Message.created_at.asc())
-    )
-
-    result = await db.execute(stmt)
-    messages = result.scalars().all()
-
-    def generate():
-        export_data = []
-        for m in messages:
-            export_data.append({
-                "id": str(m.id),
-                "sender_id": str(m.sender_id),
-                "message_type": m.message_type,
-                "ciphertext": m.ciphertext,
-                "created_at": m.created_at.isoformat() if m.created_at else None,
-                "is_forwarded": m.is_forwarded,
-                "forwarded_count": m.forwarded_count,
-            })
-
-        yield json.dumps(export_data, indent=2)
-
-    return StreamingResponse(
-        generate(),
-        media_type="application/json",
-        headers={
-            "Content-Disposition": f'attachment; filename="chat_{conversation_id}.json"',
-        },
-    )
-
-
-# ==========================================================
-# Media Gallery (all attachments in a conversation)
-# ==========================================================
-
-@router.get("/{conversation_id}/media")
-async def get_media_gallery(
-    conversation_id: UUID,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    conversation_repo = ConversationRepository(db)
-    if not await conversation_repo.is_participant(conversation_id, current_user.id):
-        raise HTTPException(status_code=403, detail="Not a participant.")
-
-    from app.models.attachment import Attachment
-
-    stmt = (
-        select(Attachment)
-        .join(Message, Attachment.message_id == Message.id)
-        .where(
-            Message.conversation_id == conversation_id,
-            Message.deleted_for_everyone == False,
-        )
-        .order_by(Message.created_at.desc())
-        .limit(200)
-    )
-
-    result = await db.execute(stmt)
-    attachments = result.scalars().all()
-
-    return {
-        "media": [
-            {
-                "id": str(a.id),
-                "message_id": str(a.message_id),
-                "filename": a.filename,
-                "mime_type": a.mime_type,
-                "size": a.size,
-                "thumbnail_path": getattr(a, "thumbnail_path", None),
-                "created_at": a.created_at.isoformat() if hasattr(a, "created_at") and a.created_at else None,
-            }
-            for a in attachments
-        ],
-        "count": len(attachments),
-    }
-
-
-# ==========================================================
-# Chat Wallpaper
-# ==========================================================
-
-from pydantic import BaseModel
-
-
-class WallpaperRequest(BaseModel):
-    wallpaper: str | None = None
-
-
-@router.patch("/{conversation_id}/wallpaper")
-async def set_chat_wallpaper(
-    conversation_id: UUID,
-    req: WallpaperRequest,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    conversation_repo = ConversationRepository(db)
-    participant = await conversation_repo.get_participant(
-        conversation_id, current_user.id
-    )
-    if not participant:
-        raise HTTPException(status_code=403, detail="Not a participant.")
-
-    participant.wallpaper = req.wallpaper
-    await db.commit()
-
-    return {"success": True, "wallpaper": req.wallpaper}
 
 # ==========================================================
 # My Conversations
 # ==========================================================
 
-@router.get(
-    "/",
-    dependencies=[rate_limit("conversations.list", 30, 60)],
-)
+@router.get("/")
 async def my_conversations(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -901,17 +759,33 @@ async def upload_group_avatar(
             detail="Unsupported image type.",
         )
 
+    content = await file.read()
+
+    if len(content) > MAX_AVATAR_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="Avatar image is too large (max 5 MB).",
+        )
+
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="Empty file.",
+        )
+
+    # The extension is only a claim: the bytes must match.
+    if not sniff_header(extension, content[:HEADER_SIZE]):
+        raise HTTPException(
+            status_code=400,
+            detail="File content does not match its declared type.",
+        )
+
     for old_file in AVATAR_DIR.glob(f"{conversation_id}.*"):
         old_file.unlink(missing_ok=True)
 
     destination = AVATAR_DIR / f"{conversation_id}{extension}"
 
-    await stream_to_disk(
-        file,
-        destination,
-        MAX_AVATAR_SIZE,
-        extension=extension,
-    )
+    destination.write_bytes(content)
 
     conversation.avatar_url = (
         f"/api/v1/conversations/{conversation_id}/avatar"

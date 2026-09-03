@@ -1,10 +1,9 @@
 from uuid import UUID
 
-from sqlalchemy import delete, select
-
 from app.models.app_setting import AppSetting
 from app.models.push_subscription import PushSubscription
 from app.repositories.base_repository import BaseRepository
+from sqlalchemy import delete, select
 
 
 class PushRepository(BaseRepository):

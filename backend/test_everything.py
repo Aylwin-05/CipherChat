@@ -27,18 +27,10 @@ import asyncio
 import io
 import uuid
 
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
-from sqlalchemy.pool import StaticPool
-
 import app.database.session as db_session_module
 import app.services.email_service as email_module
 import app.websocket.connection_manager as conn_mgr
+import pytest
 from app.core.rate_limit import reset_limiter
 from app.crypto.signal.primitives import (
     aes_gcm_decrypt,
@@ -54,6 +46,13 @@ from app.crypto.signal.x3dh import derive_x25519_from_ed25519
 from app.database.base import Base
 from app.database.session import get_db
 from app.main import app as app_instance
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import StaticPool
 
 
 class EmailRecorder:
@@ -317,7 +316,7 @@ def test_recovery_code_minted_on_first_device(client):
 
 def test_friend_request_accept_and_list(client):
     c = client
-    token_a, user_a = _register(c, "fa@example.com")
+    token_a, _user_a = _register(c, "fa@example.com")
     token_b, user_b = _register(c, "fb@example.com")
     _friend(c, token_a, user_b["id"], token_b)
 
@@ -342,7 +341,7 @@ def test_friend_request_to_unknown_is_not_500(client):
 
 def test_private_conversation_lifecycle(client):
     c = client
-    token_a, user_a = _register(c, "pa@example.com")
+    token_a, _user_a = _register(c, "pa@example.com")
     token_b, user_b = _register(c, "pb@example.com")
     _friend(c, token_a, user_b["id"], token_b)
 
@@ -355,7 +354,7 @@ def test_private_conversation_lifecycle(client):
 
 def test_group_create_leave_and_invite(client):
     c = client
-    token_a, user_a = _register(c, "ga@example.com")
+    token_a, _user_a = _register(c, "ga@example.com")
     token_b, user_b = _register(c, "gb@example.com")
     token_c, user_c = _register(c, "gc@example.com")
     _friend(c, token_a, user_b["id"], token_b)
@@ -399,7 +398,8 @@ def test_send_history_edit_and_read_receipt(client):
     assert msg["sender_id"] == str(user_a["id"])
 
     hist = _history(c, conv_id, token_b)
-    assert len(hist) == 1 and hist[0]["is_read"] is False
+    assert len(hist) == 1
+    assert hist[0]["is_read"] is False
 
     # edit
     resp = c.put(f"/api/v1/messages/{msg['id']}/edit",
@@ -417,7 +417,7 @@ def test_send_history_edit_and_read_receipt(client):
 
 def test_delete_for_me_and_delete_for_everyone(client):
     c = client
-    token_a, user_a = _register(c, "de@example.com")
+    token_a, _user_a = _register(c, "de@example.com")
     token_b, user_b = _register(c, "deb@example.com")
     _friend(c, token_a, user_b["id"], token_b)
     conv_id = _private(c, token_a, user_b["id"])
@@ -438,7 +438,7 @@ def test_delete_for_me_and_delete_for_everyone(client):
 
 def test_forward_and_search(client):
     c = client
-    token_a, user_a = _register(c, "mf@example.com")
+    token_a, _user_a = _register(c, "mf@example.com")
     token_b, user_b = _register(c, "mfb@example.com")
     token_c, user_c = _register(c, "mfc@example.com")
     _friend(c, token_a, user_b["id"], token_b)
@@ -460,7 +460,7 @@ def test_forward_and_search(client):
 
 def test_reaction_star_and_pin(client):
     c = client
-    token_a, user_a = _register(c, "re@example.com")
+    token_a, _user_a = _register(c, "re@example.com")
     token_b, user_b = _register(c, "reb@example.com")
     _friend(c, token_a, user_b["id"], token_b)
     conv_id = _private(c, token_a, user_b["id"])
@@ -525,7 +525,7 @@ def test_disappearing_message_timer(client):
 
 def test_view_once_media_lifecycle(client):
     c = client
-    token_a, user_a = _register(c, "vo@example.com")
+    token_a, _user_a = _register(c, "vo@example.com")
     token_b, user_b = _register(c, "vob@example.com")
     _friend(c, token_a, user_b["id"], token_b)
     conv_id = _private(c, token_a, user_b["id"])
@@ -653,7 +653,7 @@ def test_call_config_requires_auth_and_returns_ice(client):
 
 def test_voice_and_video_call_log_end_to_end(client):
     c = client
-    token_a, user_a = _register(c, "cv@example.com")
+    token_a, _user_a = _register(c, "cv@example.com")
     token_b, user_b = _register(c, "cvb@example.com")
     _friend(c, token_a, user_b["id"], token_b)
     conv_id = _private(c, token_a, user_b["id"])
@@ -681,12 +681,13 @@ def test_voice_and_video_call_log_end_to_end(client):
                      headers=_auth(token)).json()
         assert logs["count"] >= 2
         types = {x["call_type"] for x in logs["calls"]}
-        assert "voice" in types and "video" in types
+        assert "voice" in types
+        assert "video" in types
 
 
 def test_call_log_end_forbidden_for_stranger(client):
     c = client
-    token_a, user_a = _register(c, "cx@example.com")
+    token_a, _user_a = _register(c, "cx@example.com")
     token_b, user_b = _register(c, "cxb@example.com")
     token_c, _ = _register(c, "cxc@example.com")
     _friend(c, token_a, user_b["id"], token_b)
@@ -705,7 +706,7 @@ def test_call_log_end_forbidden_for_stranger(client):
 
 def test_group_admin_promote_and_delete_for_everyone(client):
     c = client
-    token_a, user_a = _register(c, "ad@example.com")
+    token_a, _user_a = _register(c, "ad@example.com")
     token_b, user_b = _register(c, "adb@example.com")
     token_c, user_c = _register(c, "adc@example.com")
     _friend(c, token_a, user_b["id"], token_b)
@@ -734,7 +735,7 @@ def test_group_admin_promote_and_delete_for_everyone(client):
 
 def test_admin_can_remove_member(client):
     c = client
-    token_a, user_a = _register(c, "rm@example.com")
+    token_a, _user_a = _register(c, "rm@example.com")
     token_b, user_b = _register(c, "rmb@example.com")
     _friend(c, token_a, user_b["id"], token_b)
     gid = _group(c, token_a, "Removal", [user_b["id"]])["id"]

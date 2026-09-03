@@ -1,24 +1,19 @@
 import logging
-
+from datetime import timezone
 from uuid import UUID
 
-from fastapi import WebSocket
-
 from app.core.rate_limit import (
-    RateLimitExceeded,
     get_limiter,
 )
 from app.models.user import User
-
 from app.repositories.conversation_repository import (
     ConversationRepository,
 )
-
 from app.repositories.message_repository import (
     MessageRepository,
 )
-
 from app.websocket.connection_manager import manager
+from fastapi import WebSocket
 
 logger = logging.getLogger("app.websocket.websocket_service")
 
@@ -34,6 +29,7 @@ WS_RATE_LIMITS = {
     "call_answer":  (60, 60),
     "call_ice":     (60, 60),
     "call_end":     (60, 60),
+    "location_update": (60, 60),
 }
 
 
@@ -91,6 +87,7 @@ class WebSocketService:
             "call_answer":  self.handle_call,
             "call_ice":     self.handle_call,
             "call_end":     self.handle_call,
+            "location_update": self.handle_location_update,
         }
 
     # ======================================================
@@ -372,7 +369,7 @@ class WebSocketService:
                 "Message has already been deleted."
             )
 
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         # The edited content arrives already encrypted
         # (Signal ratchet): the server only swaps the payload
@@ -502,7 +499,7 @@ class WebSocketService:
                 "You can delete only your own messages."
             )
 
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         # The REST 'delete for everyone' endpoint normally runs
         # first and already sets the flag; this WS event is the
@@ -770,6 +767,37 @@ class WebSocketService:
         )
 
     # ======================================================
+    # LIVE LOCATION UPDATE (transient, never stored)
+    # ======================================================
+
+    async def handle_location_update(
+        self,
+        conversation_id: UUID,
+        current_user: User,
+        data: dict,
+    ):
+
+        lat = data.get("lat")
+        lng = data.get("lng")
+
+        if lat is None or lng is None:
+            raise ValueError(
+                "Missing 'lat' or 'lng' in location_update payload."
+            )
+
+        await manager.broadcast_transient(
+            conversation_id,
+            {
+                "event": "location_update",
+                "conversation_id": str(conversation_id),
+                "sender_id": str(current_user.id),
+                "lat": lat,
+                "lng": lng,
+                "timestamp": data.get("timestamp"),
+            },
+        )
+
+    # ======================================================
     # SYNC REQUEST
     #
     # A newly registered device sends this to ask its OTHER
@@ -823,12 +851,11 @@ class WebSocketService:
         sender_id: UUID,
     ) -> set:
 
-        from sqlalchemy import and_, or_, select
-
         from app.models.block import Block
         from app.models.conversation_participant import (
             ConversationParticipant,
         )
+        from sqlalchemy import and_, or_, select
 
         try:
 
@@ -904,11 +931,10 @@ class WebSocketService:
 
         try:
 
-            from sqlalchemy import select
-
             from app.models.conversation import Conversation
             from app.services.push_service import push_service
             from app.websocket.connection_manager import manager
+            from sqlalchemy import select
 
             member_ids = await manager._member_ids(
                 conversation_id
@@ -961,11 +987,10 @@ class WebSocketService:
 
         try:
 
-            from sqlalchemy import select
-
             from app.models.conversation import Conversation
             from app.services.push_service import push_service
             from app.websocket.connection_manager import manager
+            from sqlalchemy import select
 
             member_ids = await manager._member_ids(
                 conversation_id
@@ -1028,6 +1053,7 @@ class WebSocketService:
             "audio",
             "document",
             "system",
+            "location",
         }
 
         if message_type not in allowed:

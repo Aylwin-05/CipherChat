@@ -2,9 +2,8 @@ import hashlib
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, select, update
-
 from app.models.refresh_token import RefreshToken
+from sqlalchemy import delete, select, update
 
 
 class RefreshTokenRepository:

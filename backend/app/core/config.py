@@ -137,6 +137,14 @@ class Settings(BaseSettings):
 
     MAX_REQUEST_BODY_SIZE: int = 550 * 1024 * 1024
 
+    # ======================================================
+    # WebAuthn (Passkeys)
+    # ======================================================
+
+    WEBAUTHN_RP_ID: str = "localhost"
+    WEBAUTHN_RP_NAME: str = "Nexara"
+    WEBAUTHN_ORIGIN: str = "http://localhost:5173"
+
 
 @lru_cache
 def get_settings():

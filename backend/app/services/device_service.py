@@ -1,17 +1,15 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy.exc import IntegrityError
-
 from app.models.device import (
     Device,
-    SignedPreKey,
     OneTimePreKey,
+    SignedPreKey,
 )
 from app.models.user import User
 from app.repositories.device_repository import DeviceRepository
 from app.services.recovery_service import create_recovery_key
-
+from sqlalchemy.exc import IntegrityError
 
 # Default number of one-time prekeys to keep available
 ONE_TIME_PREKEY_TARGET = 100

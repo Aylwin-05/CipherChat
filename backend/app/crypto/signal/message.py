@@ -33,19 +33,18 @@ Envelope JSON schema:
 }
 """
 
-import base64
 import json
-import time
-from dataclasses import dataclass, field
-
-from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
+from dataclasses import dataclass
 
 from app.crypto.signal.primitives import (
-    b64encode, b64decode,
-    ed25519_public_to_bytes, ed25519_public_from_bytes,
-    x25519_public_to_bytes, x25519_public_from_bytes,
+    b64decode,
+    b64encode,
+    ed25519_public_from_bytes,
+    ed25519_public_to_bytes,
+    x25519_public_from_bytes,
+    x25519_public_to_bytes,
 )
-
+from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
 
 # ==========================================================
 # Exceptions
@@ -53,12 +52,10 @@ from app.crypto.signal.primitives import (
 
 class SignalProtocolError(Exception):
     """Base error for Signal Protocol failures."""
-    pass
 
 
 class EnvelopeError(SignalProtocolError):
     """Malformed or unverifiable envelope."""
-    pass
 
 
 # ==========================================================

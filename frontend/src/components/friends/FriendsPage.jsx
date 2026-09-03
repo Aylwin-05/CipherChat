@@ -9,6 +9,10 @@ import { avatarGradient, initials } from "../../utils/avatar";
 
 import UserAvatar from "../UserAvatar";
 
+import FriendCard from "./FriendCard";
+import FriendRequestCard from "./FriendRequestCard";
+import AddFriendModal from "./AddFriendModal";
+
 import "./FriendsPage.css";
 
 function SearchIcon() {
@@ -84,9 +88,22 @@ export default function FriendsPage({
 
     ] = useState(null);
 
+    const [
+
+        showAddModal,
+
+        setShowAddModal,
+
+    ] = useState(false);
+
     // Android back button: dismiss the remove-friend
     // confirmation first.
     useAndroidBack(() => {
+
+        if (showAddModal) {
+            setShowAddModal(false);
+            return true;
+        }
 
         if (showDeleteModal) {
             setFriendToDelete(null);
@@ -173,6 +190,14 @@ export default function FriendsPage({
                 <div className="friends-header">
 
                     <h2>Friends</h2>
+
+                    <button
+                        type="button"
+                        className="btn-primary btn-sm"
+                        onClick={() => setShowAddModal(true)}
+                    >
+                        Add Friend
+                    </button>
 
                     <p>
                         Find people, send friend requests and
@@ -355,110 +380,23 @@ export default function FriendsPage({
                         )
 
                     }
-
                     <div className="pending-list">
 
                         {
 
                             pendingRequests.map((request) => (
 
-                                <div
+                                <FriendRequestCard
 
                                     key={request.id}
 
-                                    className="f-card"
+                                    request={request}
 
-                                >
+                                    onAccept={acceptRequest}
 
-                                    <div
+                                    onReject={rejectRequest}
 
-                                        className="f-avatar"
-
-                                        style={{
-                                            background: avatarGradient(
-                                                request.sender?.display_name
-                                            ),
-                                        }}
-
-                                    >
-
-                                        {initials(
-                                            request.sender?.display_name ?? "?"
-                                        )}
-
-                                    </div>
-
-                                    <div className="f-meta">
-
-                                        <strong>
-
-                                            {
-
-                                                request.sender?.display_name ??
-
-                                                request.sender_id
-
-                                            }
-
-                                        </strong>
-
-                                        <small>
-
-                                            Wants to chat with you
-
-                                        </small>
-
-                                    </div>
-
-                                    <div className="f-actions">
-
-                                        <button
-
-                                            type="button"
-
-                                            className="btn-primary btn-sm"
-
-                                            onClick={() =>
-
-                                                acceptRequest(
-
-                                                    request.id
-
-                                                )
-
-                                            }
-
-                                        >
-
-                                            Accept
-
-                                        </button>
-
-                                        <button
-
-                                            type="button"
-
-                                            className="btn-ghost btn-sm"
-
-                                            onClick={() =>
-
-                                                rejectRequest(
-
-                                                    request.id
-
-                                                )
-
-                                            }
-
-                                        >
-
-                                            Reject
-
-                                        </button>
-
-                                    </div>
-
-                                </div>
+                                />
 
                             ))
 
@@ -645,6 +583,28 @@ export default function FriendsPage({
                 </section>
 
             </div>
+
+            {
+
+                showAddModal && (
+
+                    <AddFriendModal
+
+                        onClose={() => setShowAddModal(false)}
+
+                        searchUsers={searchUsers}
+
+                        sendFriendRequest={sendFriendRequest}
+
+                        searching={searching}
+
+                        results={searchResults}
+
+                    />
+
+                )
+
+            }
 
             {
 

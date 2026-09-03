@@ -39,6 +39,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   request-id tracing, CSP/HSTS headers.
 - Backend test suite (200+ tests) and frontend Signal-protocol test suite.
 
+### Added (current iteration)
+
+- Client-side generated media thumbnails: thin-preview images are produced and
+  encrypted in the browser and uploaded separately, so the server still only
+  ever stores ciphertext (no server-side media decoding).
+- Live location sharing as a transient `location` message type streamed over
+  the WebSocket.
+- Screen security: a privacy blur (`data-privacy-blurred`) is applied to the
+  app shell when the window is occluded or the user switches away, without
+  tearing down the encryption session.
+- Passkey / WebAuthn login alongside the email OTP flow (FIDO2 credentials with
+  per-device registration and challenge-response sign-in).
+- Friend UI components: `FriendCard`, `FriendRequestCard`, and `AddFriendModal`
+  wired into the Friends page.
+- OpenAPI metadata (title, version, description) on the FastAPI app.
+- Observability: a Prometheus-compatible `/metrics` endpoint (counters and
+  gauges captured from the API middleware and WebSocket connection manager) and
+  a structured `/health` probe.
+- Horizontal scaling: `redis_config.py`, a gunicorn multi-worker profile, and a
+  `docker-compose.prod.yml` deployment alongside the single-node stack.
+- Expanded backend test suite to 214 tests across auth, crypto, messaging,
+  attachments, stories, groups, and WebSocket integration.
+- Removed the prototype Broadcast Lists and Communities modules early in
+  iteration to keep the product distinct from mainstream messaging apps.
+
 ### Security
 
 - Removed server-side private-key escrow: devices upload public halves only.

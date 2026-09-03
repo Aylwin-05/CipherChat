@@ -32,8 +32,17 @@ echo "[entrypoint] Running migrations..."
 alembic upgrade head
 
 echo "[entrypoint] Starting server..."
-exec uvicorn app.main:app \
-    --host 0.0.0.0 \
-    --port 8000 \
-    --proxy-headers \
-    --forwarded-allow-ips='*'
+
+WEB_CONCURRENCY="${WEB_CONCURRENCY:-1}"
+
+if [ "$WEB_CONCURRENCY" -gt 1 ]; then
+  exec gunicorn app.main:app \
+      -c gunicorn.conf.py \
+      --workers "$WEB_CONCURRENCY"
+else
+  exec uvicorn app.main:app \
+      --host 0.0.0.0 \
+      --port 8000 \
+      --proxy-headers \
+      --forwarded-allow-ips='*'
+fi

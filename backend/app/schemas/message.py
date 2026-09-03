@@ -1,10 +1,8 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
-
 from app.schemas.attachment import AttachmentResponse
-
+from pydantic import BaseModel, ConfigDict, Field
 
 # ==========================================================
 # SEND MESSAGE

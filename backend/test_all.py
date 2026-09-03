@@ -31,47 +31,71 @@ Generated mechanically with AST deduplication:
 """
 
 import asyncio
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
+import base64
+import io
+import json
+import time
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import app.database.session as db_session_module
 import app.services.email_service as email_module
 import app.websocket.connection_manager as conn_mgr
+import app.websocket.ws as ws_module
+import pytest
 from app.core.rate_limit import reset_limiter
+from app.crypto.signal.double_ratchet import (
+    Chain,
+    DHKeyPair,
+    DoubleRatchetCore,
+    RatchetState,
+    derive_message_keys,
+    kdf_chain_key_step,
+    kdf_root_chain_step,
+)
+from app.crypto.signal.message import (
+    EnvelopeError,
+    SignalEnvelope,
+    build_prekey_message,
+    parse_prekey_message,
+)
+from app.crypto.signal.primitives import (
+    aes_gcm_decrypt,
+    aes_gcm_encrypt,
+    b64encode,
+    ed25519_private_to_bytes,
+    ed25519_public_to_bytes,
+    ed25519_sign,
+    ed25519_verify,
+    generate_ed25519_keypair,
+    generate_nonce,
+    generate_symmetric_key,
+    generate_x25519_keypair,
+    kdf_chain_key,
+    kdf_root_chain,
+    x25519_dh,
+    x25519_private_to_bytes,
+    x25519_public_to_bytes,
+)
+from app.crypto.signal.session import InMemorySessionStore, SignalSessionManager
+from app.crypto.signal.x3dh import create_key_bundle, derive_x25519_from_ed25519
 from app.database.base import Base
 from app.database.session import get_db
-from app.main import app as app_instance
-import io
-import os
-from pathlib import Path
-import time
-from datetime import datetime, timedelta, timezone
-import uuid
-from app.api.v1.api import api_router
-from app.crypto.signal.primitives import b64encode, ed25519_public_to_bytes, ed25519_sign, generate_ed25519_keypair, generate_x25519_keypair, x25519_public_to_bytes
-from app.crypto.signal.x3dh import derive_x25519_from_ed25519
 from app.dependencies.auth import get_current_user
-from app.models.user import User
-from sqlalchemy import delete
 from app.dependencies.rate_limit import _client_ip as limiter_client_ip
+from app.main import app as app_instance
 from app.models.refresh_token import RefreshToken
+from app.models.user import User
 from app.repositories.refresh_token_repository import RefreshTokenRepository
-import base64
-import json
+from app.services.recovery_service import recovery_token_store, unlock_sync_secret
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
+from fastapi.testclient import TestClient
 from http_ece import decrypt as ece_decrypt
-import app.database.session as db_session_module
-from app.services.recovery_service import unlock_sync_secret, recovery_token_store
-from app.services.recovery_service import unlock_sync_secret
-from app.crypto.signal.primitives import generate_x25519_keypair, generate_ed25519_keypair, x25519_dh, x25519_public_to_bytes, ed25519_public_to_bytes, ed25519_sign, ed25519_verify, kdf_root_chain, kdf_chain_key, aes_gcm_encrypt, aes_gcm_decrypt, generate_symmetric_key, generate_nonce
-from app.crypto.signal.double_ratchet import kdf_root_chain_step, kdf_chain_key_step, derive_message_keys, DoubleRatchetCore, RatchetState, DHKeyPair, Chain
-from app.crypto.signal.message import SignalEnvelope, EnvelopeError, build_prekey_message, parse_prekey_message
-from app.crypto.signal.session import SignalSessionManager, InMemorySessionStore
-from app.crypto.signal.primitives import generate_ed25519_keypair, generate_x25519_keypair, ed25519_private_to_bytes, x25519_private_to_bytes, b64encode
-from app.crypto.signal.x3dh import create_key_bundle
-from app.crypto.signal.double_ratchet import RatchetState
-import app.websocket.ws as ws_module
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 # ======================================================================
 # source: tests/test_admin_moderation.py
@@ -96,7 +120,6 @@ def api_client(monkeypatch):
     monkeypatch.setattr(conn_mgr, 'AsyncSessionLocal', TestingSessionLocal)
     monkeypatch.setattr(db_session_module, 'AsyncSessionLocal', TestingSessionLocal)
     import app.main as main_module
-    import app.websocket.ws as ws_module
     monkeypatch.setattr(main_module, 'AsyncSessionLocal', TestingSessionLocal)
     monkeypatch.setattr(ws_module, 'AsyncSessionLocal', TestingSessionLocal)
 
@@ -138,7 +161,7 @@ def _delete_everyone(client, token, message_id):
     return client.delete(f'/api/v1/messages/{message_id}', headers=_auth(token))
 def test_group_admin_can_delete_any_members_message(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     (token_c, user_c) = _register(client, EMAIL_C)
     _friend(client, token_a, user_b['id'], token_b)
@@ -154,11 +177,11 @@ def test_group_admin_can_delete_any_members_message(api_client):
     resp = _delete_everyone(client, token_a, message_id)
     assert resp.status_code == 204, resp.text
     history = client.get(f'/api/v1/messages/{conversation_id}', headers=_auth(token_b)).json()
-    target = next((message for message in history if message['id'] == str(message_id)))
+    target = next(message for message in history if message['id'] == str(message_id))
     assert target['deleted_for_everyone'] is True
 def test_promoted_admin_can_delete(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     (token_c, user_c) = _register(client, EMAIL_C)
     _friend(client, token_a, user_b['id'], token_b)
@@ -174,7 +197,7 @@ def test_promoted_admin_can_delete(api_client):
     assert resp.status_code == 204, resp.text
 def test_non_sender_cannot_delete_in_private_chat(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     resp = client.post('/api/v1/conversations/private', json={'user_id': str(user_b['id'])}, headers=_auth(token_a))
@@ -218,17 +241,17 @@ def test_send_encrypted_message_and_history(api_client):
     assert history[0]['sender_id'] == str(user_a['id'])
     assert history[0]['is_read'] is False
     conversations = client.get('/api/v1/conversations/', headers=_auth(token_b)).json()
-    conv_b = next((c for c in conversations if c['id'] == str(conversation_id)))
+    conv_b = next(c for c in conversations if c['id'] == str(conversation_id))
     assert conv_b['unread_count'] == 1
 def test_mark_all_read_clears_unread_count(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     conversation_id = _friend_and_conversation(client, token_a, user_b['id'], token_b)
     _send_message(client, conversation_id, token_a)
     _send_message(client, conversation_id, token_a)
     conversations = client.get('/api/v1/conversations/', headers=_auth(token_b)).json()
-    conv_b = next((c for c in conversations if c['id'] == str(conversation_id)))
+    conv_b = next(c for c in conversations if c['id'] == str(conversation_id))
     assert conv_b['unread_count'] == 2
     resp = client.post(f'/api/v1/messages/read-all/{conversation_id}', headers=_auth(token_b))
     assert resp.status_code == 200, resp.text
@@ -236,7 +259,7 @@ def test_mark_all_read_clears_unread_count(api_client):
     history = client.get(f'/api/v1/messages/{conversation_id}', headers=_auth(token_b)).json()
     assert all(message['is_read'] is True for message in history)
     conversations = client.get('/api/v1/conversations/', headers=_auth(token_b)).json()
-    conv_b = next((c for c in conversations if c['id'] == str(conversation_id)))
+    conv_b = next(c for c in conversations if c['id'] == str(conversation_id))
     assert conv_b['unread_count'] == 0
 def test_mark_all_read_requires_participant(api_client):
     client = api_client
@@ -438,7 +461,7 @@ def _group_by_owner(feed, user_id):
     return next((entry for entry in feed if entry['user_id'] == str(user_id)), None)
 def test_block_and_list(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     resp = _block(client, token_a, user_b['id'])
     assert resp.status_code == 200, resp.text
@@ -450,7 +473,7 @@ def test_block_and_list(api_client):
 def test_cannot_block_self_or_missing_user(api_client):
     client = api_client
     (token_a, user_a) = _register(client, EMAIL_A)
-    (token_b, _) = _register(client, EMAIL_B)
+    (_token_b, _) = _register(client, EMAIL_B)
     resp = _block(client, token_a, user_a['id'])
     assert resp.status_code == 400
     import uuid
@@ -458,14 +481,14 @@ def test_cannot_block_self_or_missing_user(api_client):
     assert resp.status_code == 400
 def test_duplicate_block_rejected(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (_, user_b) = _register(client, EMAIL_B)
     assert _block(client, token_a, user_b['id']).status_code == 200
     resp = _block(client, token_a, user_b['id'])
     assert resp.status_code == 400
 def test_unblock(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (_, user_b) = _register(client, EMAIL_B)
     _block(client, token_a, user_b['id'])
     resp = client.delete(f"/api/v1/blocks/{user_b['id']}", headers=_auth(token_a))
@@ -477,7 +500,7 @@ def test_unblock(api_client):
     assert resp.status_code == 400
 def test_blocked_user_cannot_message(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     conversation_id = _dm(client, token_a, user_b['id'], token_b)
     _block(client, token_a, user_b['id'])
@@ -487,7 +510,7 @@ def test_blocked_user_cannot_message(api_client):
     assert resp.status_code == 200, resp.text
 def test_unblock_restores_messaging(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     conversation_id = _dm(client, token_a, user_b['id'], token_b)
     _block(client, token_a, user_b['id'])
@@ -512,7 +535,7 @@ def test_friend_request_unknown_user_not_500(api_client):
     assert resp.status_code == 400, resp.text
 def test_block_removes_friendship(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     friends = client.get('/api/v1/friends/', headers=_auth(token_a)).json()
@@ -531,7 +554,7 @@ def test_blocked_friend_story_hidden_from_feed(api_client):
     assert _group_by_owner(feed, user_a['id']) is None
 def test_blocked_user_cannot_view_story_media(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     story = _upload_story(client, token_a)
@@ -540,7 +563,7 @@ def test_blocked_user_cannot_view_story_media(api_client):
     assert resp.status_code == 404
 def test_privacy_defaults_and_update(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     resp = client.get('/api/v1/blocks/privacy', headers=_auth(token_a))
     assert resp.status_code == 200, resp.text
     defaults = resp.json()
@@ -553,7 +576,7 @@ def test_privacy_defaults_and_update(api_client):
     assert updated['story'] == 'everyone'
 def test_invalid_privacy_value_rejected(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     resp = client.patch('/api/v1/blocks/privacy', json={'last_seen': 'strangers'}, headers=_auth(token_a))
     assert resp.status_code == 400
 def test_story_privacy_nobody_hides_from_friends(api_client):
@@ -569,7 +592,7 @@ def test_story_privacy_nobody_hides_from_friends(api_client):
     assert _group_by_owner(feed, user_a['id']) is not None
 def test_story_privacy_blocks_media_access(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     story = _upload_story(client, token_a)
@@ -584,7 +607,7 @@ def test_avatar_privacy_my_contacts(api_client):
     client = api_client
     (token_a, user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
-    (token_c, user_c) = _register(client, EMAIL_C)
+    (token_c, _user_c) = _register(client, EMAIL_C)
     _friend(client, token_a, user_b['id'], token_b)
     _upload_avatar(client, token_a)
     resp = client.get(f"/api/v1/users/{user_a['id']}/avatar", headers=_auth(token_c))
@@ -646,7 +669,6 @@ def test_call_logs_require_auth(api_client):
     resp = api_client.get('/api/v1/call/logs')
     assert resp.status_code == 401
 def test_call_logs_include_peer_info(api_client):
-    email_a = 'call_a@example.com'
     email_b = 'call_b@example.com'
     token_a = _register__call(api_client)
     api_client.post('/api/v1/auth/send-otp', json={'email': email_b})
@@ -666,11 +688,13 @@ def test_call_logs_include_peer_info(api_client):
     entry = next((c for c in logs['calls'] if c['caller_id'] == str(alice_id)), None)
     assert entry is not None, f'expected an incoming call from alice in {logs}'
     assert entry['peer_id'] == str(alice_id)
-    assert entry['peer_display_name'] and entry['peer_display_name'] != str(alice_id)
+    assert entry['peer_display_name']
+    assert entry['peer_display_name'] != str(alice_id)
     assert 'peer_avatar_url' in entry
     my_logs = api_client.get('/api/v1/call/logs', params={'limit': 100}, headers=_auth(token_a)).json()
     out = next((c for c in my_logs['calls'] if c['receiver_id'] == str(bob_id)), None)
-    assert out is not None and out['peer_id'] == str(bob_id)
+    assert out is not None
+    assert out['peer_id'] == str(bob_id)
 
 # ======================================================================
 # source: tests/test_conversation_delete.py
@@ -727,7 +751,7 @@ def test_request_then_confirm_wipes_everything(api_client):
     assert hist.status_code in (400, 404)
 def test_friendship_survives_conversation_delete(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     conv = _friend_and_conversation__cdel(client, token_a, user_b['id'], token_b)
     _send__cdel(client, conv, token_a, 'hi')
@@ -737,7 +761,7 @@ def test_friendship_survives_conversation_delete(api_client):
     assert len(_friend_ids(client, token_b)) == 1
 def test_mutual_simultaneous_requests_delete_immediately(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     conv = _friend_and_conversation__cdel(client, token_a, user_b['id'], token_b)
     _send__cdel(client, conv, token_a, 'hi')
@@ -761,7 +785,7 @@ def test_duplicate_request_is_idempotent(api_client):
     assert resp.json()['delete_requested_by'] == user_a['id']
 def test_confirm_without_pending_request_is_rejected(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     conv = _friend_and_conversation__cdel(client, token_a, user_b['id'], token_b)
     resp = _confirm_delete(client, conv, token_b)
@@ -769,7 +793,7 @@ def test_confirm_without_pending_request_is_rejected(api_client):
     assert conv in _conversation_ids(client, token_a)
 def test_requester_cannot_self_confirm(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     conv = _friend_and_conversation__cdel(client, token_a, user_b['id'], token_b)
     _request_delete(client, conv, token_a)
@@ -782,7 +806,7 @@ def test_requester_cannot_self_confirm(api_client):
     assert resp.status_code == 400
 def test_other_user_can_cancel_pending_request(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     conv = _friend_and_conversation__cdel(client, token_a, user_b['id'], token_b)
     _request_delete(client, conv, token_a)
@@ -790,11 +814,11 @@ def test_other_user_can_cancel_pending_request(api_client):
     assert resp.status_code == 200
     assert resp.json()['status'] == 'cancelled'
     listed = client.get('/api/v1/conversations/', headers=_auth(token_a)).json()
-    item = next((item for item in listed if item['id'] == conv))
+    item = next(item for item in listed if item['id'] == conv)
     assert item['delete_requested_by'] is None
 def test_non_participant_cannot_request(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     (token_c, user_c) = _register(client, EMAIL_C__cdel)
     conv = _friend_and_conversation__cdel(client, token_a, user_b['id'], token_b)
@@ -811,7 +835,7 @@ def test_non_participant_cannot_request(api_client):
     assert conv_c_id not in _conversation_ids(client, token_a)
 def test_delete_purges_attachment_rows_and_files(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     conv = _friend_and_conversation__cdel(client, token_a, user_b['id'], token_b)
     message = _send__cdel(client, conv, token_a, 'with a file')
@@ -974,12 +998,12 @@ def make_key_material(client_store_password: bytes=b'pass', opk_count: int=3) ->
     (identity_priv, identity_pub) = generate_ed25519_keypair()
     identity_x25519 = derive_x25519_from_ed25519(identity_priv)
     identity_x25519_pub = identity_x25519.public_key()
-    (spk_priv, spk_pub) = generate_x25519_keypair()
+    (_spk_priv, spk_pub) = generate_x25519_keypair()
     spk_pub_bytes = x25519_public_to_bytes(spk_pub)
     signature = ed25519_sign(identity_priv, spk_pub_bytes)
     opks = []
     for kid in range(1, opk_count + 1):
-        (p, q) = generate_x25519_keypair()
+        (_p, q) = generate_x25519_keypair()
         opks.append({'key_id': kid, 'public_key': b64encode(x25519_public_to_bytes(q))})
     return {'identity_key_public': b64encode(ed25519_public_to_bytes(identity_pub)), 'identity_key_x25519': b64encode(x25519_public_to_bytes(identity_x25519_pub)), 'signed_prekey_public': b64encode(spk_pub_bytes), 'signed_prekey_id': 1, 'signed_prekey_signature': b64encode(signature), 'one_time_prekeys': opks}
 def test_register_device_primary(client):
@@ -1034,7 +1058,7 @@ def test_upload_prekeys(client):
     assert len(resp.json()['one_time_prekeys']) == 5
     bundle = client.get(f'/api/v1/devices/{_USER_ID}/bundle').json()
     served = bundle['devices'][0]['one_time_prekeys']
-    assert len((used := [k for k in batch if k['key_id'] == served[0]['key_id']])) == 1
+    assert len(used := [k for k in batch if k['key_id'] == served[0]['key_id']]) == 1
     resp2 = client.post('/api/v1/devices/prekeys/upload', json={'device_id': device_id, 'one_time_prekeys': batch})
     assert resp2.status_code == 200, resp2.text
     assert len(resp2.json()['one_time_prekeys']) == 0
@@ -1048,7 +1072,7 @@ def test_list_devices(client):
     assert resp.status_code == 200, resp.text
     devices = resp.json()['devices']
     assert len(devices) == 2
-    assert any((d['is_primary'] for d in devices))
+    assert any(d['is_primary'] for d in devices)
 def test_remove_secondary_device(client):
     client.post('/api/v1/devices/register', json={'device_id': 'dev-0001', **make_key_material()})
     client.post('/api/v1/devices/register', json={'device_id': 'dev-0002', **make_key_material()})
@@ -1071,7 +1095,7 @@ def test_remove_device_clears_its_prekeys(client):
     resp = client.post('/api/v1/devices/register', json={'device_id': 'dev-0002', **make_key_material(opk_count=1)})
     assert resp.status_code == 200, resp.text
     bundle = client.get(f'/api/v1/devices/{_USER_ID}/bundle').json()
-    dev2 = next((d for d in bundle['devices'] if d['device_id'] == 'dev-0002'))
+    dev2 = next(d for d in bundle['devices'] if d['device_id'] == 'dev-0002')
     assert len(dev2['one_time_prekeys']) == 1
 
 # ======================================================================
@@ -1096,7 +1120,7 @@ def test_default_timer_is_off(api_client):
     client = api_client
     (token_a, _) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
-    conv = _friend_and_conversation__disp(client, token_a, user_b['id'], token_b)
+    _friend_and_conversation__disp(client, token_a, user_b['id'], token_b)
     conversations = client.get('/api/v1/conversations/', headers=_auth(token_a)).json()
     assert conversations[0]['disappear_after_seconds'] is None
 def test_set_timer_shared_by_both_participants(api_client):
@@ -1159,7 +1183,7 @@ def test_expired_message_not_in_conversation_preview(api_client):
     import time as _time
     _time.sleep(1.2)
     conversations = client.get('/api/v1/conversations/', headers=_auth(token_a)).json()
-    item = next((c for c in conversations if c['id'] == conv))
+    item = next(c for c in conversations if c['id'] == conv)
     assert item['last_message'] is None
     assert item['unread_count'] == 0
 def test_expired_message_cannot_be_replied_to(api_client):
@@ -1216,15 +1240,15 @@ def test_create_group_with_friends(api_client):
     assert group['id'] in [c['id'] for c in _conversations(client, token_a)]
     assert group['id'] in [c['id'] for c in _conversations(client, token_b)]
     assert group['id'] in [c['id'] for c in _conversations(client, token_c)]
-    listed = next((c for c in _conversations(client, token_a) if c['id'] == group['id']))
+    listed = next(c for c in _conversations(client, token_a) if c['id'] == group['id'])
     assert listed['conversation_type'] == 'group'
     assert listed['name'] == 'Trip'
     assert listed['participant_count'] == 3
     assert listed['other_user'] is None
 def test_create_group_requires_friends(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
-    (token_b, user_b) = _register(client, EMAIL_B)
+    (token_a, _user_a) = _register(client, EMAIL_A)
+    (_token_b, user_b) = _register(client, EMAIL_B)
     resp = client.post('/api/v1/conversations/group', json={'name': 'Sneaky', 'member_ids': [str(user_b['id'])]}, headers=_auth(token_a))
     assert resp.status_code == 400
     assert 'friends' in resp.json()['detail']
@@ -1243,7 +1267,7 @@ def test_create_group_validation(api_client):
     assert group['participant_count'] == 2
 def test_group_detail_exposes_public_keys(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     group = _create_group(client, token_a, 'Keys', [user_b['id']])
@@ -1255,7 +1279,7 @@ def test_group_detail_exposes_public_keys(api_client):
         assert 'public_key' in p or p['public_key'] is None
 def test_group_detail_rejects_non_participant(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     (token_c, user_c) = _register(client, EMAIL_C)
     _friend_each_with(client, token_a, [(token_b, user_b['id']), (token_c, user_c['id'])])
@@ -1264,7 +1288,7 @@ def test_group_detail_rejects_non_participant(api_client):
     assert resp.status_code == 403
 def test_group_detail_rejects_private_conversation(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     resp = client.post('/api/v1/conversations/private', json={'user_id': str(user_b['id'])}, headers=_auth(token_a))
@@ -1287,10 +1311,10 @@ def test_group_message_stores_recipient_keys(api_client):
         text_messages = [m for m in history if m['message_type'] == 'text']
         assert len(text_messages) == 1
         assert text_messages[0]['recipient_keys']
-        assert any((k['user_id'] == str(user_a['id']) for k in text_messages[0]['recipient_keys']))
+        assert any(k['user_id'] == str(user_a['id']) for k in text_messages[0]['recipient_keys'])
 def test_group_message_requires_membership(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     (token_c, user_c) = _register(client, EMAIL_C)
     _friend_each_with(client, token_a, [(token_b, user_b['id']), (token_c, user_c['id'])])
@@ -1301,7 +1325,7 @@ def test_group_message_requires_membership(api_client):
     assert resp.status_code == 400  # Service layer returns 400 for non-participants on GET
 def test_admin_adds_member(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     (token_c, user_c) = _register(client, EMAIL_C)
     (token_d, user_d) = _register(client, EMAIL_D)
@@ -1314,7 +1338,7 @@ def test_admin_adds_member(api_client):
     assert detail['participant_count'] == 4
 def test_non_admin_cannot_add_members(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     (token_c, user_c) = _register(client, EMAIL_C)
     (token_d, user_d) = _register(client, EMAIL_D)
@@ -1325,16 +1349,16 @@ def test_non_admin_cannot_add_members(api_client):
     assert resp.status_code == 403
 def test_add_member_requires_friendship(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
-    (token_c, user_c) = _register(client, EMAIL_C)
+    (_token_c, user_c) = _register(client, EMAIL_C)
     _friend_each_with(client, token_a, [(token_b, user_b['id'])])
     group = _create_group(client, token_a, 'FriendsOnly', [user_b['id']])
     resp = client.post(f"/api/v1/conversations/{group['id']}/group/add", json={'member_ids': [str(user_c['id'])]}, headers=_auth(token_a))
     assert resp.status_code == 400
 def test_member_leaves_group(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     group = _create_group(client, token_a, 'Two', [user_b['id']])
@@ -1348,7 +1372,7 @@ def test_member_leaves_group(api_client):
     assert resp.status_code == 403
 def test_last_member_leaving_deletes_group(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     group = _create_group(client, token_a, 'Doomed', [user_b['id']])
@@ -1362,7 +1386,7 @@ def test_last_member_leaving_deletes_group(api_client):
     assert group['id'] not in [c['id'] for c in _conversations(client, token_b)]
 def test_leave_reassigns_admin_to_remaining_member(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     (token_c, user_c) = _register(client, EMAIL_C)
     _friend_each_with(client, token_a, [(token_b, user_b['id']), (token_c, user_c['id'])])
@@ -1375,7 +1399,7 @@ def test_leave_reassigns_admin_to_remaining_member(api_client):
     assert detail['is_admin'] is True
 def test_cannot_leave_private_conversation(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     resp = client.post('/api/v1/conversations/private', json={'user_id': str(user_b['id'])}, headers=_auth(token_a))
@@ -1384,7 +1408,7 @@ def test_cannot_leave_private_conversation(api_client):
     assert resp.status_code == 400
 def test_two_party_delete_rejected_for_groups(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     group = _create_group(client, token_a, 'KeepMe', [user_b['id']])
@@ -1394,7 +1418,7 @@ def test_two_party_delete_rejected_for_groups(api_client):
     assert group['id'] in [c['id'] for c in _conversations(client, token_b)]
 def test_stale_recipient_key_for_removed_member_rejected(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     (token_c, user_c) = _register(client, EMAIL_C)
     _friend_each_with(client, token_a, [(token_b, user_b['id']), (token_c, user_c['id'])])
@@ -1406,12 +1430,12 @@ def test_stale_recipient_key_for_removed_member_rejected(api_client):
     assert 'Group membership changed' in resp.json()['detail']
     resp = client.get(f"/api/v1/messages/{group['id']}", headers=_auth(token_a))
     assert resp.status_code == 200
-    assert all((m['ciphertext'] != 'payload' for m in resp.json()))
+    assert all(m['ciphertext'] != 'payload' for m in resp.json())
     resp = client.post('/api/v1/messages/send', json={'conversation_id': str(group['id']), 'ciphertext': 'payload', 'encrypted_key_sender': 'k1', 'encrypted_key_receiver': 'k2', 'nonce': 'n', 'recipient_keys': [{'user_id': str(user_b['id']), 'encrypted_key': 'wrapped'}]}, headers=_auth(token_a))
     assert resp.status_code == 200, resp.text
 def test_stale_envelope_for_removed_members_device_rejected(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     (token_c, user_c) = _register(client, EMAIL_C)
     _friend_each_with(client, token_a, [(token_b, user_b['id']), (token_c, user_c['id'])])
@@ -1527,16 +1551,16 @@ def test_join_with_link_adds_member(api_client):
     detail = client.get(f"/api/v1/conversations/{group['id']}", headers=_auth(token_c))
     assert detail.status_code == 200, detail.text
     assert detail.json()['participant_count'] == 3
-    me = next((p for p in detail.json()['participants'] if p['user_id'] == str(user_c['id'])))
+    me = next(p for p in detail.json()['participants'] if p['user_id'] == str(user_c['id']))
     assert me['is_admin'] is False
     history = client.get(f"/api/v1/messages/{group['id']}", headers=_auth(token_a)).json()
     notices = [m['ciphertext'] for m in history if m['message_type'] == 'system']
-    assert any(('joined the group' in n for n in notices))
+    assert any('joined the group' in n for n in notices)
 def test_join_is_idempotent(api_client):
     client = api_client
     (token_a, _) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
-    (token_c, user_c) = _register(client, EMAIL_C__gil)
+    (token_c, _user_c) = _register(client, EMAIL_C__gil)
     _make_friends(client, token_a, token_b, user_b['id'])
     group = _create_group__gil(client, token_a, [str(user_b['id'])])
     link = _create_invite(client, group['id'], token_a)
@@ -1581,7 +1605,7 @@ def _system_texts(client, conversation_id, token):
     return [m['ciphertext'] for m in _history(client, conversation_id, token) if m['message_type'] == 'system']
 def test_admin_updates_group_name_and_description(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     group = _create_group(client, token_a, 'Old Name', [user_b['id']])
@@ -1593,10 +1617,10 @@ def test_admin_updates_group_name_and_description(api_client):
     assert detail['name'] == 'New Name'
     assert detail['description'] == 'Road trip 2026'
     texts = _system_texts(client, group['id'], token_a)
-    assert any(('changed the group name' in t for t in texts))
+    assert any('changed the group name' in t for t in texts)
 def test_non_admin_cannot_update_group(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     group = _create_group(client, token_a, 'Locked', [user_b['id']])
@@ -1604,7 +1628,7 @@ def test_non_admin_cannot_update_group(api_client):
     assert resp.status_code == 403
 def test_group_description_can_be_cleared(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     group = _create_group(client, token_a, 'Desc', [user_b['id']])
@@ -1614,7 +1638,7 @@ def test_group_description_can_be_cleared(api_client):
     assert resp.json()['description'] is None
 def test_admin_removes_member(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     (token_c, user_c) = _register(client, EMAIL_C)
     _friend_each_with(client, token_a, [(token_b, user_b['id']), (token_c, user_c['id'])])
@@ -1628,10 +1652,10 @@ def test_admin_removes_member(api_client):
     resp = client.get(f"/api/v1/conversations/{group['id']}", headers=_auth(token_c))
     assert resp.status_code == 403
     texts = _system_texts(client, group['id'], token_a)
-    assert any(('removed' in t for t in texts))
+    assert any('removed' in t for t in texts)
 def test_non_admin_cannot_remove_member(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     (token_c, user_c) = _register(client, EMAIL_C)
     _friend_each_with(client, token_a, [(token_b, user_b['id']), (token_c, user_c['id'])])
@@ -1655,7 +1679,7 @@ def test_cannot_remove_or_demote_creator(api_client):
     assert resp.status_code == 400
 def test_promote_and_demote_admin(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     group = _create_group(client, token_a, 'Hierarchy', [user_b['id']])
@@ -1666,7 +1690,7 @@ def test_promote_and_demote_admin(api_client):
     by_id = {p['user_id']: p for p in detail['participants']}
     assert by_id[str(user_b['id'])]['is_admin'] is True
     texts = _system_texts(client, group['id'], token_a)
-    assert any(('made' in t and 'an admin' in t for t in texts))
+    assert any('made' in t and 'an admin' in t for t in texts)
     resp = client.post(f"/api/v1/conversations/{group['id']}/group/admin", json={'user_id': str(user_b['id']), 'is_admin': False}, headers=_auth(token_a))
     assert resp.status_code == 200, resp.text
     assert resp.json()['is_admin'] is False
@@ -1674,10 +1698,10 @@ def test_promote_and_demote_admin(api_client):
     by_id = {p['user_id']: p for p in detail['participants']}
     assert by_id[str(user_b['id'])]['is_admin'] is False
     texts = _system_texts(client, group['id'], token_a)
-    assert any(('demoted' in t for t in texts))
+    assert any('demoted' in t for t in texts)
 def test_non_admin_cannot_change_roles(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     (token_c, user_c) = _register(client, EMAIL_C)
     _friend_each_with(client, token_a, [(token_b, user_b['id']), (token_c, user_c['id'])])
@@ -1698,24 +1722,24 @@ def test_cannot_demote_creator_or_last_admin(api_client):
     assert resp.status_code == 400, 'self-demotion is blocked'
 def test_system_messages_track_group_lifecycle(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     (token_c, user_c) = _register(client, EMAIL_C)
     _friend_each_with(client, token_a, [(token_b, user_b['id']), (token_c, user_c['id'])])
     _friend(client, token_b, user_c['id'], token_c)
     group = _create_group(client, token_a, 'Life', [user_b['id']])
     texts = _system_texts(client, group['id'], token_a)
-    assert any(('created the group' in t for t in texts))
+    assert any('created the group' in t for t in texts)
     client.post(f"/api/v1/conversations/{group['id']}/group/add", json={'member_ids': [str(user_c['id'])]}, headers=_auth(token_a))
     texts = _system_texts(client, group['id'], token_a)
-    assert any(('added' in t for t in texts))
+    assert any('added' in t for t in texts)
     client.post(f"/api/v1/conversations/{group['id']}/group/leave", headers=_auth(token_c))
     texts = _system_texts(client, group['id'], token_a)
-    assert any(('left the group' in t for t in texts))
+    assert any('left the group' in t for t in texts)
     assert _system_texts(client, group['id'], token_b)
 def test_admin_uploads_group_avatar(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     group = _create_group(client, token_a, 'Avatars', [user_b['id']])
@@ -1728,10 +1752,10 @@ def test_admin_uploads_group_avatar(api_client):
     detail = _group_detail(client, group['id'], token_b)
     assert detail['avatar_url'].endswith(f"/api/v1/conversations/{group['id']}/avatar")
     texts = _system_texts(client, group['id'], token_a)
-    assert any(('changed the group photo' in t for t in texts))
+    assert any('changed the group photo' in t for t in texts)
 def test_group_avatar_rejects_disguised_script(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     group = _create_group(client, token_a, 'AvatarSniff', [user_b['id']])
@@ -1740,7 +1764,7 @@ def test_group_avatar_rejects_disguised_script(api_client):
     assert 'does not match' in resp.json()['detail']
 def test_non_admin_cannot_upload_avatar(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     group = _create_group(client, token_a, 'NoPhoto', [user_b['id']])
@@ -1749,7 +1773,7 @@ def test_non_admin_cannot_upload_avatar(api_client):
     assert resp.status_code == 403
 def test_avatar_missing_for_non_participant(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     (token_c, user_c) = _register(client, EMAIL_C)
     _friend_each_with(client, token_a, [(token_b, user_b['id']), (token_c, user_c['id'])])
@@ -1919,19 +1943,19 @@ def _device_key_material(opk_count: int=2, opk_start: int=1) -> dict:
     (identity_priv, identity_pub) = generate_ed25519_keypair()
     identity_x25519 = derive_x25519_from_ed25519(identity_priv)
     identity_x25519_pub = identity_x25519.public_key()
-    (spk_priv, spk_pub) = generate_x25519_keypair()
+    (_spk_priv, spk_pub) = generate_x25519_keypair()
     spk_pub_bytes = x25519_public_to_bytes(spk_pub)
     signature = ed25519_sign(identity_priv, spk_pub_bytes)
     opks = []
     for kid in range(opk_start, opk_start + opk_count):
-        (p, q) = generate_x25519_keypair()
+        (_p, q) = generate_x25519_keypair()
         opks.append({'key_id': kid, 'public_key': b64encode(x25519_public_to_bytes(q))})
     return {'identity_key_public': b64encode(ed25519_public_to_bytes(identity_pub)), 'identity_key_x25519': b64encode(x25519_public_to_bytes(identity_x25519_pub)), 'signed_prekey_public': b64encode(spk_pub_bytes), 'signed_prekey_id': 1, 'signed_prekey_signature': b64encode(signature), 'one_time_prekeys': opks}
 def _register_device(client, token, device_id, opk_start: int=1):
     return client.post('/api/v1/devices/register', json={'device_id': device_id, 'platform': 'web', 'device_name': 'Test', **_device_key_material(opk_start=opk_start)}, headers=_auth(token))
 def test_attachment_upload_rejected_for_non_participant(api_env):
     (client, _) = api_env
-    (token_a, user_a, _) = _register__p1(client, EMAIL_A)
+    (token_a, _user_a, _) = _register__p1(client, EMAIL_A)
     (token_b, user_b, _) = _register__p1(client, EMAIL_B)
     (token_c, _, _) = _register__p1(client, EMAIL_C__p1)
     conversation_id = _friend_and_conversation__p1(client, token_a, user_b['id'], token_b)
@@ -1942,7 +1966,7 @@ def test_attachment_upload_rejected_for_non_participant(api_env):
     assert resp.status_code == 200, resp.text
 def test_attachment_delete_requires_sender(api_env):
     (client, _) = api_env
-    (token_a, user_a, _) = _register__p1(client, EMAIL_A)
+    (token_a, _user_a, _) = _register__p1(client, EMAIL_A)
     (token_b, user_b, _) = _register__p1(client, EMAIL_B)
     conversation_id = _friend_and_conversation__p1(client, token_a, user_b['id'], token_b)
     message = _send_message(client, conversation_id, token_a)
@@ -2065,7 +2089,7 @@ def _make_subscription():
     return (private_key, p256dh, auth)
 def test_subscribe_list_unsubscribe(api_client__push):
     client = api_client__push
-    (token, user) = _register(client, EMAIL_A)
+    (token, _user) = _register(client, EMAIL_A)
     (_, p256dh, auth) = _make_subscription()
     resp = client.post('/api/v1/push/subscribe', json={'endpoint': 'https://push.example.com/abc/xyz', 'p256dh': p256dh, 'auth': auth}, headers=_auth(token))
     assert resp.status_code == 200, resp.text
@@ -2085,14 +2109,14 @@ def test_subscribe_list_unsubscribe(api_client__push):
     assert resp.json() == []
 def test_vapid_public_key_endpoint(api_client__push):
     client = api_client__push
-    (token, user) = _register(client, EMAIL_A)
+    (token, _user) = _register(client, EMAIL_A)
     resp = client.get('/api/v1/push/vapid-public-key', headers=_auth(token))
     assert resp.status_code == 200, resp.text
     public_key = resp.json()['public_key']
     assert len(public_key) >= 80
 def test_subscribe_rejects_bad_endpoint(api_client__push):
     client = api_client__push
-    (token, user) = _register(client, EMAIL_A)
+    (token, _user) = _register(client, EMAIL_A)
     (_, p256dh, auth) = _make_subscription()
     resp = client.post('/api/v1/push/subscribe', json={'endpoint': 'not-a-url', 'p256dh': p256dh, 'auth': auth}, headers=_auth(token))
     assert resp.status_code == 400
@@ -2206,12 +2230,12 @@ def make_key_material__reci() -> dict:
     (identity_priv, identity_pub) = generate_ed25519_keypair()
     identity_x25519 = derive_x25519_from_ed25519(identity_priv)
     identity_x25519_pub = identity_x25519.public_key()
-    (spk_priv, spk_pub) = generate_x25519_keypair()
+    (_spk_priv, spk_pub) = generate_x25519_keypair()
     spk_pub_bytes = x25519_public_to_bytes(spk_pub)
     signature = ed25519_sign(identity_priv, spk_pub_bytes)
     opks = []
     for kid in range(1, 3):
-        (p, q) = generate_x25519_keypair()
+        (_p, q) = generate_x25519_keypair()
         opks.append({'key_id': kid, 'public_key': b64encode(x25519_public_to_bytes(q))})
     return {'identity_key_public': b64encode(ed25519_public_to_bytes(identity_pub)), 'identity_key_x25519': b64encode(x25519_public_to_bytes(identity_x25519_pub)), 'signed_prekey_public': b64encode(spk_pub_bytes), 'signed_prekey_id': 1, 'signed_prekey_signature': b64encode(signature), 'one_time_prekeys': opks}
 def _register_device__reci(client, token, device_id):
@@ -2276,7 +2300,7 @@ def test_recovery_request_mints_fresh_key_without_secret(api_client__reci):
 def test_recovery_fresh_mint_blocked_when_history_orphaned(api_client__reci):
     """A fresh key is refused (409) when the account has written sync
     copies that a new key would orphan; force_new bypasses the guard."""
-    (token_a, user_a, device) = _create_account_with_secret(api_client__reci)
+    (token_a, _user_a, _device) = _create_account_with_secret(api_client__reci)
     (token_b, user_b) = _register__reci(api_client__reci, "bob-recovery@example.com")
     conversation = _friend_and_conversation__recs(api_client__reci, token_a, user_b["id"], token_b)
     message = _send__recs(api_client__reci, token_a, conversation["id"])
@@ -2357,12 +2381,12 @@ def make_key_material__recs() -> dict:
     (identity_priv, identity_pub) = generate_ed25519_keypair()
     identity_x25519 = derive_x25519_from_ed25519(identity_priv)
     identity_x25519_pub = identity_x25519.public_key()
-    (spk_priv, spk_pub) = generate_x25519_keypair()
+    (_spk_priv, spk_pub) = generate_x25519_keypair()
     spk_pub_bytes = x25519_public_to_bytes(spk_pub)
     signature = ed25519_sign(identity_priv, spk_pub_bytes)
     opks = []
     for kid in range(1, 3):
-        (p, q) = generate_x25519_keypair()
+        (_p, q) = generate_x25519_keypair()
         opks.append({'key_id': kid, 'public_key': b64encode(x25519_public_to_bytes(q))})
     return {'identity_key_public': b64encode(ed25519_public_to_bytes(identity_pub)), 'identity_key_x25519': b64encode(x25519_public_to_bytes(identity_x25519_pub)), 'signed_prekey_public': b64encode(spk_pub_bytes), 'signed_prekey_id': 1, 'signed_prekey_signature': b64encode(signature), 'one_time_prekeys': opks}
 def _register_device__recs(client, token, device_id):
@@ -2403,14 +2427,14 @@ def test_recovery_code_unlocks_sync_secret(api_client):
     assert len(secret) > 0
     assert unlock_sync_secret('WRONGCODEWRONGCODEWRONG', first['recovery_salt'], first['recovery_wrapped_key']) is None
 def test_profile_exposes_has_recovery_key(api_client):
-    (token_a, user_a) = _register(api_client, EMAIL_A)
+    (token_a, _user_a) = _register(api_client, EMAIL_A)
     me = api_client.get('/api/v1/users/me', headers=_auth(token_a)).json()
     assert me['has_recovery_key'] is False
     _register_device__recs(api_client, token_a, str(uuid.uuid4()))
     me = api_client.get('/api/v1/users/me', headers=_auth(token_a)).json()
     assert me['has_recovery_key'] is True
 def test_sync_envelope_upsert_and_fetch(api_client):
-    (token_a, user_a) = _register(api_client, EMAIL_A)
+    (token_a, _user_a) = _register(api_client, EMAIL_A)
     (token_b, user_b) = _register(api_client, EMAIL_B)
     conversation = _friend_and_conversation__recs(api_client, token_a, user_b['id'], token_b)
     message = _send__recs(api_client, token_a, conversation['id'])
@@ -2421,11 +2445,11 @@ def test_sync_envelope_upsert_and_fetch(api_client):
     assert resp.json()['sync_envelope'] == envelope
     history = api_client.get(f"/api/v1/messages/{conversation['id']}", headers=_auth(token_a)).json()
     assert history[0]['sync_envelope'] == envelope
-    (token_c, user_c) = _register(api_client, 'mallory@example.com')
+    (token_c, _user_c) = _register(api_client, 'mallory@example.com')
     resp = api_client.put(f"/api/v1/messages/{message['id']}/sync-envelope", json={'sync_copy': {'nonce': 'x', 'data': 'y'}}, headers=_auth(token_c))
     assert resp.status_code == 400
 def test_sync_envelope_cleared_on_delete_for_everyone(api_client):
-    (token_a, user_a) = _register(api_client, EMAIL_A)
+    (token_a, _user_a) = _register(api_client, EMAIL_A)
     (token_b, user_b) = _register(api_client, EMAIL_B)
     conversation = _friend_and_conversation__recs(api_client, token_a, user_b['id'], token_b)
     message = _send__recs(api_client, token_a, conversation['id'])
@@ -2434,7 +2458,7 @@ def test_sync_envelope_cleared_on_delete_for_everyone(api_client):
     history = api_client.get(f"/api/v1/messages/{conversation['id']}", headers=_auth(token_a)).json()
     assert history[0]['sync_envelope'] is None
 def test_sync_envelope_replaced_on_edit(api_client):
-    (token_a, user_a) = _register(api_client, EMAIL_A)
+    (token_a, _user_a) = _register(api_client, EMAIL_A)
     (token_b, user_b) = _register(api_client, EMAIL_B)
     conversation = _friend_and_conversation__recs(api_client, token_a, user_b['id'], token_b)
     message = _send__recs(api_client, token_a, conversation['id'])
@@ -2443,7 +2467,7 @@ def test_sync_envelope_replaced_on_edit(api_client):
     assert resp.status_code == 200, resp.text
     assert resp.json()['sync_envelope'] == {'nonce': 'new', 'data': 'new-data', 'ciphertext': 'new-ciphertext'}
 def test_sync_blob_upsert_and_fetch(api_client):
-    (token_a, user_a) = _register(api_client, EMAIL_A)
+    (token_a, _user_a) = _register(api_client, EMAIL_A)
     (token_b, user_b) = _register(api_client, EMAIL_B)
     conversation = _friend_and_conversation__recs(api_client, token_a, user_b['id'], token_b)
     message = _send__recs(api_client, token_a, conversation['id'])
@@ -2463,8 +2487,8 @@ def test_sync_blob_upsert_and_fetch(api_client):
 class TestPrimitives:
 
     def test_x25519_dh_matches(self):
-        (pa, _) = generate_x25519_keypair()
-        (pb, _) = generate_x25519_keypair()
+        (_pa, _) = generate_x25519_keypair()
+        (_pb, _) = generate_x25519_keypair()
         (a, A) = generate_x25519_keypair()
         (b, B) = generate_x25519_keypair()
         assert x25519_dh(a, B) == x25519_dh(b, A)
@@ -2485,7 +2509,8 @@ class TestPrimitives:
     def test_kdf_chain_key(self):
         ck = b'C' * 32
         (next_ck, mk) = kdf_chain_key(ck)
-        assert len(next_ck) == 32 and len(mk) == 32
+        assert len(next_ck) == 32
+        assert len(mk) == 32
         assert next_ck != mk
 
     def test_aes_gcm_roundtrip(self):
@@ -2506,15 +2531,20 @@ class TestDoubleRatchetCore:
 
     def test_kdf_steps_lengths(self):
         (new_root, ck) = kdf_root_chain_step(b'R' * 32, b'D' * 32)
-        assert len(new_root) == 32 and len(ck) == 32
+        assert len(new_root) == 32
+        assert len(ck) == 32
         (next_ck, mk) = kdf_chain_key_step(ck)
-        assert len(next_ck) == 32 and len(mk) == 32
+        assert len(next_ck) == 32
+        assert len(mk) == 32
 
     def test_message_key_derivation_deterministic(self):
         (e1, a1, n1) = derive_message_keys(b'MK' * 16)
         (e2, a2, n2) = derive_message_keys(b'MK' * 16)
-        assert e1 == e2 and a1 == a2 and (n1 == n2)
-        assert len(e1) == 32 and len(a1) == 32
+        assert e1 == e2
+        assert a1 == a2
+        assert (n1 == n2)
+        assert len(e1) == 32
+        assert len(a1) == 32
 
     def test_state_roundtrip(self):
         state = RatchetState(root_key=b'R' * 32, our_dh_pair=DHKeyPair.new(), their_dh_public=b'T' * 32, sending_chain=Chain(key=b'S' * 32, index=5), receiving_chain=Chain(key=b'C' * 32, index=3), skipped_message_keys={}, associated_data=b'AD' * 8)
@@ -2645,7 +2675,7 @@ def _star(client, token, message_id, starred):
     return client.put(f'/api/v1/messages/{message_id}/star', json={'starred': starred}, headers=_auth(token))
 def test_star_and_unstar(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     conversation_id = _dm(client, token_a, user_b['id'], token_b)
     sent = _send(client, conversation_id, token_a, content='star me')
@@ -2670,7 +2700,7 @@ def test_star_and_unstar(api_client):
     assert history[0]['is_starred'] is False
 def test_star_is_idempotent_and_personal(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     conversation_id = _dm(client, token_a, user_b['id'], token_b)
     sent = _send(client, conversation_id, token_a, content='twice')
@@ -2683,7 +2713,7 @@ def test_star_is_idempotent_and_personal(api_client):
     assert starred == []
 def test_starred_deleted_message_rejected(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     conversation_id = _dm(client, token_a, user_b['id'], token_b)
     sent = _send(client, conversation_id, token_a, content='doomed')
@@ -2694,9 +2724,9 @@ def test_starred_deleted_message_rejected(api_client):
     assert resp.status_code == 400
 def test_star_requires_participant(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
-    (token_c, user_c) = _register(client, 'carol@example.com')
+    (token_c, _user_c) = _register(client, 'carol@example.com')
     conversation_id = _dm(client, token_a, user_b['id'], token_b)
     sent = _send(client, conversation_id, token_a, content='private')
     message_id = sent.json()['id']
@@ -2719,7 +2749,7 @@ def test_story_visible_to_friends_not_strangers(api_client):
     client = api_client
     (token_a, user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
-    (token_c, user_c) = _register(client, EMAIL_C)
+    (token_c, _user_c) = _register(client, EMAIL_C)
     _friend(client, token_a, user_b['id'], token_b)
     story = _upload(client, token_a, caption='Beach day')
     assert story['caption'] == 'Beach day'
@@ -2739,7 +2769,7 @@ def test_story_visible_to_friends_not_strangers(api_client):
     assert _group_by_owner(feed, user_a['id']) is None
 def test_story_reply_creates_private_conversation(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     story = _upload(client, token_a)
@@ -2760,8 +2790,8 @@ def test_story_reply_creates_private_conversation(api_client):
     assert reply.json()["conversation_id"] in ids
 def test_story_reply_denied_to_stranger(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
-    (token_c, user_c) = _register(client, EMAIL_C)
+    (token_a, _user_a) = _register(client, EMAIL_A)
+    (token_c, _user_c) = _register(client, EMAIL_C)
     story = _upload(client, token_a)
     reply = client.post(
         f"/api/v1/stories/{story['id']}/reply",
@@ -2776,8 +2806,8 @@ def test_story_reply_denied_to_stranger(api_client):
     assert reply.status_code in (403, 404), reply.text
 def test_story_reaction_denied_to_stranger(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
-    (token_c, user_c) = _register(client, EMAIL_C)
+    (token_a, _user_a) = _register(client, EMAIL_A)
+    (token_c, _user_c) = _register(client, EMAIL_C)
     story = _upload(client, token_a)
     resp = client.post(
         f"/api/v1/stories/{story['id']}/react",
@@ -2787,9 +2817,9 @@ def test_story_reaction_denied_to_stranger(api_client):
     assert resp.status_code in (403, 404), resp.text
 def test_story_media_access_control(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
-    (token_c, user_c) = _register(client, EMAIL_C)
+    (token_c, _user_c) = _register(client, EMAIL_C)
     _friend(client, token_a, user_b['id'], token_b)
     story = _upload(client, token_a)
     assert client.get(story['media_url'], headers=_auth(token_a)).status_code == 200
@@ -2839,7 +2869,7 @@ def test_owner_deletes_story(api_client):
     assert _group_by_owner(feed, user_a['id']) is None
 def test_only_owner_can_delete(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     (token_b, user_b) = _register(client, EMAIL_B)
     _friend(client, token_a, user_b['id'], token_b)
     story = _upload(client, token_a)
@@ -2847,7 +2877,7 @@ def test_only_owner_can_delete(api_client):
     assert resp.status_code == 403
 def test_story_requires_key_material(api_client):
     client = api_client
-    (token_a, user_a) = _register(client, EMAIL_A)
+    (token_a, _user_a) = _register(client, EMAIL_A)
     png = b'\x89PNG\r\n\x1a\n' + b'0' * 64
     resp = client.post('/api/v1/stories/', files={'file': ('s.png', io.BytesIO(png), 'image/png')}, data={}, headers=_auth(token_a))
     assert resp.status_code == 400
@@ -2869,8 +2899,9 @@ def test_expired_stories_are_purged(api_client):
         async with conn_mgr.AsyncSessionLocal() as session:
             from datetime import datetime, timedelta, timezone
             from uuid import UUID
-            from sqlalchemy import update
+
             from app.models.story import Story
+            from sqlalchemy import update
             await session.execute(update(Story).where(Story.id == UUID(story['id'])).values(expires_at=datetime.now(timezone.utc) - timedelta(seconds=1)))
             await session.commit()
     _asyncio.run(_expire())
@@ -3046,7 +3077,7 @@ def test_view_once_upload_flag_and_serialization(api_client):
     attachment = _upload_view_once(client, message['id'], token_a)
     assert attachment['view_once'] is True
     history = client.get(f'/api/v1/messages/{conversation_id}', headers=_auth(token_b)).json()
-    msg = next((m for m in history if m['id'] == message['id']))
+    msg = next(m for m in history if m['id'] == message['id'])
     assert msg['view_once_opened'] is False
     assert msg['attachments'][0]['view_once'] is True
     plain = _send_message(client, conversation_id, token_a)
@@ -3064,7 +3095,7 @@ def test_sender_cannot_open_view_once(api_client):
     assert resp.status_code == 400, resp.text
     assert 'recipient' in resp.json()['detail'].lower()
     history = client.get(f'/api/v1/messages/{conversation_id}', headers=_auth(token_a)).json()
-    attachment_id = next((m for m in history if m['id'] == message['id']))['attachments'][0]['id']
+    attachment_id = next(m for m in history if m['id'] == message['id'])['attachments'][0]['id']
     assert client.get(f'/api/v1/attachments/{attachment_id}', headers=_auth(token_a)).status_code == 200
 def test_recipient_open_destroys_media_and_flags_message(api_client):
     client = api_client
@@ -3084,7 +3115,7 @@ def test_recipient_open_destroys_media_and_flags_message(api_client):
     assert gone.status_code == 404, gone.text
     for token in (token_a, token_b):
         history = client.get(f'/api/v1/messages/{conversation_id}', headers=_auth(token)).json()
-        msg = next((m for m in history if m['id'] == message['id']))
+        msg = next(m for m in history if m['id'] == message['id'])
         assert msg['view_once_opened'] is True
         assert msg['attachments'] == []
 def test_reopen_is_idempotent(api_client):
@@ -3141,7 +3172,6 @@ def api_client__ws(monkeypatch, tmp_path):
     import app.services.push_service as push_module
     monkeypatch.setattr(push_module, 'AsyncSessionLocal', TestingSessionLocal)
     import app.main as main_module
-    import app.websocket.ws as ws_module
     monkeypatch.setattr(main_module, 'AsyncSessionLocal', TestingSessionLocal)
     monkeypatch.setattr(ws_module, 'AsyncSessionLocal', TestingSessionLocal)
 
@@ -3223,7 +3253,8 @@ def test_ws_me_lifecycle(api_client__ws):
         ev_b = _drain(ws_b, 'message')
         ev_a = _drain(ws_a, 'message')
         print('MSG-BROADCAST:', ev_a.get('event'), ev_b.get('event'))
-        assert ev_b['id'] == mid and ev_b['reply_to_id'] is None
+        assert ev_b['id'] == mid
+        assert ev_b['reply_to_id'] is None
         r = client.put(f'/api/v1/messages/{mid}/reaction', json={'emoji': '1F60D'}, headers=_auth(token_b))
         print('REACT-REST:', r.json())
         ev_b = _drain(ws_b, 'reaction')
@@ -3401,8 +3432,8 @@ def test_disappearing_messages_purge_direct(api_client__ws):
     conversation to trigger the lazy purge inside
     get_conversation_messages."""
     client = api_client__ws
-    (token_a, user_a) = _register__ws(client, PURGE_EMAIL_A)
-    (token_b, user_b) = _register__ws(client, PURGE_EMAIL_B)
+    (token_a, _user_a) = _register__ws(client, PURGE_EMAIL_A)
+    (_token_b, user_b) = _register__ws(client, PURGE_EMAIL_B)
 
     resp = client.post('/api/v1/conversations/private',
                        json={'user_id': str(user_b['id'])},
@@ -3452,8 +3483,8 @@ def test_disappearing_messages_lazy_purge_on_fetch(api_client__ws):
     """purge_expired is called when fetching messages, so expired
     messages are removed even without the background loop."""
     client = api_client__ws
-    (token_a, user_a) = _register__ws(client, PURGE_EMAIL_C)
-    (token_b, user_b) = _register__ws(client, PURGE_EMAIL_D)
+    (token_a, _user_a) = _register__ws(client, PURGE_EMAIL_C)
+    (_token_b, user_b) = _register__ws(client, PURGE_EMAIL_D)
 
     resp = client.post('/api/v1/conversations/private',
                        json={'user_id': str(user_b['id'])},

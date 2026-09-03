@@ -1,12 +1,11 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, select
-from sqlalchemy.exc import IntegrityError
-
 from app.models.story import Story, StoryView
 from app.models.user import User
 from app.repositories.base_repository import BaseRepository
+from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError
 
 
 class StoryRepository(BaseRepository):

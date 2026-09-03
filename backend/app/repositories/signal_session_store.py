@@ -11,7 +11,7 @@ from uuid import UUID
 
 from app.crypto.signal.double_ratchet import RatchetState
 from app.crypto.signal.session import SessionStore
-from app.models.signal_session import SignalSession, SessionState
+from app.models.signal_session import SessionState, SignalSession
 from app.repositories.device_repository import DeviceRepository
 
 
